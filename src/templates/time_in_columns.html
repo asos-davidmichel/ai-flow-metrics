@@ -30,7 +30,14 @@
       padding: 24px;
       margin-bottom: 24px;
     }
-    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #4a5568; }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 0; color: #4a5568; }
     .chart-wrap { position: relative; height: 380px; }
     .meta { font-size: 13px; color: #718096; line-height: 2; }
     .meta strong { color: #4a5568; }
@@ -101,8 +108,8 @@
     .type-toggles {
       display: none;
       flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 8px;
-      margin-bottom: 16px;
     }
     .type-toggle {
       display: inline-flex;
@@ -138,8 +145,10 @@
   </div>
 
   <div class="card">
-    <h2>Total time spent in each in-progress column</h2>
-    <div id="typeToggles" class="type-toggles"></div>
+    <div class="card-header">
+      <h2>Total time spent in each in-progress column</h2>
+      <div id="typeToggles" class="type-toggles"></div>
+    </div>
     <div class="chart-wrap">
       <canvas id="timeInColumnsChart"></canvas>
     </div>
