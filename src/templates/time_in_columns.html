@@ -98,6 +98,35 @@
     }
     .tt-item-days { color: #718096; font-size: 11px; white-space: nowrap; font-weight: 600; }
     .tt-hint { margin-top: 10px; font-size: 11px; color: #a0aec0; font-style: italic; text-align: center; }
+    .type-toggles {
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .type-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 2px solid transparent;
+      background: #f0f2f5;
+      color: #718096;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      opacity: 0.45;
+    }
+    .type-toggle.active {
+      border-color: var(--type-color, #667eea);
+      background: white;
+      color: #2d3748;
+      opacity: 1;
+    }
+    .type-toggle:hover { opacity: 0.75; }
+    .type-toggle.active:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
@@ -110,6 +139,7 @@
 
   <div class="card">
     <h2>Total time spent in each in-progress column</h2>
+    <div id="typeToggles" class="type-toggles"></div>
     <div class="chart-wrap">
       <canvas id="timeInColumnsChart"></canvas>
     </div>
@@ -136,21 +166,68 @@ document.getElementById('subtitle').textContent =
 
 const cols = data.columns.filter(c => c.column_type === 'inProgress');
 const labels = cols.map(c => c.name);
-const totals = cols.map(c => Math.round(c.total_hours / 24 * 10) / 10);
 const typeStyles = data.work_item_type_styles || {};
+const allTypes = Object.keys(typeStyles);
+const activeTypes = new Set(allTypes);
 
-// Bottleneck: the inProgress column with the highest total hours
-const maxTotal = Math.max(...cols.map(c => c.total_hours));
-const bgColors = cols.map(c =>
-  c.total_hours === maxTotal ? 'rgba(237, 100, 66, 0.85)' : 'rgba(102, 126, 234, 0.75)'
-);
-const borderColors = cols.map(c =>
-  c.total_hours === maxTotal ? 'rgba(200, 60, 20, 1)' : 'rgba(102, 126, 234, 1)'
-);
+// --- Type toggles (only rendered when there are multiple types) ---
+const toggleContainer = document.getElementById('typeToggles');
+if (allTypes.length > 1) {
+  toggleContainer.style.display = 'flex';
+  allTypes.forEach(type => {
+    const style = typeStyles[type];
+    const btn = document.createElement('button');
+    btn.className = 'type-toggle active';
+    btn.dataset.type = type;
+    btn.style.setProperty('--type-color', style.color);
 
-// External HTML tooltip
+    const iconHtml = style.icon_url
+      ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+      : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(style.color)};flex-shrink:0;"></span>`;
+    btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
+
+    btn.addEventListener('click', () => {
+      if (activeTypes.has(type)) {
+        if (activeTypes.size === 1) return; // always keep at least one active
+        activeTypes.delete(type);
+        btn.classList.remove('active');
+      } else {
+        activeTypes.add(type);
+        btn.classList.add('active');
+      }
+      updateChart();
+    });
+
+    toggleContainer.appendChild(btn);
+  });
+}
+
+// --- Filtered data helpers ---
+function filteredColData() {
+  return cols.map(col => {
+    const items = (col.items || []).filter(item => activeTypes.has(item.type));
+    const totalHours = items.reduce((sum, item) => sum + item.hours, 0);
+    return { col, items, totalHours, n: items.length };
+  });
+}
+
+function computeColors(filtered) {
+  const maxHours = Math.max(...filtered.map(f => f.totalHours));
+  const bg = filtered.map(f =>
+    f.totalHours > 0 && f.totalHours === maxHours
+      ? 'rgba(237, 100, 66, 0.85)' : 'rgba(102, 126, 234, 0.75)'
+  );
+  const border = filtered.map(f =>
+    f.totalHours > 0 && f.totalHours === maxHours
+      ? 'rgba(200, 60, 20, 1)' : 'rgba(102, 126, 234, 1)'
+  );
+  return { bg, border, maxHours };
+}
+
+// --- External HTML tooltip ---
 const tooltipEl = document.getElementById('chartTooltip');
 let tooltipFrozen = false;
+let currentFiltered = filteredColData();
 
 tooltipEl.addEventListener('mouseenter', () => { tooltipFrozen = true; });
 tooltipEl.addEventListener('mouseleave', () => {
@@ -159,14 +236,16 @@ tooltipEl.addEventListener('mouseleave', () => {
 });
 
 function buildTooltip(colIndex) {
-  const col = cols[colIndex];
-  const totalDays = totals[colIndex];
-  const isMax = col.total_hours === maxTotal;
-  let html = `<div class="tt-title">${escapeHtml(col.name)}${
+  const fd = currentFiltered[colIndex];
+  const totalDays = Math.round(fd.totalHours / 24 * 10) / 10;
+  const maxHours = Math.max(...currentFiltered.map(f => f.totalHours));
+  const isMax = fd.totalHours > 0 && fd.totalHours === maxHours;
+
+  let html = `<div class="tt-title">${escapeHtml(fd.col.name)}${
     isMax ? ' <span class="tt-bottleneck">bottleneck</span>' : ''}</div>`;
-  html += `<div class="tt-total">${totalDays} days total &middot; ${col.n} items</div>`;
+  html += `<div class="tt-total">${totalDays} days total &middot; ${fd.n} items</div>`;
   html += '<div class="tt-items">';
-  (col.items || []).forEach(item => {
+  fd.items.forEach(item => {
     const style = typeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
     const url = data.ado_url_base + '/' + item.id;
     const days = Math.round(item.hours / 24 * 10) / 10;
@@ -180,7 +259,10 @@ function buildTooltip(colIndex) {
       <span class="tt-item-days">${days}d</span>
     </div>`;
   });
-  html += '</div><div class="tt-hint">Hover to keep open &middot; click to open in ADO</div>';
+  html += '</div>';
+  if (fd.items.length > 0) {
+    html += '<div class="tt-hint">Hover to keep open &middot; click to open in ADO</div>';
+  }
   return html;
 }
 
@@ -204,15 +286,20 @@ function externalTooltip(context) {
   tooltipEl.style.top = top + 'px';
 }
 
-new Chart(document.getElementById('timeInColumnsChart'), {
+// --- Chart ---
+const initFiltered = filteredColData();
+currentFiltered = initFiltered;
+const initColors = computeColors(initFiltered);
+
+const chart = new Chart(document.getElementById('timeInColumnsChart'), {
   type: 'bar',
   data: {
     labels,
     datasets: [{
       label: 'Total time (days)',
-      data: totals,
-      backgroundColor: bgColors,
-      borderColor: borderColors,
+      data: initFiltered.map(f => Math.round(f.totalHours / 24 * 10) / 10),
+      backgroundColor: initColors.bg,
+      borderColor: initColors.border,
       borderWidth: 1,
       borderRadius: 4,
     }]
@@ -230,6 +317,17 @@ new Chart(document.getElementById('timeInColumnsChart'), {
     }
   }
 });
+
+function updateChart() {
+  tooltipEl.style.display = 'none';
+  tooltipFrozen = false;
+  currentFiltered = filteredColData();
+  const colors = computeColors(currentFiltered);
+  chart.data.datasets[0].data = currentFiltered.map(f => Math.round(f.totalHours / 24 * 10) / 10);
+  chart.data.datasets[0].backgroundColor = colors.bg;
+  chart.data.datasets[0].borderColor = colors.border;
+  chart.update();
+}
 
 // Meta card
 const metaEl = document.getElementById('metaCard');
