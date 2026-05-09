@@ -2,7 +2,7 @@
 Full pipeline runner.
 
 Usage:
-  python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai]
+  python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai] [--window 6m]
 
 Runs:
   1. main.py           — fetch board context and work items from Azure DevOps
@@ -10,11 +10,17 @@ Runs:
   3. interpret_config.py — generate AI interpretation prompt → output/data/config_draft.json
 
 After step 3: review config_draft.json, edit if needed, save as output/data/config.json.
-Then run: python src/metrics.py  (once implemented)
+
+If output/data/config.json exists, also runs:
+  4. metrics.py        — calculate time-in-columns metric → output/metrics/time_in_columns.json
+  5. dashboard.py      — generate dashboard → output/dashboard.html
+
+Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 """
 
 import subprocess
 import sys
+from pathlib import Path
 
 
 def run(cmd, description):
@@ -29,7 +35,7 @@ def run(cmd, description):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python run.py <board-url> [--short-dwell-minutes N]", file=sys.stderr)
+        print("Usage: python run.py <board-url> [--short-dwell-minutes N] [--window 6m]", file=sys.stderr)
         sys.exit(1)
 
     board_url = sys.argv[1]
@@ -54,6 +60,16 @@ def main():
             print("Error: --interpret-mode requires a value (copilot, prompt, openai).", file=sys.stderr)
             sys.exit(1)
 
+    # Forward --window to metrics.py if provided (default: 6m)
+    window = "6m"
+    if "--window" in sys.argv:
+        idx = sys.argv.index("--window")
+        try:
+            window = sys.argv[idx + 1]
+        except IndexError:
+            print("Error: --window requires a value (e.g. 1m, 3m, 6m, 1y).", file=sys.stderr)
+            sys.exit(1)
+
     run(
         [sys.executable, "src/main.py", board_url],
         "Step 1 / 3 — Fetch from Azure DevOps",
@@ -74,10 +90,26 @@ def main():
     print("  output/data/data_quality_report.json")
     print("  output/data/excluded_items.json")
     print("  output/data/work_item_rework.json")
+
+    config_path = Path("output/data/config.json")
+    if not config_path.exists():
+        print()
+        print("Next: review output/data/config_draft.json, edit if needed,")
+        print("      then save as output/data/config.json to confirm your choices.")
+        print(f"      Once config.json exists, re-run with --window {window} to generate metrics.")
+        return
+
     print()
-    print("Next: review output/data/config_draft.json, edit if needed,")
-    print("      then save as output/data/config.json to confirm your choices.")
-    print("      Once config.json exists, run: python src/metrics.py")
+    run(
+        [sys.executable, "src/metrics.py", "--window", window],
+        f"Step 4 / 5 — Calculate metrics (window: {window})",
+    )
+    run(
+        [sys.executable, "src/dashboard.py"],
+        "Step 5 / 5 — Generate dashboard",
+    )
+    print()
+    print("Dashboard ready: output/dashboard.html")
 
 
 if __name__ == "__main__":
