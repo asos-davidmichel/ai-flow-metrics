@@ -1,15 +1,15 @@
 {
   "_note": "Reviewed and confirmed by user. Edit freely before saving as config.json.",
   "lead_time": {
-    "clock_start": "board_entry_date",
-    "clock_end": "outgoing_column"
+    "clock_start": {"type": "date_field", "value": "created_date"},
+    "clock_end": {"type": "column", "value": "Closed"}
   },
   "cycle_time": {
-    "clock_start": "first_inprogress_entry",
-    "clock_end": "outgoing_column"
+    "clock_start": {"type": "column", "value": "Ready for Dev"},
+    "clock_end": {"type": "column", "value": "Closed"}
   },
   "historical_column_mapping": {
-    "QA / External Review": null
+    "QA / External Review": "QA"
   },
   "flow_efficiency": {
     "active_columns": ["In Development", "In Review", "QA"],

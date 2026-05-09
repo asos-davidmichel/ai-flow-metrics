@@ -333,7 +333,23 @@ def _findings_as_text(findings):
 
 
 def build_plain_prompt(findings):
-    return _PREAMBLE + _findings_as_text(findings) + _DECISIONS
+    context_block = ""
+    if CONTEXT_PATH.exists():
+        context_block = (
+            "## Board structure and card rules (context.json)\n\n"
+            + CONTEXT_PATH.read_text(encoding="utf-8")
+            + "\n\n"
+        )
+
+    quality_block = ""
+    if QUALITY_PATH.exists():
+        quality_block = (
+            "## Data quality findings (data_quality_report.json)\n\n"
+            + QUALITY_PATH.read_text(encoding="utf-8")
+            + "\n\n"
+        )
+
+    return _PREAMBLE + context_block + quality_block + _findings_as_text(findings) + _DECISIONS
 
 
 def build_copilot_prompt(findings):
@@ -366,16 +382,22 @@ Its findings are embedded below.
 
 
 def write_copilot_prompt(findings):
+    import subprocess
     PROMPTS_DIR.mkdir(exist_ok=True)
     content = build_copilot_prompt(findings)
     PROMPT_MD_PATH.write_text(content, encoding="utf-8")
     print(f"Written: {PROMPT_MD_PATH}")
+    try:
+        subprocess.Popen(["code", str(PROMPT_MD_PATH)])
+        print("Opened in VS Code — click 'Run in Chat' and select your model.")
+    except FileNotFoundError:
+        print("Could not open VS Code automatically ('code' not on PATH).")
+        print(f"Open manually: {PROMPT_MD_PATH}")
     print()
     print("Next steps:")
-    print("  1. Open the prompt file in VS Code.")
-    print("  2. Run it in chat — select your preferred model.")
-    print("  3. Copy the JSON response into output/data/config_draft.json.")
-    print("  4. Review and edit config_draft.json, then save as output/data/config.json.")
+    print("  1. In VS Code chat, click 'Run in Chat' and select your model.")
+    print("  2. Copy the JSON response into output/data/config_draft.json.")
+    print("  3. Review and edit config_draft.json, then save as output/data/config.json.")
 
 
 # ---------------------------------------------------------------------------
