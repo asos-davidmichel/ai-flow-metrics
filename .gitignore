@@ -17,5 +17,9 @@ output/data/interpret_metrics_prompt.txt
 prompts/interpret_config.prompt.md
 prompts/interpret_metrics.prompt.md
 
+# Generated metrics and dashboard outputs — contain work item content
+output/metrics/
+output/dashboard.html
+
 # Confirmed interpretation choices — track these
 # output/data/config.json  ← intentionally NOT ignored
