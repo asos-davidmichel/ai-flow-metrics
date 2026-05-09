@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Generated data — fetched from Azure DevOps, may contain sensitive work item content
+output/data/context.json
+output/data/work_items.json
+output/data/work_item_history.json
+output/data/data_quality_report.json
+output/data/excluded_items.json
+output/data/work_item_rework.json
+
+# Generated AI prompts — regenerated each run, discard after use
+output/data/config_draft.json
+output/data/interpret_config_prompt.txt
+output/data/interpret_metrics_prompt.txt
+prompts/interpret_config.prompt.md
+prompts/interpret_metrics.prompt.md
+
+# Confirmed interpretation choices — track these
+# output/data/config.json  ← intentionally NOT ignored

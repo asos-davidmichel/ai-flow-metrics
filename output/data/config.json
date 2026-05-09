@@ -1,0 +1,24 @@
+{
+  "_note": "Reviewed and confirmed by user. Edit freely before saving as config.json.",
+  "lead_time": {
+    "clock_start": "board_entry_date",
+    "clock_end": "outgoing_column"
+  },
+  "cycle_time": {
+    "clock_start": "first_inprogress_entry",
+    "clock_end": "outgoing_column"
+  },
+  "historical_column_mapping": {
+    "QA / External Review": null
+  },
+  "flow_efficiency": {
+    "active_columns": ["In Development", "In Review", "QA"],
+    "waiting_columns": ["Ready for Dev", "External Review", "Ready for QA", "Ready for release"]
+  },
+  "blocked_time": {
+    "signals": [
+      {"mechanism": "tag", "tag": "blocked"},
+      {"mechanism": "tag", "tag": "hold"}
+    ]
+  }
+}
