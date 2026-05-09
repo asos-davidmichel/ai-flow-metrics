@@ -46,6 +46,58 @@
       margin-top: 8px; padding-left: 20px;
       font-size: 12px; color: #742a2a; line-height: 1.9;
     }
+    .chart-tooltip {
+      position: absolute;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.13);
+      max-height: 380px;
+      overflow-y: auto;
+      z-index: 100;
+      min-width: 300px;
+      max-width: 420px;
+      pointer-events: auto;
+      font-size: 13px;
+      display: none;
+    }
+    .tt-title {
+      font-weight: 700; font-size: 14px; color: #2d3748;
+      margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
+    }
+    .tt-bottleneck {
+      background: #fed7aa; color: #c05621;
+      font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 4px;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .tt-total { color: #718096; font-size: 12px; margin-bottom: 10px; }
+    .tt-items { display: flex; flex-direction: column; gap: 4px; }
+    .tt-item {
+      display: grid;
+      grid-template-columns: auto auto 1fr auto;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: #f7fafc;
+    }
+    .tt-badge {
+      color: white; font-size: 10px; font-weight: 700;
+      padding: 2px 5px; border-radius: 3px; white-space: nowrap;
+    }
+    .tt-link {
+      color: #667eea; text-decoration: none;
+      font-weight: 600; font-family: monospace; font-size: 12px; white-space: nowrap;
+    }
+    .tt-link:hover { text-decoration: underline; color: #764ba2; }
+    .tt-item-title {
+      color: #4a5568; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; font-size: 12px;
+    }
+    .tt-item-days { color: #718096; font-size: 11px; white-space: nowrap; font-weight: 600; }
+    .tt-hint { margin-top: 10px; font-size: 11px; color: #a0aec0; font-style: italic; text-align: center; }
   </style>
 </head>
 <body>
@@ -57,7 +109,7 @@
   </div>
 
   <div class="card">
-    <h2>Total time spent in each in-progress column (days, summed across all items in window)</h2>
+    <h2>Total time spent in each in-progress column</h2>
     <div class="chart-wrap">
       <canvas id="timeInColumnsChart"></canvas>
     </div>
@@ -66,8 +118,15 @@
   <div class="card meta" id="metaCard"></div>
 
 </div>
+<div id="chartTooltip" class="chart-tooltip"></div>
 <script>
 const data = /*DATA_PLACEHOLDER*/;
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 document.getElementById('subtitle').textContent =
   'Window: ' + data.window.start.slice(0, 10) + ' → ' + data.window.end.slice(0, 10) +
@@ -78,42 +137,96 @@ document.getElementById('subtitle').textContent =
 const cols = data.columns.filter(c => c.column_type === 'inProgress');
 const labels = cols.map(c => c.name);
 const totals = cols.map(c => Math.round(c.total_hours / 24 * 10) / 10);
+const typeStyles = data.work_item_type_styles || {};
+
+// Bottleneck: the inProgress column with the highest total hours
+const maxTotal = Math.max(...cols.map(c => c.total_hours));
+const bgColors = cols.map(c =>
+  c.total_hours === maxTotal ? 'rgba(237, 100, 66, 0.85)' : 'rgba(102, 126, 234, 0.75)'
+);
+const borderColors = cols.map(c =>
+  c.total_hours === maxTotal ? 'rgba(200, 60, 20, 1)' : 'rgba(102, 126, 234, 1)'
+);
+
+// External HTML tooltip
+const tooltipEl = document.getElementById('chartTooltip');
+let tooltipFrozen = false;
+
+tooltipEl.addEventListener('mouseenter', () => { tooltipFrozen = true; });
+tooltipEl.addEventListener('mouseleave', () => {
+  tooltipFrozen = false;
+  tooltipEl.style.display = 'none';
+});
+
+function buildTooltip(colIndex) {
+  const col = cols[colIndex];
+  const totalDays = totals[colIndex];
+  const isMax = col.total_hours === maxTotal;
+  let html = `<div class="tt-title">${escapeHtml(col.name)}${
+    isMax ? ' <span class="tt-bottleneck">bottleneck</span>' : ''}</div>`;
+  html += `<div class="tt-total">${totalDays} days total &middot; ${col.n} items</div>`;
+  html += '<div class="tt-items">';
+  (col.items || []).forEach(item => {
+    const style = typeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
+    const url = data.ado_url_base + '/' + item.id;
+    const days = Math.round(item.hours / 24 * 10) / 10;
+    const iconHtml = style.icon_url
+      ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;border-radius:2px;" onerror="this.style.display='none'">`
+      : `<span class="tt-badge" style="background:${escapeHtml(style.color)}">${escapeHtml(style.abbr)}</span>`;
+    html += `<div class="tt-item">
+      ${iconHtml}
+      <a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${item.id}</a>
+      <span class="tt-item-title">${escapeHtml(item.title)}</span>
+      <span class="tt-item-days">${days}d</span>
+    </div>`;
+  });
+  html += '</div><div class="tt-hint">Hover to keep open &middot; click to open in ADO</div>';
+  return html;
+}
+
+function externalTooltip(context) {
+  const { tooltip } = context;
+  if (tooltip.opacity === 0) {
+    if (!tooltipFrozen) tooltipEl.style.display = 'none';
+    return;
+  }
+  const colIndex = tooltip.dataPoints[0].dataIndex;
+  tooltipEl.innerHTML = buildTooltip(colIndex);
+  tooltipEl.style.display = 'block';
+
+  const rect = context.chart.canvas.getBoundingClientRect();
+  let left = rect.left + window.pageXOffset + tooltip.caretX + 16;
+  const top = rect.top + window.pageYOffset + tooltip.caretY;
+  if (left + 440 > window.innerWidth + window.pageXOffset) {
+    left = rect.left + window.pageXOffset + tooltip.caretX - 440;
+  }
+  tooltipEl.style.left = left + 'px';
+  tooltipEl.style.top = top + 'px';
+}
 
 new Chart(document.getElementById('timeInColumnsChart'), {
   type: 'bar',
   data: {
     labels,
-    datasets: [
-      {
-        label: 'Total time (days)',
-        data: totals,
-        backgroundColor: 'rgba(102, 126, 234, 0.75)',
-        borderColor: 'rgba(102, 126, 234, 1)',
-        borderWidth: 1,
-        borderRadius: 4,
-      }
-    ]
+    datasets: [{
+      label: 'Total time (days)',
+      data: totals,
+      backgroundColor: bgColors,
+      borderColor: borderColors,
+      borderWidth: 1,
+      borderRadius: 4,
+    }]
   },
   options: {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
-      tooltip: {
-        callbacks: {
-          afterBody: (items) => {
-            const col = cols[items[0].dataIndex];
-            return ['n = ' + col.n + ' items'];
-          }
-        }
-      }
+      tooltip: { enabled: false, external: externalTooltip }
     },
     scales: {
       x: { grid: { display: false } },
-      y: {
-        title: { display: true, text: 'Days' },
-        beginAtZero: true
-      }
+      y: { title: { display: true, text: 'Days' }, beginAtZero: true }
     }
   }
 });
@@ -123,12 +236,12 @@ const metaEl = document.getElementById('metaCard');
 const colMapping = data.config_used.historical_column_mapping;
 const mappingEntries = Object.entries(colMapping);
 const mappingHtml = mappingEntries.length > 0
-  ? mappingEntries.map(([k, v]) => '<span class="tag">' + k + ' → ' + (v ?? 'excluded') + '</span>').join('')
+  ? mappingEntries.map(([k, v]) => '<span class="tag">' + escapeHtml(k) + ' → ' + escapeHtml(v ?? 'excluded') + '</span>').join('')
   : '<em>none</em>';
 
 let warningsHtml = '';
 if (data.warnings.length > 0) {
-  const items = data.warnings.map(w => '<li>' + w.replace(/</g, '&lt;') + '</li>').join('');
+  const items = data.warnings.map(w => '<li>' + escapeHtml(w) + '</li>').join('');
   warningsHtml =
     '<details class="warnings"><summary>' +
     data.warnings.length + ' warning' + (data.warnings.length !== 1 ? 's' : '') +
@@ -136,7 +249,7 @@ if (data.warnings.length > 0) {
 }
 
 metaEl.innerHTML =
-  '<strong>Source files:</strong> ' + data.source_files.map(f => f.replace(/\\/g, '/')).join(', ') + '<br>' +
+  '<strong>Source files:</strong> ' + data.source_files.map(f => escapeHtml(f.replace(/\\/g, '/'))).join(', ') + '<br>' +
   '<strong>Excluded items:</strong> ' + (data.excluded_item_ids.length > 0 ? data.excluded_item_ids.join(', ') : 'none') + '<br>' +
   '<strong>Historical column mapping applied:</strong> ' + mappingHtml +
   warningsHtml;

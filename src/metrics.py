@@ -30,6 +30,20 @@ CONTEXT_PATH = DATA_DIR / "context.json"
 CONFIG_PATH = DATA_DIR / "config.json"
 HISTORY_PATH = DATA_DIR / "work_item_history.json"
 EXCLUDED_PATH = DATA_DIR / "excluded_items.json"
+WORK_ITEMS_PATH = DATA_DIR / "work_items.json"
+
+# ADO work item type styles (colors match ADO conventions; abbr used as badge label).
+# TODO: fetch these from the ADO API in main.py and store in context.json.
+ADO_TYPE_STYLES = {
+    "Bug":                  {"color": "#CC293D", "abbr": "Bug"},
+    "Product Backlog Item": {"color": "#009CCC", "abbr": "PBI"},
+    "User Story":           {"color": "#009CCC", "abbr": "Story"},
+    "Spike":                {"color": "#773B93", "abbr": "Spike"},
+    "Issue":                {"color": "#B4009E", "abbr": "Issue"},
+    "Task":                 {"color": "#F2CB1D", "abbr": "Task"},
+    "Feature":              {"color": "#773B93", "abbr": "Feature"},
+    "Epic":                 {"color": "#FF7B00", "abbr": "Epic"},
+}
 
 OUTPUT_PATH = METRICS_DIR / "time_in_columns.json"
 
@@ -72,7 +86,7 @@ def main():
     print(f"Window: {window_start.date()} → {window_end.date()} ({args.window})")
 
     # --- Load inputs ---
-    for path in (CONTEXT_PATH, CONFIG_PATH, HISTORY_PATH, EXCLUDED_PATH):
+    for path in (CONTEXT_PATH, CONFIG_PATH, HISTORY_PATH, EXCLUDED_PATH, WORK_ITEMS_PATH):
         if not path.exists():
             print(f"Error: required file not found: {path}", file=sys.stderr)
             sys.exit(1)
@@ -82,6 +96,24 @@ def main():
     history = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
     excluded_raw = json.loads(EXCLUDED_PATH.read_text(encoding="utf-8"))
     excluded_ids = set(excluded_raw) if isinstance(excluded_raw, list) else set()
+    work_items_raw = json.loads(WORK_ITEMS_PATH.read_text(encoding="utf-8"))
+
+    # Item metadata lookup: id → {title, type}
+    item_meta = {
+        item["id"]: {"title": item.get("title", ""), "type": item.get("type", "")}
+        for item in work_items_raw
+    }
+
+    # ADO URL base and type styles for the dashboard.
+    # Use styles fetched from ADO API (stored in context.json); fall back to
+    # hardcoded colours for any type not covered.
+    ado_url_base = f"https://dev.azure.com/{context['org']}/{context['project']}/_workitems/edit"
+    present_types = sorted({m["type"] for m in item_meta.values() if m["type"]})
+    fetched_styles = context.get("work_item_type_styles", {})
+    work_item_type_styles = {
+        t: fetched_styles.get(t) or ADO_TYPE_STYLES.get(t, {"color": "#718096", "abbr": t[:4]})
+        for t in present_types
+    }
 
     # Board column order, known names, and types from context
     board_columns = [col["name"] for col in context["columns"]]
@@ -143,8 +175,11 @@ def main():
             column_hours[col_name] = column_hours.get(col_name, 0) + hours
 
         if column_hours:
+            meta = item_meta.get(item_id, {})
             items_output.append({
                 "id": item_id,
+                "title": meta.get("title", ""),
+                "type": meta.get("type", ""),
                 "column_hours": {k: round(v, 2) for k, v in column_hours.items()},
                 "warnings": item_warnings,
             })
@@ -154,9 +189,16 @@ def main():
 
     # --- Aggregate per column ---
     col_accumulator: dict = {}
+    col_item_accumulator: dict = {}
     for item in items_output:
         for col, hours in item["column_hours"].items():
             col_accumulator.setdefault(col, []).append(hours)
+            col_item_accumulator.setdefault(col, []).append({
+                "id": item["id"],
+                "title": item["title"],
+                "type": item["type"],
+                "hours": hours,
+            })
 
     # Order by board order
     ordered_cols = [c for c in board_columns if c in col_accumulator]
@@ -164,6 +206,10 @@ def main():
     columns_output = []
     for i, col_name in enumerate(ordered_cols):
         hours_list = col_accumulator[col_name]
+        col_items = sorted(
+            col_item_accumulator.get(col_name, []),
+            key=lambda x: x["hours"], reverse=True
+        )
         columns_output.append({
             "name": col_name,
             "column_type": board_column_type.get(col_name, "unknown"),
@@ -172,6 +218,7 @@ def main():
             "total_hours": round(sum(hours_list), 2),
             "mean_hours": round(statistics.mean(hours_list), 2),
             "median_hours": round(statistics.median(hours_list), 2),
+            "items": col_items,
         })
 
     output = {
@@ -187,10 +234,13 @@ def main():
             str(CONFIG_PATH),
             str(CONTEXT_PATH),
             str(EXCLUDED_PATH),
+            str(WORK_ITEMS_PATH),
         ],
         "config_used": {
             "historical_column_mapping": col_mapping,
         },
+        "ado_url_base": ado_url_base,
+        "work_item_type_styles": work_item_type_styles,
         "excluded_item_ids": sorted(excluded_ids),
         "item_count": len(items_output),
         "warnings": all_warnings,

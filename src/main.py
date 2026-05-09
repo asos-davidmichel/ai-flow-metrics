@@ -9,6 +9,7 @@ from ado_client import (
     discover_board,
     fetch_work_item_history,
     fetch_work_item_ids,
+    fetch_work_item_type_styles,
     fetch_work_items,
     get_board_columns,
     get_board_rows,
@@ -155,6 +156,14 @@ def main():
         print(f"Error fetching work items: {e}", file=sys.stderr)
         sys.exit(1)
 
+    print("\nFetching work item type styles...")
+    work_item_type_styles = fetch_work_item_type_styles(org, project, work_item_types, headers)
+    if work_item_type_styles:
+        for wit, style in work_item_type_styles.items():
+            print(f"  {wit}: color={style['color']}")
+    else:
+        print("  (none fetched — will use fallback colours in metrics.py)")
+
     output = {
         "org": org,
         "project": project,
@@ -174,6 +183,7 @@ def main():
             for c in columns
         ],
         "work_item_types": work_item_types,
+        "work_item_type_styles": work_item_type_styles,
         "state_mappings": state_mappings,
         "swimlanes": [{"id": r["id"], "name": r["name"], "color": r.get("color")} for r in rows],
         "card_rules": {
