@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flow Metrics — Time in Columns</title>
+  <title>Flow Metrics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -137,84 +137,129 @@
     }
     .type-toggle:hover { opacity: 0.75; }
     .type-toggle.active:hover { opacity: 0.9; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .tab-btn {
+      padding: 10px 22px;
+      border: none;
+      background: none;
+      font: 600 14px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #718096;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      border-radius: 6px 6px 0 0;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: #4a5568; }
+    .tab-btn.active { color: #667eea; border-bottom-color: #667eea; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Side-by-side card rows */
+    .card-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    .card-row .card { margin-bottom: 0; }
   </style>
 </head>
 <body>
 <div class="container">
 
   <div class="header">
-    <h1>Flow Metrics — Time in Columns</h1>
+    <h1>Flow Metrics</h1>
     <p id="subtitle"></p>
   </div>
 
-  <div class="card">
-    <div class="card-header">
-      <h2>Total time spent in each in-progress column</h2>
-      <div id="typeToggles" class="type-toggles"></div>
-    </div>
-    <div class="chart-wrap">
-      <canvas id="timeInColumnsChart"></canvas>
-    </div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="delivery">Delivery</button>
+    <button class="tab-btn" data-tab="process">Process</button>
   </div>
 
-  <!-- Cycle time charts (shown if data is available) -->
-  <div id="cycleTimeSection" style="display:none;">
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h2>Cycle time &mdash; scatter</h2>
+  <!-- ── Delivery tab ─────────────────────────────────────────────── -->
+  <div id="tab-delivery" class="tab-panel active">
 
+    <!-- Throughput: full width -->
+    <div id="throughputSection" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <h2>Throughput &mdash; items completed per week &amp; trend</h2>
         </div>
-        <div id="ctToggles" class="type-toggles"></div>
-      </div>
-      <div class="chart-wrap" style="height:400px;">
-        <canvas id="ctScatterChart"></canvas>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <h2>Cycle time &mdash; weekly average &amp; trend</h2>
-      </div>
-      <div class="chart-wrap">
-        <canvas id="ctRollingChart"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <!-- Lead time charts (shown if data is available) -->
-  <div id="leadTimeSection" style="display:none;">
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h2>Lead time &mdash; scatter</h2>
+        <div class="chart-wrap">
+          <canvas id="throughputChart"></canvas>
         </div>
-        <div id="ltToggles" class="type-toggles"></div>
-      </div>
-      <div class="chart-wrap" style="height:400px;">
-        <canvas id="ltScatterChart"></canvas>
       </div>
     </div>
-    <div class="card">
-      <div class="card-header">
-        <h2>Lead time &mdash; weekly average &amp; trend</h2>
-      </div>
-      <div class="chart-wrap">
-        <canvas id="ltRollingChart"></canvas>
-      </div>
-    </div>
-  </div>
 
-  <!-- Throughput chart (derived from cycle time completions) -->
-  <div id="throughputSection" style="display:none;">
-    <div class="card">
-      <div class="card-header">
-        <h2>Throughput &mdash; items completed per week &amp; trend</h2>
-      </div>
-      <div class="chart-wrap">
-        <canvas id="throughputChart"></canvas>
+    <!-- Cycle time: scatter + rolling side by side -->
+    <div id="cycleTimeSection" style="display:none;">
+      <div class="card-row">
+        <div class="card">
+          <div class="card-header">
+            <div><h2>Cycle time &mdash; scatter</h2></div>
+            <div id="ctToggles" class="type-toggles"></div>
+          </div>
+          <div class="chart-wrap" style="height:340px;">
+            <canvas id="ctScatterChart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h2>Cycle time &mdash; weekly average &amp; trend</h2>
+          </div>
+          <div class="chart-wrap" style="height:340px;">
+            <canvas id="ctRollingChart"></canvas>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
+
+    <!-- Lead time: scatter + rolling side by side -->
+    <div id="leadTimeSection" style="display:none;">
+      <div class="card-row">
+        <div class="card">
+          <div class="card-header">
+            <div><h2>Lead time &mdash; scatter</h2></div>
+            <div id="ltToggles" class="type-toggles"></div>
+          </div>
+          <div class="chart-wrap" style="height:340px;">
+            <canvas id="ltScatterChart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h2>Lead time &mdash; weekly average &amp; trend</h2>
+          </div>
+          <div class="chart-wrap" style="height:340px;">
+            <canvas id="ltRollingChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-delivery -->
+
+  <!-- ── Process tab ──────────────────────────────────────────────── -->
+  <div id="tab-process" class="tab-panel">
+    <div class="card">
+      <div class="card-header">
+        <h2>Total time spent in each in-progress column</h2>
+        <div id="typeToggles" class="type-toggles"></div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="timeInColumnsChart"></canvas>
+      </div>
+    </div>
+  </div><!-- /tab-process -->
 
 </div>
 <div id="sharedTooltip" class="chart-tooltip"></div>
@@ -330,9 +375,47 @@ function weeklyToChart(weekly) {
     .filter(p => p !== null);
   return { means, trend };
 }
+// ── Shared chart plugins ───────────────────────────────────────────────
+// Draws coloured badge labels at the right edge of reference lines (_ref datasets).
+const refLabelPlugin = {
+  id: 'refLabels',
+  afterDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!scales.y || !chartArea) return;
+    const labelMap = { Mean: 'Avg', P50: 'Median', P85: '85th' };
+    chart.data.datasets.forEach(ds => {
+      if (!ds._ref || !ds.data.length) return;
+      const val = ds.data[0].y;
+      if (val == null) return;
+      const yPx = scales.y.getPixelForValue(val);
+      const prefix = labelMap[ds.label] || ds.label;
+      const text = `${prefix}: ${val}d`;
+      ctx.save();
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      const textW = ctx.measureText(text).width;
+      const padX = 7, bh = 20;
+      const bw = textW + padX * 2;
+      const bx = chartArea.right - bw - 4;
+      const by = yPx - bh / 2;
+      const r = 4;
+      ctx.fillStyle = ds.borderColor;
+      ctx.beginPath();
+      ctx.moveTo(bx + r, by); ctx.lineTo(bx + bw - r, by);
+      ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+      ctx.lineTo(bx + bw, by + bh - r);
+      ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+      ctx.lineTo(bx + r, by + bh);
+      ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+      ctx.lineTo(bx, by + r);
+      ctx.arcTo(bx, by, bx + r, by, r);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'white'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, bx + bw / 2, yPx);
+      ctx.restore();
+    });
+  }
+};
 // ────────────────────────────────────────────────────────────────────
-
-document.getElementById('subtitle').textContent =
   'Window: ' + data.window.start.slice(0, 10) + ' → ' + data.window.end.slice(0, 10) +
   ' (' + data.window.parameter + ')' +
   '  |  Items with activity in window: ' + data.item_count +
@@ -465,29 +548,6 @@ function updateChart() {
   chart.update();
 }
 
-// Meta card
-const metaEl = document.getElementById('metaCard');
-const colMapping = data.config_used.historical_column_mapping;
-const mappingEntries = Object.entries(colMapping);
-const mappingHtml = mappingEntries.length > 0
-  ? mappingEntries.map(([k, v]) => '<span class="tag">' + escapeHtml(k) + ' → ' + escapeHtml(v ?? 'excluded') + '</span>').join('')
-  : '<em>none</em>';
-
-let warningsHtml = '';
-if (data.warnings.length > 0) {
-  const items = data.warnings.map(w => '<li>' + escapeHtml(w) + '</li>').join('');
-  warningsHtml =
-    '<details class="warnings"><summary>' +
-    data.warnings.length + ' warning' + (data.warnings.length !== 1 ? 's' : '') +
-    '</summary><ul>' + items + '</ul></details>';
-}
-
-metaEl.innerHTML =
-  '<strong>Source files:</strong> ' + data.source_files.map(f => escapeHtml(f.replace(/\\/g, '/'))).join(', ') + '<br>' +
-  '<strong>Excluded items:</strong> ' + (data.excluded_item_ids.length > 0 ? data.excluded_item_ids.join(', ') : 'none') + '<br>' +
-  '<strong>Historical column mapping applied:</strong> ' + mappingHtml +
-  warningsHtml;
-
 // ====================================================================
 // Cycle time charts
 // ====================================================================
@@ -593,50 +653,6 @@ metaEl.innerHTML =
 
   // --- Scatter chart ---
   const activeItemsForRef = () => ctItems.filter(i => ctActiveTypes.has(i.type));
-
-  // Plugin: draw coloured badge labels at right edge of each reference line
-  const refLabelPlugin = {
-    id: 'refLabels',
-    afterDraw(chart) {
-      const { ctx, chartArea, scales } = chart;
-      if (!scales.y || !chartArea) return;
-      const labelMap = { Mean: 'Avg', P50: 'Median', P85: '85th' };
-      chart.data.datasets.forEach(ds => {
-        if (!ds._ref || !ds.data.length) return;
-        const val = ds.data[0].y;
-        if (val == null) return;
-        const yPx = scales.y.getPixelForValue(val);
-        const prefix = labelMap[ds.label] || ds.label;
-        const text = `${prefix}: ${val}d`;
-        ctx.save();
-        ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        const textW = ctx.measureText(text).width;
-        const padX = 7, bh = 20;
-        const bw = textW + padX * 2;
-        const bx = chartArea.right - bw - 4;
-        const by = yPx - bh / 2;
-        const r = 4;
-        ctx.fillStyle = ds.borderColor;
-        ctx.beginPath();
-        ctx.moveTo(bx + r, by);
-        ctx.lineTo(bx + bw - r, by);
-        ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
-        ctx.lineTo(bx + bw, by + bh - r);
-        ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
-        ctx.lineTo(bx + r, by + bh);
-        ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
-        ctx.lineTo(bx, by + r);
-        ctx.arcTo(bx, by, bx + r, by, r);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, bx + bw / 2, yPx);
-        ctx.restore();
-      });
-    }
-  };
 
   const scatterChart = new Chart(document.getElementById('ctScatterChart'), {
     type: 'scatter',
@@ -1074,6 +1090,17 @@ metaEl.innerHTML =
     },
   });
 })();
+
+// ── Tab switching ────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    sharedTooltip.reset();
+  });
+});
 </script>
 </body>
 </html>
