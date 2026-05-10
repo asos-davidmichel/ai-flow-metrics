@@ -258,6 +258,7 @@
     <button class="tab-btn" data-tab="process">🌊 Flow</button>
     <button class="tab-btn" data-tab="wip">🔄 WIP</button>
     <button class="tab-btn" data-tab="blockers">🚧 Blockers</button>
+    <button class="tab-btn" data-tab="efficiency">⚡ Efficiency</button>
   </div>
 
   <!-- ── Overview tab ─────────────────────────────────────────────── -->
@@ -498,6 +499,32 @@
     </div>
 
   </div><!-- /tab-blockers -->
+
+  <!-- ── Efficiency tab ───────────────────────────────────────────── -->
+  <div id="tab-efficiency" class="tab-panel">
+
+    <!-- Row 1: Work Start Efficiency histogram + sidebar -->
+    <div class="card">
+      <div class="card-header"><h2>Work Start Efficiency (Cycle / Lead Time)</h2></div>
+      <p style="font-size:13px;color:#718096;margin-bottom:12px;">How much of an item&rsquo;s lead time was actual cycle time? Higher % = work started sooner after it was created.</p>
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start;">
+        <div class="chart-wrap" style="height:300px;"><canvas id="startEfficiencyChart"></canvas></div>
+        <div id="startEfficiencySidebar" style="font-size:13px;"></div>
+      </div>
+    </div>
+
+    <!-- Row 2: Flow Efficiency histogram + sidebar -->
+    <div class="card">
+      <div class="card-header"><h2>Flow Efficiency within Cycle Time</h2></div>
+      <p style="font-size:13px;color:#718096;margin-bottom:4px;">What proportion of cycle time was spent in <strong>active</strong> columns vs <strong>waiting</strong> columns?</p>
+      <div id="flowEffCols" style="font-size:12px;color:#718096;margin-bottom:12px;"></div>
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start;">
+        <div class="chart-wrap" style="height:300px;"><canvas id="flowEfficiencyChart"></canvas></div>
+        <div id="flowEfficiencySidebar" style="font-size:13px;"></div>
+      </div>
+    </div>
+
+  </div><!-- /tab-efficiency -->
 
 </div>
 <div id="sharedTooltip" class="chart-tooltip"></div>
@@ -3268,6 +3295,222 @@ function updateChart() {
       },
     },
     plugins: [makeIconPlugin(lostItemsFn)],
+  });
+})();
+// ───────────────────────────────────────────────────────────────────────
+
+// ── Efficiency tab ─────────────────────────────────────────────────────
+(() => {
+  const ct  = dashboard.cycle_time  || {};
+  const lt  = dashboard.lead_time   || {};
+  const tic = dashboard.time_in_columns || {};
+  const cfg = dashboard.config      || {};
+  const ctx = dashboard.context     || {};
+  const typeStyles = ctx.work_item_type_styles || {};
+  const adoBase    = ct.ado_url_base || tic.ado_url_base || '';
+
+  const ctItems = ct.items || [];
+  const ltItems = lt.items || [];
+  const ticItems = tic.items || [];
+
+  // ── Chart 1: Work Start Efficiency (CT / LT) ───────────────────────
+  const ltMap  = new Map(ltItems.map(i => [i.id, i]));
+  const ctMap  = new Map(ctItems.map(i => [i.id, i]));
+  const ticMap = new Map(ticItems.map(i => [i.id, i]));
+
+  const startEffItems = [];
+  ctItems.forEach(ci => {
+    const li = ltMap.get(ci.id);
+    if (!li || li.lead_time_days <= 0) return;
+    const eff = Math.round(ci.cycle_time_days / li.lead_time_days * 1000) / 10;
+    if (eff < 0 || eff > 100) return;
+    startEffItems.push({ id: ci.id, title: ci.title, type: ci.type, eff, ct: ci.cycle_time_days, lt: li.lead_time_days });
+  });
+
+  // Histogram buckets: 0-15, 15-30, …, 90-100
+  const bucketSize = 15;
+  const buckets = [];
+  for (let lo = 0; lo < 100; lo += bucketSize) {
+    const hi = Math.min(lo + bucketSize, 100);
+    const label = `${lo}\u2013${hi}%`;
+    const items = startEffItems.filter(i => i.eff >= lo && (hi === 100 ? i.eff <= hi : i.eff < hi));
+    buckets.push({ label, lo, hi, items });
+  }
+
+  // Stats
+  const sorted1 = [...startEffItems].sort((a, b) => a.eff - b.eff);
+  const vals1   = sorted1.map(i => i.eff);
+  const mean1   = vals1.length ? Math.round(vals1.reduce((s,v)=>s+v,0)/vals1.length*10)/10 : 0;
+  const p50_1   = vals1.length ? vals1[Math.floor(vals1.length*0.5)] : 0;
+  const p85_1   = vals1.length ? vals1[Math.floor(vals1.length*0.85)] : 0;
+
+  // Sidebar
+  const sidebarEl1 = document.getElementById('startEfficiencySidebar');
+  const worst3 = sorted1.slice(0, 3);
+  const best3  = sorted1.slice(-3).reverse();
+  function sidebarItem(item, colourClass) {
+    const url = adoBase ? `${adoBase}/${item.id}` : '';
+    const link = url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:#667eea;font-weight:600;">#${item.id}</a>` : `#${item.id}`;
+    const short = (item.title||'').length > 55 ? item.title.slice(0,55)+'\u2026' : (item.title||'');
+    return `<div style="margin-bottom:10px;">${link} <span style="color:${colourClass};font-weight:600;">${item.eff}%</span><br><span style="color:#4a5568;font-size:12px;">${escapeHtml(short)}</span></div>`;
+  }
+  sidebarEl1.innerHTML =
+    `<div style="color:#718096;font-size:12px;margin-bottom:10px;">Using ${startEffItems.length} completed items</div>` +
+    `<div style="color:#e53e3e;font-weight:700;margin-bottom:6px;">Worst (lowest %)</div>` +
+    worst3.map(i => sidebarItem(i, '#e53e3e')).join('') +
+    `<div style="color:#38a169;font-weight:700;margin:12px 0 6px;">Best (highest %)</div>` +
+    best3.map(i => sidebarItem(i, '#38a169')).join('');
+
+  new Chart(document.getElementById('startEfficiencyChart'), {
+    type: 'bar',
+    data: {
+      labels: buckets.map(b => b.label),
+      datasets: [{ label: 'Items', data: buckets.map(b => b.items.length), backgroundColor: '#4299e1', borderRadius: 3 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false, external: c => {
+          if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+          const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
+          const bkt = buckets[idx]; if (!bkt) return;
+          let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(bkt.label)} &mdash; ${bkt.items.length} items</div>`;
+          bkt.items.forEach(item => {
+            const url = adoBase ? `${adoBase}/${item.id}` : '';
+            html += ttItemRow(typeStyles[item.type]||{}, url, item.id, item.title||'', Math.round(item.eff));
+          });
+          sharedTooltip.show(html + TT_HINT, c);
+        }},
+        annotation: {},
+      },
+      scales: {
+        x: { grid: { display: false }, title: { display: true, text: 'Efficiency % bucket', color: '#718096', font: { size: 11 } } },
+        y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#e2e8f0' }, title: { display: true, text: 'Completed items', color: '#718096', font: { size: 11 } } },
+      },
+    },
+    plugins: [{
+      id: 'startEffStatLines',
+      afterDraw(chart) {
+        const { ctx: c2, scales, chartArea } = chart;
+        [[p50_1, '#38b2ac', 'P50 ' + p50_1 + '%'], [mean1, '#718096', 'Mean ' + mean1 + '%'], [p85_1, '#9f7aea', 'P85 ' + p85_1 + '%']].forEach(([val, colour, lbl]) => {
+          // Find which bucket this falls in
+          const bIdx = buckets.findIndex(b => val >= b.lo && val < b.hi + 0.001);
+          if (bIdx < 0) return;
+          const x = scales.x.getPixelForValue(bIdx);
+          c2.save();
+          c2.setLineDash([4, 3]);
+          c2.strokeStyle = colour;
+          c2.lineWidth = 1.5;
+          c2.beginPath(); c2.moveTo(x, chartArea.top); c2.lineTo(x, chartArea.bottom); c2.stroke();
+          c2.setLineDash([]);
+          c2.fillStyle = colour;
+          c2.font = '11px system-ui, sans-serif';
+          c2.textAlign = 'center';
+          c2.fillText('\u25CF' + lbl, x, chartArea.top + 10);
+          c2.restore();
+        });
+      },
+    }],
+  });
+
+  // ── Chart 2: Flow Efficiency within Cycle Time ────────────────────
+  const flowCfg     = cfg.flow_efficiency || {};
+  const activeCols  = new Set(flowCfg.active_columns  || []);
+  const waitingCols = new Set(flowCfg.waiting_columns || []);
+
+  // Show column categorisation
+  const colsEl = document.getElementById('flowEffCols');
+  if (activeCols.size || waitingCols.size) {
+    colsEl.innerHTML =
+      `<span style="color:#38a169;font-weight:600;">Active:</span> ${[...activeCols].map(c=>`<span style="background:#c6f6d5;border-radius:4px;padding:1px 6px;">${escapeHtml(c)}</span>`).join(' ')} &nbsp;` +
+      `<span style="color:#c05621;font-weight:600;">Waiting:</span> ${[...waitingCols].map(c=>`<span style="background:#feebc8;border-radius:4px;padding:1px 6px;">${escapeHtml(c)}</span>`).join(' ')}`;
+  }
+
+  const flowEffItems = [];
+  ticItems.forEach(ti => {
+    const ch = ti.column_hours || {};
+    const activeH  = [...activeCols].reduce((s, c) => s + (ch[c] || 0), 0);
+    const waitingH = [...waitingCols].reduce((s, c) => s + (ch[c] || 0), 0);
+    const totalH   = activeH + waitingH;
+    if (totalH <= 0) return;
+    const eff = Math.round(activeH / totalH * 1000) / 10;
+    flowEffItems.push({ id: ti.id, title: ti.title, type: ti.type, eff, activeH: Math.round(activeH*10)/10, totalH: Math.round(totalH*10)/10 });
+  });
+
+  const sortedF = [...flowEffItems].sort((a, b) => a.eff - b.eff);
+  const valsF   = sortedF.map(i => i.eff);
+  const meanF   = valsF.length ? Math.round(valsF.reduce((s,v)=>s+v,0)/valsF.length*10)/10 : 0;
+  const p50F    = valsF.length ? valsF[Math.floor(valsF.length*0.5)] : 0;
+  const p85F    = valsF.length ? valsF[Math.floor(valsF.length*0.85)] : 0;
+
+  const bucketsF = [];
+  for (let lo = 0; lo < 100; lo += bucketSize) {
+    const hi = Math.min(lo + bucketSize, 100);
+    const label = `${lo}\u2013${hi}%`;
+    const items = flowEffItems.filter(i => i.eff >= lo && (hi === 100 ? i.eff <= hi : i.eff < hi));
+    bucketsF.push({ label, lo, hi, items });
+  }
+
+  const sidebarEl2 = document.getElementById('flowEfficiencySidebar');
+  const worstF = sortedF.slice(0, 3);
+  const bestF  = sortedF.slice(-3).reverse();
+  sidebarEl2.innerHTML =
+    `<div style="color:#718096;font-size:12px;margin-bottom:10px;">Using ${flowEffItems.length} items</div>` +
+    `<div style="color:#e53e3e;font-weight:700;margin-bottom:6px;">Worst (lowest %)</div>` +
+    worstF.map(i => sidebarItem(i, '#e53e3e')).join('') +
+    `<div style="color:#38a169;font-weight:700;margin:12px 0 6px;">Best (highest %)</div>` +
+    bestF.map(i => sidebarItem(i, '#38a169')).join('');
+
+  new Chart(document.getElementById('flowEfficiencyChart'), {
+    type: 'bar',
+    data: {
+      labels: bucketsF.map(b => b.label),
+      datasets: [{ label: 'Items', data: bucketsF.map(b => b.items.length), backgroundColor: '#9f7aea', borderRadius: 3 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false, external: c => {
+          if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+          const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
+          const bkt = bucketsF[idx]; if (!bkt) return;
+          let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(bkt.label)} &mdash; ${bkt.items.length} items</div>`;
+          bkt.items.forEach(item => {
+            const url = adoBase ? `${adoBase}/${item.id}` : '';
+            html += ttItemRow(typeStyles[item.type]||{}, url, item.id, item.title||'', Math.round(item.eff));
+          });
+          sharedTooltip.show(html + TT_HINT, c);
+        }},
+      },
+      scales: {
+        x: { grid: { display: false }, title: { display: true, text: 'Efficiency % bucket', color: '#718096', font: { size: 11 } } },
+        y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#e2e8f0' }, title: { display: true, text: 'Items', color: '#718096', font: { size: 11 } } },
+      },
+    },
+    plugins: [{
+      id: 'flowEffStatLines',
+      afterDraw(chart) {
+        const { ctx: c2, scales, chartArea } = chart;
+        [[p50F, '#38b2ac', 'P50 '+p50F+'%'], [meanF, '#718096', 'Mean '+meanF+'%'], [p85F, '#9f7aea', 'P85 '+p85F+'%']].forEach(([val, colour, lbl]) => {
+          const bIdx = bucketsF.findIndex(b => val >= b.lo && val < b.hi + 0.001);
+          if (bIdx < 0) return;
+          const x = scales.x.getPixelForValue(bIdx);
+          c2.save();
+          c2.setLineDash([4, 3]);
+          c2.strokeStyle = colour;
+          c2.lineWidth = 1.5;
+          c2.beginPath(); c2.moveTo(x, chartArea.top); c2.lineTo(x, chartArea.bottom); c2.stroke();
+          c2.setLineDash([]);
+          c2.fillStyle = colour;
+          c2.font = '11px system-ui, sans-serif';
+          c2.textAlign = 'center';
+          c2.fillText('\u25CF'+lbl, x, chartArea.top + 10);
+          c2.restore();
+        });
+      },
+    }],
   });
 })();
 // ───────────────────────────────────────────────────────────────────────
