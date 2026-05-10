@@ -177,7 +177,12 @@
 
   <div class="header">
     <h1>Flow Metrics</h1>
-    <p id="subtitle"></p>
+    <div id="headerMeta" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;font-size:13px;opacity:0.88;">
+      <span id="hTeam"></span>
+      <span id="hBoard"></span>
+      <span id="hWindow"></span>
+      <span id="hGeneratedAt"></span>
+    </div>
   </div>
 
   <div class="tabs">
@@ -215,6 +220,7 @@
         <div class="card">
           <div class="card-header">
             <h2>Cycle time &mdash; weekly average &amp; trend</h2>
+            <div id="ctTogglesRolling" class="type-toggles"></div>
           </div>
           <div class="chart-wrap" style="height:340px;">
             <canvas id="ctRollingChart"></canvas>
@@ -238,6 +244,7 @@
         <div class="card">
           <div class="card-header">
             <h2>Lead time &mdash; weekly average &amp; trend</h2>
+            <div id="ltTogglesRolling" class="type-toggles"></div>
           </div>
           <div class="chart-wrap" style="height:340px;">
             <canvas id="ltRollingChart"></canvas>
@@ -273,6 +280,32 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ── Header metadata ─────────────────────────────────────────────────
+(function () {
+  const ctx = dashboard.context;
+  const ct  = dashboard.cycle_time;
+  function metaChip(label, value) {
+    return `<span style="display:inline-flex;align-items:center;gap:5px;">`
+      + `<span style="opacity:0.7;font-weight:500;">${label}:</span>`
+      + `<span style="font-weight:700;">${escapeHtml(String(value))}</span></span>`;
+  }
+  if (ctx) {
+    if (ctx.team)         document.getElementById('hTeam').innerHTML  = metaChip('Team', ctx.team);
+    if (ctx.board?.name)  document.getElementById('hBoard').innerHTML = metaChip('Board', ctx.board.name);
+  }
+  if (ct?.window) {
+    const fmt = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    document.getElementById('hWindow').innerHTML = metaChip('Window', fmt(ct.window.start) + ' – ' + fmt(ct.window.end));
+  }
+  if (ct?.calculated_at) {
+    const d = new Date(ct.calculated_at);
+    const label = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('hGeneratedAt').innerHTML = metaChip('Generated', label);
+  }
+})();
+// ────────────────────────────────────────────────────────────────────
+
 // ── Shared tooltip ──────────────────────────────────────────────────
 // Single element, single frozen state, single positioning helper.
 // Usage in any Chart.js external tooltip handler:
@@ -281,7 +314,8 @@ function escapeHtml(s) {
 const sharedTooltip = (() => {
   const el = document.getElementById('sharedTooltip');
   let frozen = false;
-  el.addEventListener('mouseenter', () => { frozen = true; });
+  let hideTimer = null;
+  el.addEventListener('mouseenter', () => { frozen = true; clearTimeout(hideTimer); });
   el.addEventListener('mouseleave', () => { frozen = false; el.style.display = 'none'; });
   function position(context) {
     const { tooltip } = context;
@@ -295,9 +329,9 @@ const sharedTooltip = (() => {
     el.style.top  = top  + 'px';
   }
   return {
-    show(html, context) { el.innerHTML = html; el.style.display = 'block'; position(context); },
-    hide()              { if (!frozen) el.style.display = 'none'; },
-    reset()             { frozen = false; el.style.display = 'none'; },
+    show(html, context) { clearTimeout(hideTimer); el.innerHTML = html; el.style.display = 'block'; position(context); },
+    hide()              { if (frozen) return; clearTimeout(hideTimer); hideTimer = setTimeout(() => { if (!frozen) el.style.display = 'none'; }, 150); },
+    reset()             { frozen = false; clearTimeout(hideTimer); el.style.display = 'none'; },
   };
 })();
 // ────────────────────────────────────────────────────────────────────
@@ -571,31 +605,43 @@ function updateChart() {
   // Summary subtitle
   const ov = ct.overall || {};
 
-  // --- Type toggles ---
-  const ctToggleContainer = document.getElementById('ctToggles');
-  if (ctAllTypes.length > 1) {
-    ctToggleContainer.style.display = 'flex';
-    ctAllTypes.forEach(type => {
-      const style = ctTypeStyles[type] || { color: '#718096' };
-      const btn = document.createElement('button');
-      btn.className = 'type-toggle active';
-      btn.style.setProperty('--type-color', style.color);
-      const iconHtml = style.icon_url
-        ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
-        : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(style.color)};flex-shrink:0;"></span>`;
-      btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
-      btn.addEventListener('click', () => {
-        if (ctActiveTypes.has(type)) {
-          if (ctActiveTypes.size === 1) return;
-          ctActiveTypes.delete(type);
-          btn.classList.remove('active');
-        } else {
-          ctActiveTypes.add(type);
-          btn.classList.add('active');
-        }
-        updateCtCharts();
+  // --- Type toggles (both scatter and rolling cards) ---
+  const ctToggleContainers = [
+    document.getElementById('ctToggles'),
+    document.getElementById('ctTogglesRolling'),
+  ].filter(Boolean);
+  function syncCtToggleButtons() {
+    ctToggleContainers.forEach(c => {
+      c.querySelectorAll('[data-type]').forEach(b => {
+        b.classList.toggle('active', ctActiveTypes.has(b.dataset.type));
       });
-      ctToggleContainer.appendChild(btn);
+    });
+  }
+  if (ctAllTypes.length > 1) {
+    ctToggleContainers.forEach(container => {
+      container.style.display = 'flex';
+      ctAllTypes.forEach(type => {
+        const style = ctTypeStyles[type] || { color: '#718096' };
+        const btn = document.createElement('button');
+        btn.className = 'type-toggle active';
+        btn.dataset.type = type;
+        btn.style.setProperty('--type-color', style.color);
+        const iconHtml = style.icon_url
+          ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+          : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(style.color)};flex-shrink:0;"></span>`;
+        btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
+        btn.addEventListener('click', () => {
+          if (ctActiveTypes.has(type)) {
+            if (ctActiveTypes.size === 1) return;
+            ctActiveTypes.delete(type);
+          } else {
+            ctActiveTypes.add(type);
+          }
+          syncCtToggleButtons();
+          updateCtCharts();
+        });
+        container.appendChild(btn);
+      });
     });
   }
 
@@ -822,31 +868,43 @@ function updateChart() {
   const ltMinMs = Math.min(..._ltMs) - _ltPad;
   const ltMaxMs = Math.max(..._ltMs) + _ltPad;
 
-  // Type toggles
-  const ltToggleContainer = document.getElementById('ltToggles');
-  if (ltAllTypes.length > 1) {
-    ltToggleContainer.style.display = 'flex';
-    ltAllTypes.forEach(type => {
-      const style = ltTypeStyles[type] || { color: '#718096' };
-      const btn = document.createElement('button');
-      btn.className = 'type-toggle active';
-      btn.style.setProperty('--type-color', style.color);
-      const iconHtml = style.icon_url
-        ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
-        : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(style.color)};flex-shrink:0;"></span>`;
-      btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
-      btn.addEventListener('click', () => {
-        if (ltActiveTypes.has(type)) {
-          if (ltActiveTypes.size === 1) return;
-          ltActiveTypes.delete(type);
-          btn.classList.remove('active');
-        } else {
-          ltActiveTypes.add(type);
-          btn.classList.add('active');
-        }
-        updateLtCharts();
+  // Type toggles (both scatter and rolling cards)
+  const ltToggleContainers = [
+    document.getElementById('ltToggles'),
+    document.getElementById('ltTogglesRolling'),
+  ].filter(Boolean);
+  function syncLtToggleButtons() {
+    ltToggleContainers.forEach(c => {
+      c.querySelectorAll('[data-type]').forEach(b => {
+        b.classList.toggle('active', ltActiveTypes.has(b.dataset.type));
       });
-      ltToggleContainer.appendChild(btn);
+    });
+  }
+  if (ltAllTypes.length > 1) {
+    ltToggleContainers.forEach(container => {
+      container.style.display = 'flex';
+      ltAllTypes.forEach(type => {
+        const style = ltTypeStyles[type] || { color: '#718096' };
+        const btn = document.createElement('button');
+        btn.className = 'type-toggle active';
+        btn.dataset.type = type;
+        btn.style.setProperty('--type-color', style.color);
+        const iconHtml = style.icon_url
+          ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+          : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(style.color)};flex-shrink:0;"></span>`;
+        btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
+        btn.addEventListener('click', () => {
+          if (ltActiveTypes.has(type)) {
+            if (ltActiveTypes.size === 1) return;
+            ltActiveTypes.delete(type);
+          } else {
+            ltActiveTypes.add(type);
+          }
+          syncLtToggleButtons();
+          updateLtCharts();
+        });
+        container.appendChild(btn);
+      });
     });
   }
 
