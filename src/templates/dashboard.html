@@ -409,6 +409,21 @@
   <!-- ── WIP tab ──────────────────────────────────────────────────── -->
   <div id="tab-wip" class="tab-panel">
 
+    <!-- Row 1: Daily WIP over time + Daily WIP × Age side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      <div class="card">
+        <div class="card-header"><h2>Daily WIP over time</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Number of in-progress items per day, with trend.</p>
+        <div class="chart-wrap" style="height:260px;"><canvas id="dailyWipChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Daily WIP &times; Work Item Age</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">WIP per day broken down by how long each item has been in progress.</p>
+        <div class="chart-wrap" style="height:260px;"><canvas id="wipAgeStackedChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Row 2: Aging bar + scatter side by side -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
 
       <!-- Aging WIP bar chart -->
@@ -432,7 +447,7 @@
         <div class="chart-wrap" style="height:400px;"><canvas id="wipAgeScatterChart"></canvas></div>
       </div>
 
-    </div>
+    </div><!-- /row3 grid -->
 
   </div><!-- /tab-wip -->
 
@@ -2554,6 +2569,224 @@ function updateChart() {
       toggleContainer.appendChild(btn);
     });
   }
+})();
+// ────────────────────────────────────────────────────────────────────
+
+// ── Daily WIP ─────────────────────────────────────────────────────────
+(() => {
+  const wi  = dashboard.work_items || [];
+  const wih = dashboard.work_item_history || [];
+  const ctx = dashboard.context || {};
+  const ct  = dashboard.cycle_time || {};
+
+  const inProgCols = new Set(
+    (ctx.columns || []).filter(c => c.column_type === 'inProgress').map(c => c.name)
+  );
+
+  const histMap = {};
+  wih.forEach(h => { histMap[h.id] = h.column_history || []; });
+
+  // Build per-item timeline: [{entered, left, firstInProgMs}]
+  // firstInProgMs = earliest time the item entered any in-progress column
+  const itemTimelines = [];
+  wih.forEach(entry => {
+    const segs = (entry.column_history || []).filter(s => inProgCols.has(s.value));
+    if (!segs.length) return;
+    const firstMs = Math.min(...segs.map(s => new Date(s.entered).getTime()));
+    // all in-progress segments
+    segs.forEach(seg => {
+      itemTimelines.push({
+        enteredMs: new Date(seg.entered).getTime(),
+        leftMs: seg.left ? new Date(seg.left).getTime() : Infinity,
+        firstMs,
+      });
+    });
+  });
+
+  // Analysis window: use ct window or fall back to wih range
+  const winStart = ct.window?.start ? new Date(ct.window.start) : new Date(Math.min(...itemTimelines.map(t => t.enteredMs)));
+  const winEnd   = ct.window?.end   ? new Date(ct.window.end)   : new Date();
+  const winStartMs = winStart.getTime();
+  const winEndMs   = winEnd.getTime();
+
+  // Daily snapshots — one per day
+  const MS_DAY = 86400000;
+  const dayLabels = [], dailyWip = [];
+  const ageBuckets = { le1: [], le7: [], le14: [], gt14: [] };
+
+  let d = new Date(winStartMs);
+  d.setUTCHours(12, 0, 0, 0); // noon snapshot each day
+  while (d.getTime() <= winEndMs) {
+    const snapMs = d.getTime();
+    const label  = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    dayLabels.push(label);
+
+    // Items in-progress at this snapshot
+    let wip = 0, le1 = 0, le7 = 0, le14 = 0, gt14 = 0;
+    // Track by item — need unique items, use a Set on firstMs approach
+    // We'll count unique items that have ANY in-progress segment covering snapMs
+    const seen = new Set();
+    wih.forEach(entry => {
+      if (seen.has(entry.id)) return;
+      const segs = (entry.column_history || []).filter(s => inProgCols.has(s.value));
+      if (!segs.length) return;
+      const firstMs = Math.min(...segs.map(s => new Date(s.entered).getTime()));
+      for (const seg of segs) {
+        const entMs = new Date(seg.entered).getTime();
+        const lefMs = seg.left ? new Date(seg.left).getTime() : Infinity;
+        if (entMs <= snapMs && snapMs < lefMs) {
+          seen.add(entry.id);
+          wip++;
+          const ageDays = (snapMs - firstMs) / MS_DAY;
+          if      (ageDays <= 1)  le1++;
+          else if (ageDays <= 7)  le7++;
+          else if (ageDays <= 14) le14++;
+          else                    gt14++;
+          break;
+        }
+      }
+    });
+
+    dailyWip.push(wip);
+    ageBuckets.le1.push(le1);
+    ageBuckets.le7.push(le7);
+    ageBuckets.le14.push(le14);
+    ageBuckets.gt14.push(gt14);
+
+    d = new Date(d.getTime() + MS_DAY);
+  }
+
+  // Trend line over daily WIP
+  const wipTrend = (() => {
+    const pts = dailyWip.map((y, x) => ({ x, y })).filter(p => p.y != null);
+    if (pts.length < 2) return dailyWip.map(() => null);
+    const n = pts.length;
+    const mx = pts.reduce((s,p)=>s+p.x,0)/n, my = pts.reduce((s,p)=>s+p.y,0)/n;
+    const num = pts.reduce((s,p)=>s+(p.x-mx)*(p.y-my),0);
+    const den = pts.reduce((s,p)=>s+(p.x-mx)**2,0);
+    const slope = den ? num/den : 0, intercept = my - slope*mx;
+    return dailyWip.map((_,x) => Math.round((slope*x+intercept)*10)/10);
+  })();
+
+  const wipSlope = (() => {
+    const pts = dailyWip.map((y,x) => ({x,y})).filter(p=>p.y!=null);
+    if (pts.length < 2) return 0;
+    const n=pts.length, mx=pts.reduce((s,p)=>s+p.x,0)/n, my=pts.reduce((s,p)=>s+p.y,0)/n;
+    const num=pts.reduce((s,p)=>s+(p.x-mx)*(p.y-my),0), den=pts.reduce((s,p)=>s+(p.x-mx)**2,0);
+    return den ? num/den : 0;
+  })();
+  const currentWip = dailyWip.filter(v=>v!=null).slice(-1)[0] ?? null;
+
+  // KPI card on Overview tab
+  if (currentWip !== null) {
+    const slopePerWeek = wipSlope * 7;
+    const arrowCls = Math.abs(slopePerWeek) < 0.5 ? 'neutral' : slopePerWeek > 0 ? 'negative' : 'positive';
+    const arrowSym = arrowCls === 'neutral' ? '→' : slopePerWeek > 0 ? '↑' : '↓';
+    const pillText = arrowCls === 'neutral' ? 'Stable'
+      : `${slopePerWeek > 0 ? '+' : ''}${Math.round(slopePerWeek*10)/10}/wk ${slopePerWeek > 0 ? 'growing' : 'shrinking'}`;
+    const pillCls = arrowCls === 'negative' ? 'kpi-pill pill-negative'
+      : arrowCls === 'positive' ? 'kpi-pill pill-positive' : 'kpi-pill';
+    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
+      `<div class="kpi-card trend-${arrowCls}">` +
+      `<div class="kpi-label">WIP now</div>` +
+      `<div class="kpi-value">${currentWip}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+      `<div class="kpi-unit">items in progress</div>` +
+      `<div class="${pillCls}">${pillText}</div>` +
+      `</div>`
+    );
+  }
+
+  function dailyWipTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const idx = context.tooltip.dataPoints[0]?.dataIndex;
+    const label = dayLabels[idx] ?? '';
+    sharedTooltip.show(
+      `<div class="tt-total" style="font-weight:600;">${escapeHtml(label)}</div>` +
+      `<div class="tt-total">WIP: ${dailyWip[idx]} items</div>` +
+      TT_HINT, context
+    );
+  }
+
+  // Sample every N days for readability (max ~60 labels)
+  const step = Math.max(1, Math.ceil(dayLabels.length / 60));
+  const sampledLabels  = dayLabels.filter((_,i) => i % step === 0);
+  const sampledWip     = dailyWip.filter((_,i) => i % step === 0);
+  const sampledTrend   = wipTrend.filter((_,i) => i % step === 0);
+  const sampledLe1     = ageBuckets.le1.filter((_,i) => i % step === 0);
+  const sampledLe7     = ageBuckets.le7.filter((_,i) => i % step === 0);
+  const sampledLe14    = ageBuckets.le14.filter((_,i) => i % step === 0);
+  const sampledGt14    = ageBuckets.gt14.filter((_,i) => i % step === 0);
+
+  // ── Chart 1: Daily WIP line ──
+  new Chart(document.getElementById('dailyWipChart'), {
+    type: 'line',
+    data: {
+      labels: sampledLabels,
+      datasets: [
+        {
+          label: 'WIP',
+          data: sampledWip,
+          borderColor: '#667eea', backgroundColor: '#667eea18', fill: true,
+          tension: 0.2, pointRadius: 0, borderWidth: 2, spanGaps: false,
+        },
+        {
+          label: 'Trend',
+          data: sampledTrend,
+          borderColor: '#718096', backgroundColor: 'transparent',
+          borderWidth: 2, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: dailyWipTooltip } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, maxTicksLimit: 8 } },
+        y: { beginAtZero: true, title: { display: true, text: 'Items', color: '#718096', font: { size: 12 } }, grid: { color: '#e2e8f0' } },
+      },
+    },
+  });
+
+  // ── Chart 2: Stacked bar WIP × Age ──
+  new Chart(document.getElementById('wipAgeStackedChart'), {
+    type: 'bar',
+    data: {
+      labels: sampledLabels,
+      datasets: [
+        { label: 'Age \u22641 day',   data: sampledLe1,  backgroundColor: '#c3dafe', stack: 'age' },
+        { label: 'Age \u22647 days',  data: sampledLe7,  backgroundColor: '#4a5568', stack: 'age' },
+        { label: 'Age \u226414 days', data: sampledLe14, backgroundColor: '#fbb6ce', stack: 'age' },
+        { label: 'Age >14 days',      data: sampledGt14, backgroundColor: '#ed8936', stack: 'age' },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'rect', boxWidth: 12 } },
+        tooltip: { enabled: false, external: (ctx) => {
+          if (ctx.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+          const idx = ctx.tooltip.dataPoints[0]?.dataIndex;
+          const label = sampledLabels[idx] ?? '';
+          const total = sampledWip[Math.floor(idx * step)] ?? (sampledLe1[idx]+sampledLe7[idx]+sampledLe14[idx]+sampledGt14[idx]);
+          sharedTooltip.show(
+            `<div class="tt-total" style="font-weight:600;">${escapeHtml(label)}</div>` +
+            `<div class="tt-total">Total WIP: ${sampledLe1[idx]+sampledLe7[idx]+sampledLe14[idx]+sampledGt14[idx]}</div>` +
+            `<div class="tt-total">\u22641 day: ${sampledLe1[idx]}</div>` +
+            `<div class="tt-total">\u22647 days: ${sampledLe7[idx]}</div>` +
+            `<div class="tt-total">\u226414 days: ${sampledLe14[idx]}</div>` +
+            `<div class="tt-total">&gt;14 days: ${sampledGt14[idx]}</div>` +
+            TT_HINT, ctx
+          );
+        }},
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, maxTicksLimit: 8 } },
+        y: { stacked: true, beginAtZero: true, grid: { color: '#e2e8f0' } },
+      },
+    },
+  });
 })();
 // ────────────────────────────────────────────────────────────────────
 
