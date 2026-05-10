@@ -148,7 +148,7 @@ def main():
 
     print("\nFetching work items...")
     try:
-        ids = fetch_work_item_ids(org, project, team, work_item_types, headers)
+        ids = fetch_work_item_ids(org, project, team, work_item_types, headers, closed_within_days=365)
         print(f"  {len(ids)} items found")
         work_items = fetch_work_items(org, project, ids, headers)
         print(f"  {len(work_items)} items fetched")

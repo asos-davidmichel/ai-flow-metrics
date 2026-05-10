@@ -146,36 +146,58 @@ LINK_TYPE_DEP_FWD = "System.LinkTypes.Dependency-Forward"
 LINK_TYPE_DEP_REV = "System.LinkTypes.Dependency-Reverse"
 
 
-def fetch_work_item_ids(org, project, team, work_item_types, headers):
-    """Return all open work item IDs for the team, scoped to the given work item types."""
+def fetch_work_item_ids(org, project, team, work_item_types, headers, closed_within_days=365):
+    """
+    Return work item IDs for the team, scoped to the given work item types.
+
+    Fetches two groups:
+    - All non-removed items that are currently open (any state except Closed/Removed).
+    - Items closed within the last `closed_within_days` days, needed for cycle time.
+
+    Returns a deduplicated sorted list of IDs.
+    """
     url = (
         f"https://dev.azure.com/{org}/{requests.utils.quote(project)}"
         f"/_apis/wit/wiql?api-version={API_VERSION}"
     )
     types_list = ", ".join(f"'{t}'" for t in work_item_types)
-    query = (
-        f"SELECT [System.Id] FROM WorkItems "
-        f"WHERE [System.TeamProject] = '{project}' "
+    area_filter = (
+        f"[System.TeamProject] = '{project}' "
         f"AND [System.AreaPath] UNDER '{project}\\{team}' "
         f"AND [System.WorkItemType] IN ({types_list}) "
-        f"AND [System.State] NOT IN ('Closed', 'Removed') "
-        f"ORDER BY [System.Id]"
     )
-    try:
-        response = requests.post(url, json={"query": query}, headers=headers, timeout=30)
-    except requests.exceptions.ConnectionError:
-        raise ADOError("Could not reach dev.azure.com. Check your network.")
-    except requests.exceptions.Timeout:
-        raise ADOError("WIQL request timed out.")
 
-    if response.status_code == 401:
-        raise ADOError("Authentication failed. Check your ADO_PAT.")
-    if response.status_code == 403:
-        raise ADOError("Permission denied.")
-    if not response.ok:
-        raise ADOError(f"WIQL query returned {response.status_code}.\n{response.text[:300]}")
+    def _run_query(where_clause):
+        query = f"SELECT [System.Id] FROM WorkItems WHERE {where_clause} ORDER BY [System.Id]"
+        try:
+            response = requests.post(url, json={"query": query}, headers=headers, timeout=30)
+        except requests.exceptions.ConnectionError:
+            raise ADOError("Could not reach dev.azure.com. Check your network.")
+        except requests.exceptions.Timeout:
+            raise ADOError("WIQL request timed out.")
+        if response.status_code == 401:
+            raise ADOError("Authentication failed. Check your ADO_PAT.")
+        if response.status_code == 403:
+            raise ADOError("Permission denied.")
+        if not response.ok:
+            raise ADOError(f"WIQL query returned {response.status_code}.\n{response.text[:300]}")
+        return [item["id"] for item in response.json().get("workItems", [])]
 
-    return [item["id"] for item in response.json().get("workItems", [])]
+    # Query 1: open items
+    open_ids = _run_query(
+        area_filter + "AND [System.State] NOT IN ('Closed', 'Removed')"
+    )
+
+    # Query 2: recently closed items (needed for cycle time history)
+    closed_ids = _run_query(
+        area_filter
+        + "AND [System.State] = 'Closed' "
+        + f"AND [Microsoft.VSTS.Common.ClosedDate] >= @today - {closed_within_days}"
+    )
+
+    all_ids = sorted(set(open_ids) | set(closed_ids))
+    print(f"  Open: {len(open_ids)}  Recently closed: {len(closed_ids)}  Total: {len(all_ids)}")
+    return all_ids
 
 
 def _extract_links(relations, link_type):
