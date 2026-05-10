@@ -163,12 +163,7 @@
       <div class="card-header">
         <div>
           <h2>Cycle time &mdash; scatter</h2>
-          <p class="card-subtitle" id="ctSubtitle"></p>
-          <div class="ref-legend">
-            <span class="ref-legend-item"><span class="ref-legend-line" style="border-color:#667eea"></span>Mean</span>
-            <span class="ref-legend-item"><span class="ref-legend-line" style="border-color:#48bb78"></span>P50</span>
-            <span class="ref-legend-item"><span class="ref-legend-line" style="border-color:#ed8936"></span>P85</span>
-          </div>
+
         </div>
         <div id="ctToggles" class="type-toggles"></div>
       </div>
@@ -189,8 +184,7 @@
   <div class="card meta" id="metaCard"></div>
 
 </div>
-<div id="chartTooltip" class="chart-tooltip"></div>
-<div id="ctTooltip" class="chart-tooltip"></div>
+<div id="sharedTooltip" class="chart-tooltip"></div>
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 const data = dashboard.time_in_columns;
@@ -200,6 +194,54 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// ── Shared tooltip ──────────────────────────────────────────────────
+// Single element, single frozen state, single positioning helper.
+// Usage in any Chart.js external tooltip handler:
+//   if (tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+//   sharedTooltip.show(htmlString, context);
+const sharedTooltip = (() => {
+  const el = document.getElementById('sharedTooltip');
+  let frozen = false;
+  el.addEventListener('mouseenter', () => { frozen = true; });
+  el.addEventListener('mouseleave', () => { frozen = false; el.style.display = 'none'; });
+  function position(context) {
+    const { tooltip } = context;
+    const rect = context.chart.canvas.getBoundingClientRect();
+    let left = rect.left + window.pageXOffset + tooltip.caretX + 16;
+    const top  = rect.top  + window.pageYOffset + tooltip.caretY;
+    if (left + 440 > window.innerWidth + window.pageXOffset) {
+      left = rect.left + window.pageXOffset + tooltip.caretX - 440;
+    }
+    el.style.left = left + 'px';
+    el.style.top  = top  + 'px';
+  }
+  return {
+    show(html, context) { el.innerHTML = html; el.style.display = 'block'; position(context); },
+    hide()              { if (!frozen) el.style.display = 'none'; },
+    reset()             { frozen = false; el.style.display = 'none'; },
+  };
+})();
+// ────────────────────────────────────────────────────────────────────
+
+// ── Shared tooltip item helpers ──────────────────────────────────────
+// Change item row appearance here and it applies to every chart tooltip.
+function ttIcon(style) {
+  return style.icon_url
+    ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;border-radius:2px;" onerror="this.style.display='none'">`
+    : `<span class="tt-badge" style="background:${escapeHtml(style.color)}">${escapeHtml(style.abbr)}</span>`;
+}
+function ttItemRow(style, url, id, title, days) {
+  const short = title.length > 55 ? title.slice(0, 55) + '\u2026' : title;
+  return '<div class="tt-item">' +
+    ttIcon(style) +
+    `<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${id}</a>` +
+    `<span class="tt-item-title">${escapeHtml(short)}</span>` +
+    `<span class="tt-item-days">${days}d</span>` +
+    '</div>';
+}
+const TT_HINT = '<div class="tt-hint">Hover to keep open &middot; click to open in ADO</div>';
+// ────────────────────────────────────────────────────────────────────
 
 document.getElementById('subtitle').textContent =
   'Window: ' + data.window.start.slice(0, 10) + ' → ' + data.window.end.slice(0, 10) +
@@ -267,66 +309,29 @@ function computeColors(filtered) {
   return { bg, border, maxHours };
 }
 
-// --- External HTML tooltip ---
-const tooltipEl = document.getElementById('chartTooltip');
-let tooltipFrozen = false;
 let currentFiltered = filteredColData();
-
-tooltipEl.addEventListener('mouseenter', () => { tooltipFrozen = true; });
-tooltipEl.addEventListener('mouseleave', () => {
-  tooltipFrozen = false;
-  tooltipEl.style.display = 'none';
-});
 
 function buildTooltip(colIndex) {
   const fd = currentFiltered[colIndex];
   const totalDays = Math.round(fd.totalHours / 24 * 10) / 10;
   const maxHours = Math.max(...currentFiltered.map(f => f.totalHours));
   const isMax = fd.totalHours > 0 && fd.totalHours === maxHours;
-
-  let html = `<div class="tt-title">${escapeHtml(fd.col.name)}${
-    isMax ? ' <span class="tt-bottleneck">bottleneck</span>' : ''}</div>`;
-  html += `<div class="tt-total">${totalDays} days total &middot; ${fd.n} items</div>`;
-  html += '<div class="tt-items">';
+  let html =
+    `<div class="tt-title">${escapeHtml(fd.col.name)}${isMax ? ' <span class="tt-bottleneck">bottleneck</span>' : ''}</div>` +
+    `<div class="tt-total">${totalDays} days total &middot; ${fd.n} items</div>` +
+    '<div class="tt-items">';
   fd.items.forEach(item => {
     const style = typeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
-    const url = data.ado_url_base + '/' + item.id;
-    const days = Math.round(item.hours / 24 * 10) / 10;
-    const iconHtml = style.icon_url
-      ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;border-radius:2px;" onerror="this.style.display='none'">`
-      : `<span class="tt-badge" style="background:${escapeHtml(style.color)}">${escapeHtml(style.abbr)}</span>`;
-    html += `<div class="tt-item">
-      ${iconHtml}
-      <a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${item.id}</a>
-      <span class="tt-item-title">${escapeHtml(item.title)}</span>
-      <span class="tt-item-days">${days}d</span>
-    </div>`;
+    html += ttItemRow(style, data.ado_url_base + '/' + item.id, item.id, item.title, Math.round(item.hours / 24 * 10) / 10);
   });
   html += '</div>';
-  if (fd.items.length > 0) {
-    html += '<div class="tt-hint">Hover to keep open &middot; click to open in ADO</div>';
-  }
+  if (fd.items.length > 0) html += TT_HINT;
   return html;
 }
 
 function externalTooltip(context) {
-  const { tooltip } = context;
-  if (tooltip.opacity === 0) {
-    if (!tooltipFrozen) tooltipEl.style.display = 'none';
-    return;
-  }
-  const colIndex = tooltip.dataPoints[0].dataIndex;
-  tooltipEl.innerHTML = buildTooltip(colIndex);
-  tooltipEl.style.display = 'block';
-
-  const rect = context.chart.canvas.getBoundingClientRect();
-  let left = rect.left + window.pageXOffset + tooltip.caretX + 16;
-  const top = rect.top + window.pageYOffset + tooltip.caretY;
-  if (left + 440 > window.innerWidth + window.pageXOffset) {
-    left = rect.left + window.pageXOffset + tooltip.caretX - 440;
-  }
-  tooltipEl.style.left = left + 'px';
-  tooltipEl.style.top = top + 'px';
+  if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+  sharedTooltip.show(buildTooltip(context.tooltip.dataPoints[0].dataIndex), context);
 }
 
 // --- Chart ---
@@ -362,8 +367,7 @@ const chart = new Chart(document.getElementById('timeInColumnsChart'), {
 });
 
 function updateChart() {
-  tooltipEl.style.display = 'none';
-  tooltipFrozen = false;
+  sharedTooltip.reset();
   currentFiltered = filteredColData();
   const colors = computeColors(currentFiltered);
   chart.data.datasets[0].data = currentFiltered.map(f => Math.round(f.totalHours / 24 * 10) / 10);
@@ -409,16 +413,14 @@ metaEl.innerHTML =
   const ctAllTypes = Object.keys(ctTypeStyles);
   const ctActiveTypes = new Set(ctAllTypes);
 
-  // Window boundaries (shared x-axis for both charts)
-  const windowStartMs = new Date(ct.window.start).getTime();
-  const windowEndMs   = new Date(ct.window.end).getTime();
+  // Axis boundaries derived from actual completion dates (shared by both charts)
+  const _completedMs = ctItems.map(i => new Date(i.completed_at).getTime());
+  const _pad = 7 * 24 * 3600 * 1000; // one week padding each side
+  const dataMinMs = Math.min(..._completedMs) - _pad;
+  const dataMaxMs = Math.max(..._completedMs) + _pad;
 
   // Summary subtitle
   const ov = ct.overall || {};
-  if (ov.n) {
-    document.getElementById('ctSubtitle').textContent =
-      ov.n + ' items \u00b7 Median: ' + ov.median_days + 'd \u00b7 P85: ' + ov.p85_days + 'd';
-  }
 
   // --- Type toggles ---
   const ctToggleContainer = document.getElementById('ctToggles');
@@ -474,9 +476,9 @@ metaEl.innerHTML =
     const stats = computeStats(items);
     if (!stats) return [];
     return [
-      { label: 'Mean', _ref: true, data: [{ x: windowStartMs, y: stats.mean }, { x: windowEndMs, y: stats.mean }], showLine: true, pointRadius: 0, borderColor: '#667eea', borderWidth: 1.5, borderDash: [4, 4], fill: false },
-      { label: 'P50',  _ref: true, data: [{ x: windowStartMs, y: stats.p50  }, { x: windowEndMs, y: stats.p50  }], showLine: true, pointRadius: 0, borderColor: '#48bb78', borderWidth: 1.5, borderDash: [4, 4], fill: false },
-      { label: 'P85',  _ref: true, data: [{ x: windowStartMs, y: stats.p85  }, { x: windowEndMs, y: stats.p85  }], showLine: true, pointRadius: 0, borderColor: '#ed8936', borderWidth: 1.5, borderDash: [4, 4], fill: false },
+      { label: 'Mean', _ref: true, data: [{ x: dataMinMs, y: stats.mean }, { x: dataMaxMs, y: stats.mean }], showLine: true, pointRadius: 0, borderColor: '#667eea', borderWidth: 1.5, borderDash: [4, 4], fill: false },
+      { label: 'P50',  _ref: true, data: [{ x: dataMinMs, y: stats.p50  }, { x: dataMaxMs, y: stats.p50  }], showLine: true, pointRadius: 0, borderColor: '#48bb78', borderWidth: 1.5, borderDash: [4, 4], fill: false },
+      { label: 'P85',  _ref: true, data: [{ x: dataMinMs, y: stats.p85  }, { x: dataMaxMs, y: stats.p85  }], showLine: true, pointRadius: 0, borderColor: '#ed8936', borderWidth: 1.5, borderDash: [4, 4], fill: false },
     ];
   }
 
@@ -485,54 +487,72 @@ metaEl.innerHTML =
   }
 
   // --- External tooltip for scatter ---
-  const ctTooltipEl = document.getElementById('ctTooltip');
-  let ctTooltipFrozen = false;
-  ctTooltipEl.addEventListener('mouseenter', () => { ctTooltipFrozen = true; });
-  ctTooltipEl.addEventListener('mouseleave', () => { ctTooltipFrozen = false; ctTooltipEl.style.display = 'none'; });
 
   function buildCtTooltip(item) {
     const style = ctTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
-    const url = ct.ado_url_base + '/' + item.id;
-    const days = item.cycle_time_days;
     const completed = new Date(item.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    const iconHtml = style.icon_url
-      ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;border-radius:2px;" onerror="this.style.display='none'">`
-      : `<span class="tt-badge" style="background:${escapeHtml(style.color)}">${escapeHtml(style.abbr)}</span>`;
-    const title = item.title.length > 55 ? item.title.slice(0, 55) + '\u2026' : item.title;
     return (
       `<div class="tt-total">Completed: ${escapeHtml(completed)}</div>` +
-      '<div class="tt-items"><div class="tt-item">' +
-      iconHtml +
-      `<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${item.id}</a>` +
-      `<span class="tt-item-title">${escapeHtml(title)}</span>` +
-      `<span class="tt-item-days">${days}d</span>` +
-      '</div></div>' +
-      '<div class="tt-hint">Hover to keep open \u00b7 click to open in ADO</div>'
+      '<div class="tt-items">' +
+      ttItemRow(style, ct.ado_url_base + '/' + item.id, item.id, item.title, item.cycle_time_days) +
+      '</div>' +
+      TT_HINT
     );
   }
 
   function ctExternalTooltip(context) {
-    const { tooltip } = context;
-    if (tooltip.opacity === 0) {
-      if (!ctTooltipFrozen) ctTooltipEl.style.display = 'none';
-      return;
-    }
-    const raw = tooltip.dataPoints[0].raw;
-    if (!raw._item) return; // reference line — no tooltip
-    ctTooltipEl.innerHTML = buildCtTooltip(raw._item);
-    ctTooltipEl.style.display = 'block';
-    const rect = context.chart.canvas.getBoundingClientRect();
-    let left = rect.left + window.pageXOffset + tooltip.caretX + 16;
-    const top = rect.top + window.pageYOffset + tooltip.caretY;
-    if (left + 440 > window.innerWidth + window.pageXOffset) {
-      left = rect.left + window.pageXOffset + tooltip.caretX - 440;
-    }
-    ctTooltipEl.style.left = left + 'px';
-    ctTooltipEl.style.top = top + 'px';
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const raw = context.tooltip.dataPoints[0].raw;
+    if (!raw._item) { sharedTooltip.hide(); return; } // reference line — no tooltip
+    sharedTooltip.show(buildCtTooltip(raw._item), context);
   }
 
   // --- Scatter chart ---
   const activeItemsForRef = () => ctItems.filter(i => ctActiveTypes.has(i.type));
+
+  // Plugin: draw coloured badge labels at right edge of each reference line
+  const refLabelPlugin = {
+    id: 'refLabels',
+    afterDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!scales.y || !chartArea) return;
+      const labelMap = { Mean: 'Avg', P50: 'Median', P85: '85th' };
+      chart.data.datasets.forEach(ds => {
+        if (!ds._ref || !ds.data.length) return;
+        const val = ds.data[0].y;
+        if (val == null) return;
+        const yPx = scales.y.getPixelForValue(val);
+        const prefix = labelMap[ds.label] || ds.label;
+        const text = `${prefix}: ${val}d`;
+        ctx.save();
+        ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        const textW = ctx.measureText(text).width;
+        const padX = 7, bh = 20;
+        const bw = textW + padX * 2;
+        const bx = chartArea.right - bw - 4;
+        const by = yPx - bh / 2;
+        const r = 4;
+        ctx.fillStyle = ds.borderColor;
+        ctx.beginPath();
+        ctx.moveTo(bx + r, by);
+        ctx.lineTo(bx + bw - r, by);
+        ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+        ctx.lineTo(bx + bw, by + bh - r);
+        ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+        ctx.lineTo(bx + r, by + bh);
+        ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+        ctx.lineTo(bx, by + r);
+        ctx.arcTo(bx, by, bx + r, by, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, bx + bw / 2, yPx);
+        ctx.restore();
+      });
+    }
+  };
 
   const scatterChart = new Chart(document.getElementById('ctScatterChart'), {
     type: 'scatter',
@@ -553,6 +573,7 @@ metaEl.innerHTML =
         ...refLineDatasets(ctItems),
       ],
     },
+    plugins: [refLabelPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -563,8 +584,8 @@ metaEl.innerHTML =
       scales: {
         x: {
           type: 'linear',
-          min: windowStartMs,
-          max: windowEndMs,
+          min: dataMinMs,
+          max: dataMaxMs,
           title: { display: true, text: 'Completion date' },
           ticks: { maxTicksLimit: 8, callback: val => fmtMs(val) },
           grid: { display: false },
@@ -575,20 +596,6 @@ metaEl.innerHTML =
   });
 
   // --- Rolling average chart ---
-  // Pre-generate all Mondays in the window so both charts share the same range
-  function allWeeksInWindow() {
-    const weeks = [];
-    const cur = new Date(windowStartMs);
-    const day = cur.getUTCDay();
-    cur.setUTCDate(cur.getUTCDate() + (day === 0 ? -6 : 1 - day)); // snap to Monday
-    const end = new Date(windowEndMs);
-    while (cur <= end) {
-      weeks.push(cur.toISOString().slice(0, 10));
-      cur.setUTCDate(cur.getUTCDate() + 7);
-    }
-    return weeks;
-  }
-
   function weekStart(isoStr) {
     const d = new Date(isoStr);
     const day = d.getUTCDay();
@@ -598,27 +605,44 @@ metaEl.innerHTML =
     return mon.toISOString().slice(0, 10);
   }
 
+  function weeksInRange(items) {
+    if (!items.length) return [];
+    const ws = items.map(i => weekStart(i.completed_at));
+    const first = ws.reduce((a, b) => a < b ? a : b);
+    const last  = ws.reduce((a, b) => a > b ? a : b);
+    const result = [];
+    const cur = new Date(first + 'T00:00:00Z');
+    const end = new Date(last  + 'T00:00:00Z');
+    while (cur <= end) {
+      result.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 7);
+    }
+    return result;
+  }
+
   function computeWeekly(items) {
     const buckets = {};
     items.forEach(item => {
       const w = weekStart(item.completed_at);
-      (buckets[w] = buckets[w] || []).push(item.cycle_time_days);
+      (buckets[w] = buckets[w] || []).push(item);
     });
-    return allWeeksInWindow().map(w => ({
-      week_start: w,
-      n: (buckets[w] || []).length,
-      mean_days: buckets[w]
-        ? Math.round(buckets[w].reduce((s, v) => s + v, 0) / buckets[w].length * 10) / 10
-        : null,
-    }));
+    return weeksInRange(items).map(w => {
+      const its = buckets[w];
+      if (!its) return { week_start: w, n: 0, mean_days: null, mean_completed_ms: null };
+      const meanMs = its.reduce((s, i) => s + new Date(i.completed_at).getTime(), 0) / its.length;
+      const meanDays = Math.round(its.reduce((s, i) => s + i.cycle_time_days, 0) / its.length * 10) / 10;
+      return { week_start: w, n: its.length, mean_days: meanDays, mean_completed_ms: meanMs, items: its };
+    });
   }
 
   function weekLabel(isoDate) {
     return new Date(isoDate).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
   }
 
-  function linRegIndexed(weekly) {
-    const valid = weekly.map((w, i) => ({ x: i, y: w.mean_days })).filter(p => p.y !== null);
+  function linReg(weekly) {
+    // Work in ms for x so regression aligns with the linear time axis
+    const valid = weekly.filter(w => w.mean_days !== null && w.mean_completed_ms !== null)
+      .map(w => ({ x: w.mean_completed_ms, y: w.mean_days }));
     const n = valid.length;
     if (n < 2) return null;
     const meanX = valid.reduce((s, p) => s + p.x, 0) / n;
@@ -627,56 +651,51 @@ metaEl.innerHTML =
     const den = valid.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
     if (!den) return null;
     const slope = num / den, intercept = meanY - slope * meanX;
-    const firstI = valid[0].x, lastI = valid[valid.length - 1].x;
-    return (i) => (i < firstI || i > lastI) ? null : Math.round(Math.max(0, slope * i + intercept) * 10) / 10;
+    const firstX = valid[0].x, lastX = valid[valid.length - 1].x;
+    return (x) => (x < firstX || x > lastX) ? null : Math.round(Math.max(0, slope * x + intercept) * 10) / 10;
   }
 
   function weeklyToChart(weekly) {
-    const means = weekly.map(w => w.mean_days);
-    const predict = linRegIndexed(weekly);
-    return {
-      labels: weekly.map(w => weekLabel(w.week_start)),
-      means,
-      trend: weekly.map((_, i) => predict ? predict(i) : null),
-    };
+    const predict = linReg(weekly);
+    const means = weekly
+      .filter(w => w.mean_days !== null && w.mean_completed_ms !== null)
+      .map(w => ({ x: w.mean_completed_ms, y: w.mean_days, _week: w }));
+    const trend = weekly
+      .filter(w => w.mean_completed_ms !== null)
+      .map(w => {
+        const x = w.mean_completed_ms;
+        const y = predict ? predict(x) : null;
+        return y !== null ? { x, y } : null;
+      }).filter(p => p !== null);
+    return { means, trend };
   }
 
+  // Lookup weekly bucket by ms timestamp for tooltip
   let currentWeekly = computeWeekly(ctItems);
   const initRolling = weeklyToChart(currentWeekly);
 
-  // --- External tooltip for rolling chart (reuses ctTooltipEl) ---
+  // --- External tooltip for rolling chart ---
   function rollingExternalTooltip(context) {
-    const { tooltip } = context;
-    if (tooltip.opacity === 0) {
-      if (!ctTooltipFrozen) ctTooltipEl.style.display = 'none';
-      return;
-    }
-    // Only show tooltip for the weekly average dataset (index 0), not trend line
-    const dp = tooltip.dataPoints[0];
-    if (dp.datasetIndex !== 0 || dp.parsed.y === null) {
-      if (!ctTooltipFrozen) ctTooltipEl.style.display = 'none';
-      return;
-    }
-    const w = currentWeekly[dp.dataIndex];
-    if (!w || w.mean_days === null) return;
-    ctTooltipEl.innerHTML =
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp = context.tooltip.dataPoints[0];
+    if (dp.datasetIndex !== 0) { sharedTooltip.hide(); return; }
+    const w = dp.raw._week;
+    if (!w || w.mean_days === null) { sharedTooltip.hide(); return; }
+    let html =
       `<div class="tt-title">Week of ${escapeHtml(weekLabel(w.week_start))}</div>` +
-      `<div class="tt-total">Mean: ${w.mean_days}d &middot; ${w.n} item${w.n !== 1 ? 's' : ''}</div>`;
-    ctTooltipEl.style.display = 'block';
-    const rect = context.chart.canvas.getBoundingClientRect();
-    let left = rect.left + window.pageXOffset + tooltip.caretX + 16;
-    const top = rect.top + window.pageYOffset + tooltip.caretY;
-    if (left + 440 > window.innerWidth + window.pageXOffset) {
-      left = rect.left + window.pageXOffset + tooltip.caretX - 440;
-    }
-    ctTooltipEl.style.left = left + 'px';
-    ctTooltipEl.style.top = top + 'px';
+      `<div class="tt-total">Mean: ${w.mean_days}d &middot; ${w.n} item${w.n !== 1 ? 's' : ''}</div>` +
+      '<div class="tt-items">';
+    (w.items || []).forEach(item => {
+      const style = ctTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
+      html += ttItemRow(style, ct.ado_url_base + '/' + item.id, item.id, item.title, item.cycle_time_days);
+    });
+    html += '</div>' + TT_HINT;
+    sharedTooltip.show(html, context);
   }
 
   const rollingChart = new Chart(document.getElementById('ctRollingChart'), {
     type: 'line',
     data: {
-      labels: initRolling.labels,
       datasets: [
         {
           label: 'Weekly average',
@@ -688,7 +707,7 @@ metaEl.innerHTML =
           pointHoverRadius: 6,
           fill: false,
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
         },
         {
           label: 'Trend',
@@ -699,19 +718,26 @@ metaEl.innerHTML =
           pointRadius: 0,
           fill: false,
           tension: 0,
-          spanGaps: true,
+          spanGaps: false,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { mode: 'point', intersect: true },
       plugins: {
         legend: { display: false },
         tooltip: { enabled: false, external: rollingExternalTooltip },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45 } },
+        x: {
+          type: 'linear',
+          min: dataMinMs,
+          max: dataMaxMs,
+          grid: { display: false },
+          ticks: { maxTicksLimit: 10, maxRotation: 45, callback: val => fmtMs(val) },
+        },
         y: { title: { display: true, text: 'Cycle time (days)' }, beginAtZero: true },
       },
     },
@@ -730,7 +756,6 @@ metaEl.innerHTML =
     // Rolling: recompute from filtered items
     currentWeekly = computeWeekly(activeItemsForRef());
     const rolling = weeklyToChart(currentWeekly);
-    rollingChart.data.labels = rolling.labels;
     rollingChart.data.datasets[0].data = rolling.means;
     rollingChart.data.datasets[1].data = rolling.trend;
     rollingChart.update();
