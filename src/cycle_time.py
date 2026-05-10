@@ -36,17 +36,6 @@ HISTORY_PATH = DATA_DIR / "work_item_history.json"
 EXCLUDED_PATH = DATA_DIR / "excluded_items.json"
 WORK_ITEMS_PATH = DATA_DIR / "work_items.json"
 
-ADO_TYPE_STYLES = {
-    "Bug":                  {"color": "#CC293D", "abbr": "Bug"},
-    "Product Backlog Item": {"color": "#009CCC", "abbr": "PBI"},
-    "User Story":           {"color": "#009CCC", "abbr": "Story"},
-    "Spike":                {"color": "#773B93", "abbr": "Spike"},
-    "Issue":                {"color": "#B4009E", "abbr": "Issue"},
-    "Task":                 {"color": "#F2CB1D", "abbr": "Task"},
-    "Feature":              {"color": "#773B93", "abbr": "Feature"},
-    "Epic":                 {"color": "#FF7B00", "abbr": "Epic"},
-}
-
 OUTPUT_PATH = METRICS_DIR / "cycle_time.json"
 
 
@@ -122,7 +111,7 @@ def main():
     present_types = sorted({m["type"] for m in item_meta.values() if m["type"]})
     fetched_styles = context.get("work_item_type_styles", {})
     work_item_type_styles = {
-        t: fetched_styles.get(t) or ADO_TYPE_STYLES.get(t, {"color": "#718096", "abbr": t[:4]})
+        t: fetched_styles.get(t) or {"color": "#718096", "abbr": t[:4]}
         for t in present_types
     }
 

@@ -105,6 +105,9 @@
     }
     .tt-item-days { color: #718096; font-size: 11px; white-space: nowrap; font-weight: 600; }
     .tt-hint { margin-top: 10px; font-size: 11px; color: #a0aec0; font-style: italic; text-align: center; }
+    .ref-legend { display: flex; gap: 14px; font-size: 11px; margin-top: 8px; flex-wrap: wrap; }
+    .ref-legend-item { display: flex; align-items: center; gap: 5px; color: #718096; }
+    .ref-legend-line { width: 22px; height: 0; border-top: 2px dashed; }
     .type-toggles {
       display: none;
       flex-wrap: wrap;
@@ -161,6 +164,11 @@
         <div>
           <h2>Cycle time &mdash; scatter</h2>
           <p class="card-subtitle" id="ctSubtitle"></p>
+          <div class="ref-legend">
+            <span class="ref-legend-item"><span class="ref-legend-line" style="border-color:#667eea"></span>Mean</span>
+            <span class="ref-legend-item"><span class="ref-legend-line" style="border-color:#48bb78"></span>P50</span>
+            <span class="ref-legend-item"><span class="ref-legend-line" style="border-color:#ed8936"></span>P85</span>
+          </div>
         </div>
         <div id="ctToggles" class="type-toggles"></div>
       </div>
@@ -182,6 +190,7 @@
 
 </div>
 <div id="chartTooltip" class="chart-tooltip"></div>
+<div id="ctTooltip" class="chart-tooltip"></div>
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 const data = dashboard.time_in_columns;
@@ -400,11 +409,15 @@ metaEl.innerHTML =
   const ctAllTypes = Object.keys(ctTypeStyles);
   const ctActiveTypes = new Set(ctAllTypes);
 
+  // Window boundaries (shared x-axis for both charts)
+  const windowStartMs = new Date(ct.window.start).getTime();
+  const windowEndMs   = new Date(ct.window.end).getTime();
+
   // Summary subtitle
   const ov = ct.overall || {};
   if (ov.n) {
     document.getElementById('ctSubtitle').textContent =
-      ov.n + ' items · Median: ' + ov.median_days + 'd · P85: ' + ov.p85_days + 'd';
+      ov.n + ' items \u00b7 Median: ' + ov.median_days + 'd \u00b7 P85: ' + ov.p85_days + 'd';
   }
 
   // --- Type toggles ---
@@ -443,33 +456,27 @@ metaEl.innerHTML =
       .map(i => ({ x: new Date(i.completed_at).getTime(), y: i.cycle_time_days, _item: i }));
   });
 
-  function activeScatterPoints() {
-    return ctAllTypes.filter(t => ctActiveTypes.has(t)).flatMap(t => ctDataByType[t]);
+  // --- Stats helpers ---
+  function computeStats(items) {
+    if (!items.length) return null;
+    const times = items.map(i => i.cycle_time_days).sort((a, b) => a - b);
+    const mean = times.reduce((s, v) => s + v, 0) / times.length;
+    const p50 = times[Math.floor(times.length * 0.5)];
+    const p85 = times[Math.min(Math.floor(times.length * 0.85), times.length - 1)];
+    return {
+      mean: Math.round(mean * 10) / 10,
+      p50: Math.round(p50 * 10) / 10,
+      p85: Math.round(p85 * 10) / 10,
+    };
   }
 
-  // Linear regression — returns predict(x) or null
-  function linReg(pts) {
-    const n = pts.length;
-    if (n < 2) return null;
-    const meanX = pts.reduce((s, p) => s + p.x, 0) / n;
-    const meanY = pts.reduce((s, p) => s + p.y, 0) / n;
-    const num = pts.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
-    const den = pts.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
-    if (!den) return null;
-    const slope = num / den;
-    const intercept = meanY - slope * meanX;
-    return x => Math.max(0, slope * x + intercept);
-  }
-
-  function trendLinePoints(pts) {
-    if (pts.length < 2) return [];
-    const xs = pts.map(p => p.x);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
-    const predict = linReg(pts);
-    if (!predict) return [];
+  function refLineDatasets(items) {
+    const stats = computeStats(items);
+    if (!stats) return [];
     return [
-      { x: xMin, y: Math.round(predict(xMin) * 10) / 10 },
-      { x: xMax, y: Math.round(predict(xMax) * 10) / 10 },
+      { label: 'Mean', _ref: true, data: [{ x: windowStartMs, y: stats.mean }, { x: windowEndMs, y: stats.mean }], showLine: true, pointRadius: 0, borderColor: '#667eea', borderWidth: 1.5, borderDash: [4, 4], fill: false },
+      { label: 'P50',  _ref: true, data: [{ x: windowStartMs, y: stats.p50  }, { x: windowEndMs, y: stats.p50  }], showLine: true, pointRadius: 0, borderColor: '#48bb78', borderWidth: 1.5, borderDash: [4, 4], fill: false },
+      { label: 'P85',  _ref: true, data: [{ x: windowStartMs, y: stats.p85  }, { x: windowEndMs, y: stats.p85  }], showLine: true, pointRadius: 0, borderColor: '#ed8936', borderWidth: 1.5, borderDash: [4, 4], fill: false },
     ];
   }
 
@@ -477,59 +484,87 @@ metaEl.innerHTML =
     return new Date(ms).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
   }
 
-  // Scatter chart — one dataset per type + trend line
-  const scatterDatasets = [
-    ...ctAllTypes.map(type => {
-      const style = ctTypeStyles[type] || { color: '#718096' };
-      return {
-        label: type,
-        data: ctDataByType[type],
-        backgroundColor: style.color + 'bb',
-        borderColor: style.color,
-        borderWidth: 1.5,
-        pointRadius: 6,
-        pointHoverRadius: 9,
-      };
-    }),
-    {
-      label: '__trend__',
-      data: trendLinePoints(activeScatterPoints()),
-      showLine: true,
-      pointRadius: 0,
-      borderColor: 'rgba(200,60,20,0.75)',
-      borderWidth: 2,
-      borderDash: [6, 4],
-      fill: false,
-    },
-  ];
+  // --- External tooltip for scatter ---
+  const ctTooltipEl = document.getElementById('ctTooltip');
+  let ctTooltipFrozen = false;
+  ctTooltipEl.addEventListener('mouseenter', () => { ctTooltipFrozen = true; });
+  ctTooltipEl.addEventListener('mouseleave', () => { ctTooltipFrozen = false; ctTooltipEl.style.display = 'none'; });
+
+  function buildCtTooltip(item) {
+    const style = ctTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
+    const url = ct.ado_url_base + '/' + item.id;
+    const days = item.cycle_time_days;
+    const completed = new Date(item.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const iconHtml = style.icon_url
+      ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;border-radius:2px;" onerror="this.style.display='none'">`
+      : `<span class="tt-badge" style="background:${escapeHtml(style.color)}">${escapeHtml(style.abbr)}</span>`;
+    const title = item.title.length > 55 ? item.title.slice(0, 55) + '\u2026' : item.title;
+    return (
+      '<div class="tt-items"><div class="tt-item">' +
+      iconHtml +
+      `<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${item.id}</a>` +
+      `<span class="tt-item-title">${escapeHtml(title)}</span>` +
+      `<span class="tt-item-days">${days}d</span>` +
+      '</div></div>' +
+      `<div class="tt-total" style="margin-top:6px;">Completed: ${escapeHtml(completed)}</div>` +
+      '<div class="tt-hint">Click to open in ADO</div>'
+    );
+  }
+
+  function ctExternalTooltip(context) {
+    const { tooltip } = context;
+    if (tooltip.opacity === 0) {
+      if (!ctTooltipFrozen) ctTooltipEl.style.display = 'none';
+      return;
+    }
+    const raw = tooltip.dataPoints[0].raw;
+    if (!raw._item) return; // reference line — no tooltip
+    ctTooltipEl.innerHTML = buildCtTooltip(raw._item);
+    ctTooltipEl.style.display = 'block';
+    const rect = context.chart.canvas.getBoundingClientRect();
+    let left = rect.left + window.pageXOffset + tooltip.caretX + 16;
+    const top = rect.top + window.pageYOffset + tooltip.caretY;
+    if (left + 440 > window.innerWidth + window.pageXOffset) {
+      left = rect.left + window.pageXOffset + tooltip.caretX - 440;
+    }
+    ctTooltipEl.style.left = left + 'px';
+    ctTooltipEl.style.top = top + 'px';
+  }
+
+  // --- Scatter chart ---
+  const activeItemsForRef = () => ctItems.filter(i => ctActiveTypes.has(i.type));
 
   const scatterChart = new Chart(document.getElementById('ctScatterChart'), {
     type: 'scatter',
-    data: { datasets: scatterDatasets },
+    data: {
+      datasets: [
+        ...ctAllTypes.map(type => {
+          const style = ctTypeStyles[type] || { color: '#718096' };
+          return {
+            label: type,
+            data: ctDataByType[type],
+            backgroundColor: style.color + 'bb',
+            borderColor: style.color,
+            borderWidth: 1.5,
+            pointRadius: 6,
+            pointHoverRadius: 9,
+          };
+        }),
+        ...refLineDatasets(ctItems),
+      ],
+    },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: {
-          filter: item => item.dataset.label !== '__trend__',
-          callbacks: {
-            title: items => {
-              const i = items[0].raw._item;
-              const t = i.title.length > 50 ? i.title.slice(0, 50) + '\u2026' : i.title;
-              return `#${i.id} \u2014 ${t}`;
-            },
-            label: ctx => {
-              const i = ctx.raw._item;
-              const d = new Date(i.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-              return [i.type, `Cycle time: ${i.cycle_time_days}d`, `Completed: ${d}`];
-            },
-          },
-        },
+        tooltip: { enabled: false, external: ctExternalTooltip },
       },
       scales: {
         x: {
           type: 'linear',
+          min: windowStartMs,
+          max: windowEndMs,
           title: { display: true, text: 'Completion date' },
           ticks: { maxTicksLimit: 8, callback: val => fmtMs(val) },
           grid: { display: false },
@@ -540,6 +575,20 @@ metaEl.innerHTML =
   });
 
   // --- Rolling average chart ---
+  // Pre-generate all Mondays in the window so both charts share the same range
+  function allWeeksInWindow() {
+    const weeks = [];
+    const cur = new Date(windowStartMs);
+    const day = cur.getUTCDay();
+    cur.setUTCDate(cur.getUTCDate() + (day === 0 ? -6 : 1 - day)); // snap to Monday
+    const end = new Date(windowEndMs);
+    while (cur <= end) {
+      weeks.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 7);
+    }
+    return weeks;
+  }
+
   function weekStart(isoStr) {
     const d = new Date(isoStr);
     const day = d.getUTCDay();
@@ -555,10 +604,12 @@ metaEl.innerHTML =
       const w = weekStart(item.completed_at);
       (buckets[w] = buckets[w] || []).push(item.cycle_time_days);
     });
-    return Object.keys(buckets).sort().map(w => ({
+    return allWeeksInWindow().map(w => ({
       week_start: w,
-      n: buckets[w].length,
-      mean_days: Math.round(buckets[w].reduce((s, v) => s + v, 0) / buckets[w].length * 10) / 10,
+      n: (buckets[w] || []).length,
+      mean_days: buckets[w]
+        ? Math.round(buckets[w].reduce((s, v) => s + v, 0) / buckets[w].length * 10) / 10
+        : null,
     }));
   }
 
@@ -566,13 +617,27 @@ metaEl.innerHTML =
     return new Date(isoDate).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
   }
 
+  function linRegIndexed(weekly) {
+    const valid = weekly.map((w, i) => ({ x: i, y: w.mean_days })).filter(p => p.y !== null);
+    const n = valid.length;
+    if (n < 2) return null;
+    const meanX = valid.reduce((s, p) => s + p.x, 0) / n;
+    const meanY = valid.reduce((s, p) => s + p.y, 0) / n;
+    const num = valid.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
+    const den = valid.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
+    if (!den) return null;
+    const slope = num / den, intercept = meanY - slope * meanX;
+    const firstI = valid[0].x, lastI = valid[valid.length - 1].x;
+    return (i) => (i < firstI || i > lastI) ? null : Math.round(Math.max(0, slope * i + intercept) * 10) / 10;
+  }
+
   function weeklyToChart(weekly) {
     const means = weekly.map(w => w.mean_days);
-    const predict = linReg(means.map((y, i) => ({ x: i, y })));
+    const predict = linRegIndexed(weekly);
     return {
       labels: weekly.map(w => weekLabel(w.week_start)),
       means,
-      trend: predict ? means.map((_, i) => Math.round(predict(i) * 10) / 10) : [],
+      trend: weekly.map((_, i) => predict ? predict(i) : null),
     };
   }
 
@@ -594,6 +659,7 @@ metaEl.innerHTML =
           pointHoverRadius: 6,
           fill: true,
           tension: 0.3,
+          spanGaps: false,
         },
         {
           label: 'Trend',
@@ -604,6 +670,7 @@ metaEl.innerHTML =
           pointRadius: 0,
           fill: false,
           tension: 0,
+          spanGaps: false,
         },
       ],
     },
@@ -619,15 +686,15 @@ metaEl.innerHTML =
               return w ? 'Week of ' + weekLabel(w.week_start) : '';
             },
             label: ctx => {
-              if (ctx.datasetIndex === 1) return null;
+              if (ctx.datasetIndex === 1 || ctx.parsed.y === null) return null;
               const w = currentWeekly[ctx.dataIndex];
-              return w ? [`Mean: ${ctx.parsed.y}d`, `Items: ${w.n}`] : [];
+              return w ? ['Mean: ' + ctx.parsed.y + 'd', 'Items: ' + w.n] : [];
             },
           },
         },
       },
       scales: {
-        x: { grid: { display: false } },
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45 } },
         y: { title: { display: true, text: 'Cycle time (days)' }, beginAtZero: true },
       },
     },
@@ -635,16 +702,16 @@ metaEl.innerHTML =
 
   // --- Update both charts on type toggle ---
   function updateCtCharts() {
-    // Scatter: show/hide per-type datasets, recompute trend
+    // Scatter: show/hide per-type datasets, rebuild reference lines
     ctAllTypes.forEach((type, idx) => {
       scatterChart.setDatasetVisibility(idx, ctActiveTypes.has(type));
     });
-    scatterChart.data.datasets[ctAllTypes.length].data = trendLinePoints(activeScatterPoints());
+    scatterChart.data.datasets.splice(ctAllTypes.length); // remove old ref lines
+    refLineDatasets(activeItemsForRef()).forEach(ds => scatterChart.data.datasets.push(ds));
     scatterChart.update();
 
-    // Rolling average: recompute from filtered items
-    const filtered = ctItems.filter(i => ctActiveTypes.has(i.type));
-    currentWeekly = computeWeekly(filtered);
+    // Rolling: recompute from filtered items
+    currentWeekly = computeWeekly(activeItemsForRef());
     const rolling = weeklyToChart(currentWeekly);
     rollingChart.data.labels = rolling.labels;
     rollingChart.data.datasets[0].data = rolling.means;
