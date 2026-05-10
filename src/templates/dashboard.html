@@ -371,17 +371,15 @@
   <!-- ── Flow tab ──────────────────────────────────────────────── -->
   <div id="tab-process" class="tab-panel">
 
-    <!-- CFD - full width -->
-    <div class="card">
-      <div class="card-header">
-        <h2>Cumulative Flow &mdash; arrivals per column over time</h2>
-      </div>
-      <div id="cfdToggles" style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:14px;"></div>
-      <div class="chart-wrap" style="height:360px;"><canvas id="cfdChart"></canvas></div>
-    </div>
-
-    <!-- A/D ratio + Time in columns side by side -->
+    <!-- Row 1: CFD + A/D ratio side by side -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      <div class="card">
+        <div class="card-header">
+          <h2>Cumulative Flow &mdash; arrivals per column over time</h2>
+        </div>
+        <div id="cfdToggles" style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:14px;"></div>
+        <div class="chart-wrap" style="height:320px;"><canvas id="cfdChart"></canvas></div>
+      </div>
 
       <!-- Arrival / Departure ratio -->
       <div class="card">
@@ -390,6 +388,16 @@
           &lt;0.95 = flowing well &nbsp;&middot;&nbsp; &gt;1.05 = building up
         </div>
         <div class="chart-wrap" id="adRatioWrap" style="height:320px;"><canvas id="adRatioChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Row 2: Net Flow + Time in columns side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      <div class="card">
+        <div class="card-header"><h2>Sustainability (Net Flow)</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:4px;">How sustainable is our pace of starting and finishing work?</p>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Goal: Stop starting, start finishing &mdash; aim to keep around zero and avoid high/low peaks.</p>
+        <div class="chart-wrap" style="height:260px;"><canvas id="netFlowChart"></canvas></div>
       </div>
 
       <!-- Time in columns -->
@@ -402,7 +410,6 @@
           <canvas id="timeInColumnsChart"></canvas>
         </div>
       </div>
-
     </div>
 
   </div><!-- /tab-process -->
@@ -455,11 +462,18 @@
   <!-- ── Blockers tab ─────────────────────────────────────────────── -->
   <div id="tab-blockers" class="tab-panel">
 
-    <!-- Row 1: Blocker Timeline (full width) -->
-    <div class="card">
-      <div class="card-header"><h2>Blocker Timeline</h2></div>
-      <p style="font-size:13px;color:#718096;margin-bottom:12px;">When items became blocked/on-hold (based on when the blocker tag was added).</p>
-      <div class="chart-wrap" style="height:220px;"><canvas id="blockerTimelineChart"></canvas></div>
+    <!-- Row 1: Blocker Timeline + Blocked by column side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      <div class="card">
+        <div class="card-header"><h2>Blocker Timeline</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">When items became blocked/on-hold (based on when the blocker tag was added).</p>
+        <div class="chart-wrap" style="height:220px;"><canvas id="blockerTimelineChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Blocked Items by Column</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Distribution of currently blocked and on-hold items across in-progress columns.</p>
+        <div class="chart-wrap" style="height:220px;"><canvas id="blockedByColumnChart"></canvas></div>
+      </div>
     </div>
 
     <!-- Row 2: Current Blocked + Stale Work side by side -->
@@ -2012,6 +2026,89 @@ function updateChart() {
   // Expose for reuse by other IIFEs
   window._flowRates = { arrivalSlope, departureSlope };
 
+  // ── Net Flow chart ───────────────────────────────────────────────
+  // Net flow per week = Δfinished − Δstarted
+  // Δfinished = cumAtOrBeyond[lastCol][i] - cumAtOrBeyond[lastCol][i-1]
+  // Δstarted  = cumAtOrBeyond[firstCol][i] - cumAtOrBeyond[firstCol][i-1]
+  const closedCum  = cumAtOrBeyond[lastCol];
+  const startedCum = cumAtOrBeyond[firstCol];
+  const netFlowVals = cfdWeeks.map((_, i) => {
+    if (i === 0) return 0;
+    const finished = (closedCum[i]  || 0) - (closedCum[i-1]  || 0);
+    const started  = (startedCum[i] || 0) - (startedCum[i-1] || 0);
+    return finished - started;
+  });
+  // Colours: positive = blue-grey (more finished), negative = orange (more started)
+  const netFlowColors = netFlowVals.map(v => v >= 0 ? '#718096' : '#ed8936');
+
+  const netFlowMin = Math.min(0, ...netFlowVals) - 1;
+  const netFlowMax = Math.max(0, ...netFlowVals) + 1;
+
+  new Chart(document.getElementById('netFlowChart'), {
+    type: 'bar',
+    data: {
+      labels: cfdLabels,
+      datasets: [{
+        label: 'Net flow',
+        data: netFlowVals,
+        backgroundColor: netFlowColors,
+        borderRadius: 3,
+        borderSkipped: false,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false, external: c => {
+          if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+          const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
+          if (idx === undefined) return;
+          const v = netFlowVals[idx];
+          const finished = idx > 0 ? (closedCum[idx]||0)-(closedCum[idx-1]||0) : 0;
+          const started  = idx > 0 ? (startedCum[idx]||0)-(startedCum[idx-1]||0) : 0;
+          sharedTooltip.show(
+            `<div class="tt-total" style="font-weight:600;">${escapeHtml(cfdLabels[idx]??'')}</div>` +
+            `<div class="tt-total">Finished: ${finished}</div>` +
+            `<div class="tt-total">Started: ${started}</div>` +
+            `<div class="tt-total" style="font-weight:600;color:${v>=0?'#2d3748':'#ed8936'};">Net: ${v>=0?'+':''}${v}</div>` +
+            TT_HINT, c
+          );
+        }},
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, maxTicksLimit: 12 } },
+        y: {
+          min: netFlowMin,
+          max: netFlowMax,
+          grid: { color: c => c.tick.value === 0 ? '#a0aec0' : '#e2e8f0', lineWidth: c => c.tick.value === 0 ? 2 : 1 },
+          ticks: { stepSize: 1 },
+        },
+      },
+    },
+    plugins: [{
+      id: 'netFlowLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx: c2, data, scales } = chart;
+        const ds = data.datasets[0];
+        c2.save();
+        c2.font = '11px system-ui, sans-serif';
+        c2.textAlign = 'center';
+        ds.data.forEach((val, i) => {
+          if (val === 0) return;
+          const meta = chart.getDatasetMeta(0);
+          const bar  = meta.data[i];
+          const y    = scales.y.getPixelForValue(val) + (val > 0 ? -6 : 14);
+          c2.fillStyle = val > 0 ? '#4a5568' : '#c05621';
+          c2.fillText((val > 0 ? '+' : '') + val, bar.x, y);
+        });
+        c2.restore();
+      },
+    }],
+  });
+  // ────────────────────────────────────────────────────────────────
+
   const trendDatasets = [
     {
       label: 'Arrival rate',
@@ -2984,6 +3081,60 @@ function updateChart() {
       },
     },
   });
+
+  // ── Chart 1b: Blocked by column ───────────────────────────────────
+  (() => {
+    const colOrder = (ctx.columns || []).filter(c => c.column_type === 'inProgress').map(c => c.name);
+    const blockedCount = {}, holdCount = {};
+    colOrder.forEach(c => { blockedCount[c] = 0; holdCount[c] = 0; });
+    activeBlockedItems.forEach(item => {
+      const col = item.column;
+      if (!colOrder.includes(col)) return;
+      const s = getSignals(item.tags);
+      if (s.isBlocked) blockedCount[col] = (blockedCount[col] || 0) + 1;
+      if (s.isOnHold)  holdCount[col]    = (holdCount[col]    || 0) + 1;
+    });
+    // Filter to columns with at least one item
+    const activeCols = colOrder.filter(c => (blockedCount[c] || 0) + (holdCount[c] || 0) > 0);
+    if (!activeCols.length) return;
+
+    const blockedByColTooltip = (c) => {
+      if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+      const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
+      const col = activeCols[idx]; if (!col) return;
+      const b = blockedCount[col] || 0, h = holdCount[col] || 0;
+      let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(col)}</div>`;
+      if (b) html += `<div class="tt-total" style="color:#e53e3e;">Blocked: ${b}</div>`;
+      if (h) html += `<div class="tt-total" style="color:#3182ce;">On Hold: ${h}</div>`;
+      activeBlockedItems.filter(i => i.column === col).forEach(item => {
+        const url = adoBase ? `${adoBase}/${item.id}` : '';
+        html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
+      });
+      sharedTooltip.show(html + TT_HINT, c);
+    };
+
+    new Chart(document.getElementById('blockedByColumnChart'), {
+      type: 'bar',
+      data: {
+        labels: activeCols,
+        datasets: [
+          { label: 'Blocked', data: activeCols.map(c => blockedCount[c] || 0), backgroundColor: '#fc8181', stack: 'col', borderRadius: 3 },
+          { label: 'On Hold', data: activeCols.map(c => holdCount[c]    || 0), backgroundColor: '#63b3ed', stack: 'col', borderRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: {
+          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'rect', boxWidth: 12, padding: 16 } },
+          tooltip: { enabled: false, external: blockedByColTooltip },
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 30 } },
+          y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#e2e8f0' } },
+        },
+      },
+    });
+  })();
 
   // ── Chart 2: Current Blocked Items ────────────────────────────────
   const sortedBlocked = [...activeBlockedItems]
