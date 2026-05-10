@@ -256,6 +256,7 @@
     <button class="tab-btn" data-tab="delivery">Delivery</button>
     <button class="tab-btn" data-tab="bugs">Bugs</button>
     <button class="tab-btn" data-tab="process">Flow</button>
+    <button class="tab-btn" data-tab="wip">WIP</button>
   </div>
 
   <!-- ── Overview tab ─────────────────────────────────────────────── -->
@@ -404,6 +405,36 @@
     </div>
 
   </div><!-- /tab-process -->
+
+  <!-- ── WIP tab ──────────────────────────────────────────────────── -->
+  <div id="tab-wip" class="tab-panel">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+
+      <!-- Aging WIP bar chart -->
+      <div class="card">
+        <div class="card-header"><h2>Aging Work In Progress</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Shows currently active items grouped by how long they&rsquo;ve been in progress.</p>
+        <div id="agingWipToggles" class="type-toggles" style="margin-bottom:12px;"></div>
+        <div style="display:flex;gap:20px;margin-bottom:14px;font-size:12px;font-weight:600;">
+          <span><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#68d391;margin-right:5px;"></span>Least aged</span>
+          <span><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#f6ad55;margin-right:5px;"></span>Moderately aged</span>
+          <span><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fc8181;margin-right:5px;"></span>Most aged</span>
+        </div>
+        <div id="agingWipWrap" class="chart-wrap"><canvas id="agingWipChart"></canvas></div>
+      </div>
+
+      <!-- WIP age scatter per column -->
+      <div class="card">
+        <div class="card-header"><h2>WIP age by column</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Age of each active item per in-progress column, with P50, P80 and average.</p>
+        <div id="wipScatterToggles" class="type-toggles" style="margin-bottom:12px;"></div>
+        <div class="chart-wrap" style="height:400px;"><canvas id="wipAgeScatterChart"></canvas></div>
+      </div>
+
+    </div>
+
+  </div><!-- /tab-wip -->
 
 </div>
 <div id="sharedTooltip" class="chart-tooltip"></div>
@@ -2148,6 +2179,381 @@ function updateChart() {
     },
   });
 
+})();
+// ────────────────────────────────────────────────────────────────────
+
+// ── Aging WIP ────────────────────────────────────────────────────────
+(() => {
+  const wi  = dashboard.work_items || [];
+  const wih = dashboard.work_item_history || [];
+  const ctx = dashboard.context || {};
+  const ct  = dashboard.cycle_time || {};
+
+  const typeStyles = ctx.work_item_type_styles || {};
+  const adoBase = ct.ado_url_base || '';
+
+  const inProgCols = new Set(
+    (ctx.columns || []).filter(c => c.column_type === 'inProgress').map(c => c.name)
+  );
+
+  const histMap = {};
+  wih.forEach(h => { histMap[h.id] = h.column_history || []; });
+
+  const today = Date.now();
+
+  // All in-progress items with age computed
+  const allWipItems = wi
+    .filter(item => inProgCols.has(item.column))
+    .map(item => {
+      const hist = histMap[item.id] || [];
+      let firstEntry = null;
+      for (const seg of hist) {
+        if (inProgCols.has(seg.value)) {
+          const t = new Date(seg.entered).getTime();
+          if (firstEntry === null || t < firstEntry) firstEntry = t;
+        }
+      }
+      const ageDays = firstEntry !== null ? Math.round((today - firstEntry) / 86400000) : 0;
+      const style = typeStyles[item.type] || {};
+      return { id: item.id, type: item.type, title: item.title, column: item.column,
+               ageDays, color: '#68d391', style, url: adoBase ? adoBase + '/' + item.id : null };
+    })
+    .sort((a, b) => b.ageDays - a.ageDays);
+
+  // Unique types in the same order as context config, filtered to types present in WIP
+  const wipTypeSet = new Set(allWipItems.map(d => d.type));
+  const allTypes = Object.keys(typeStyles).filter(t => wipTypeSet.has(t));
+  const visibleTypes = new Set(allTypes);
+
+  // Preload icons
+  const iconImgs = {};
+  allTypes.forEach(type => {
+    const s = typeStyles[type] || {};
+    if (s.icon_url) {
+      const img = new Image(14, 14);
+      img.src = s.icon_url;
+      iconImgs[type] = img;
+    }
+  });
+
+  let wipItems = [];
+  let agingChart = null;
+  const agingCanvas = document.getElementById('agingWipChart');
+
+  function agingWipTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const idx = context.tooltip.dataPoints[0]?.dataIndex;
+    const item = wipItems[idx];
+    if (!item) return;
+    const ageCls = item.color === '#fc8181' ? 'color:#9b2c2c' : item.color === '#f6ad55' ? 'color:#c05621' : 'color:#276749';
+    const linkHtml = item.url
+      ? `<a class="tt-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">#${item.id}</a>`
+      : `#${item.id}`;
+    sharedTooltip.show(
+      `<div class="tt-total" style="font-weight:600;">${ttIcon(item.style)} ${escapeHtml(item.type)} ${linkHtml}</div>` +
+      `<div class="tt-total">${escapeHtml(item.title.length > 60 ? item.title.slice(0,60)+'\u2026' : item.title)}</div>` +
+      `<div class="tt-total">Column: ${escapeHtml(item.column)}</div>` +
+      `<div class="tt-total" style="${ageCls};font-weight:700;">Age: ${item.ageDays} days</div>` +
+      TT_HINT,
+      context
+    );
+  }
+
+  const iconPlugin = {
+    id: 'wipIcons',
+    afterDraw(chart) {
+      const { ctx: c2, scales } = chart;
+      const yScale = scales.y;
+      c2.save();
+      wipItems.forEach((item, i) => {
+        const img = iconImgs[item.type];
+        if (!img || !img.complete || img.naturalWidth === 0) return;
+        const y = yScale.getPixelForValue(i);
+        c2.drawImage(img, yScale.left - 22, y - 7, 14, 14);
+      });
+      c2.restore();
+    },
+  };
+
+  function renderAgingChart() {
+    // Top 10 from visible types, sorted oldest first
+    wipItems = allWipItems
+      .filter(d => visibleTypes.has(d.type))
+      .slice(0, 10);
+
+    // Relative colour within this set
+    const ages  = wipItems.map(d => d.ageDays);
+    const minA  = Math.min(...ages);
+    const range = (Math.max(...ages) - minA) || 1;
+    wipItems.forEach(item => {
+      const pos = (item.ageDays - minA) / range;
+      item.color = pos >= 0.66 ? '#fc8181' : pos >= 0.33 ? '#f6ad55' : '#68d391';
+    });
+
+    document.getElementById('agingWipWrap').style.height = Math.max(280, wipItems.length * 40 + 60) + 'px';
+
+    if (agingChart) agingChart.destroy();
+    agingChart = new Chart(agingCanvas, {
+      type: 'bar',
+      data: {
+        labels: wipItems.map(d => '#' + d.id),
+        datasets: [{
+          data: wipItems.map(d => d.ageDays),
+          backgroundColor: wipItems.map(d => d.color),
+          borderRadius: 3, borderSkipped: false,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false, animation: false,
+        layout: { padding: { left: 28 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false, external: agingWipTooltip },
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            title: { display: true, text: 'Age (days)', color: '#718096', font: { size: 12 } },
+            grid: { color: '#e2e8f0' },
+          },
+          y: { grid: { display: false }, ticks: { font: { size: 12 } } },
+        },
+      },
+      plugins: [iconPlugin],
+    });
+  }
+
+  renderAgingChart();
+
+  // Type toggles
+  const toggleContainer = document.getElementById('agingWipToggles');
+  if (allTypes.length > 1) {
+    toggleContainer.style.display = 'flex';
+    allTypes.forEach(type => {
+      const style = typeStyles[type] || {};
+      const color = style.color || '#667eea';
+      const btn = document.createElement('button');
+      btn.className = 'type-toggle active';
+      btn.dataset.active = 'true';
+      btn.style.setProperty('--type-color', color);
+      const iconHtml = style.icon_url
+        ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+        : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(color)};flex-shrink:0;"></span>`;
+      btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
+      btn.addEventListener('click', () => {
+        const on = btn.dataset.active === 'true';
+        if (on && visibleTypes.size === 1) return; // keep at least one
+        btn.dataset.active = on ? 'false' : 'true';
+        btn.classList.toggle('active', !on);
+        if (on) visibleTypes.delete(type); else visibleTypes.add(type);
+        renderAgingChart();
+      });
+      toggleContainer.appendChild(btn);
+    });
+  }
+})();
+// ────────────────────────────────────────────────────────────────────
+
+// ── WIP age scatter ──────────────────────────────────────────────────
+(() => {
+  const wi  = dashboard.work_items || [];
+  const wih = dashboard.work_item_history || [];
+  const ctx = dashboard.context || {};
+  const ct  = dashboard.cycle_time || {};
+  const adoBase = ct.ado_url_base || '';
+
+  const typeStyles = ctx.work_item_type_styles || {};
+
+  const inProgColsOrdered = (ctx.columns || [])
+    .filter(c => c.column_type === 'inProgress')
+    .map(c => c.name);
+  const inProgSet = new Set(inProgColsOrdered);
+
+  const histMap = {};
+  wih.forEach(h => { histMap[h.id] = h.column_history || []; });
+
+  const today = Date.now();
+
+  const colPalette = ['#667eea','#48bb78','#ed8936','#e53e3e','#38b2ac','#9f7aea','#f6ad55','#fc8181'];
+  const colColor = {};
+  inProgColsOrdered.forEach((col, i) => { colColor[col] = colPalette[i % colPalette.length]; });
+
+  // All in-progress items with age
+  const allScatterItems = [];
+  wi.filter(item => inProgSet.has(item.column)).forEach(item => {
+    const hist = histMap[item.id] || [];
+    let firstEntry = null;
+    for (const seg of hist) {
+      if (inProgSet.has(seg.value)) {
+        const t = new Date(seg.entered).getTime();
+        if (firstEntry === null || t < firstEntry) firstEntry = t;
+      }
+    }
+    if (firstEntry !== null) {
+      allScatterItems.push({
+        age: Math.round((today - firstEntry) / 86400000),
+        id: item.id, title: item.title, type: item.type, col: item.column,
+      });
+    }
+  });
+
+  // Types in config order, filtered to those present
+  const presentTypes = new Set(allScatterItems.map(d => d.type));
+  const allTypes = Object.keys(typeStyles).filter(t => presentTypes.has(t));
+  const visibleTypes = new Set(allTypes);
+
+  function percentile(sorted, p) {
+    if (!sorted.length) return null;
+    const idx = (p / 100) * (sorted.length - 1);
+    const lo = Math.floor(idx), hi = Math.ceil(idx);
+    return +(sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo)).toFixed(1);
+  }
+
+  const xMin = -0.5, xMax = inProgColsOrdered.length - 0.5;
+  let scatterChart = null;
+  const scatterCanvas = document.getElementById('wipAgeScatterChart');
+
+  function wipScatterTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp = context.tooltip.dataPoints[0];
+    if (!dp) return;
+    const raw = dp.raw;
+    if (raw.id) {
+      const style = typeStyles[raw.type] || {};
+      const ageCls = raw.y >= 30 ? 'color:#9b2c2c' : raw.y >= 14 ? 'color:#c05621' : 'color:#276749';
+      const linkHtml = adoBase
+        ? `<a class="tt-link" href="${escapeHtml(adoBase + '/' + raw.id)}" target="_blank" rel="noopener">#${raw.id}</a>`
+        : `#${raw.id}`;
+      sharedTooltip.show(
+        `<div class="tt-total" style="font-weight:600;">${ttIcon(style)} ${escapeHtml(raw.type)} ${linkHtml}</div>` +
+        `<div class="tt-total">${escapeHtml(raw.title.length > 60 ? raw.title.slice(0,60)+'\u2026' : raw.title)}</div>` +
+        `<div class="tt-total">Column: ${escapeHtml(raw.col)}</div>` +
+        `<div class="tt-total" style="${ageCls};font-weight:700;">Age: ${raw.y} days</div>` +
+        TT_HINT, context
+      );
+    } else {
+      sharedTooltip.show(
+        `<div class="tt-total" style="font-weight:600;">${escapeHtml(dp.dataset.label)}</div>` +
+        `<div class="tt-total">${raw.y} days</div>` +
+        TT_HINT, context
+      );
+    }
+  }
+
+  function renderScatterChart() {
+    const visible = allScatterItems.filter(d => visibleTypes.has(d.type));
+
+    // Stats over visible items
+    const sortedAll = visible.map(d => d.age).sort((a, b) => a - b);
+    const globalMedian = percentile(sortedAll, 50);
+    const globalP85    = percentile(sortedAll, 85);
+    const globalAvg    = sortedAll.length
+      ? +(sortedAll.reduce((s, v) => s + v, 0) / sortedAll.length).toFixed(1) : null;
+
+    const scatterDatasets = inProgColsOrdered.map((col, xi) => ({
+      label: col, type: 'scatter',
+      data: visible.filter(d => d.col === col).map(d => ({ x: xi, y: d.age, id: d.id, title: d.title, type: d.type, col })),
+      backgroundColor: colColor[col] + 'bb',
+      borderColor: colColor[col],
+      borderWidth: 1.5, pointRadius: 7, pointHoverRadius: 9, order: 4,
+    }));
+
+    const statDefs = [
+      { label: `85th: ${globalP85}d`,     y: globalP85,    color: '#ed8936' },
+      { label: `Avg: ${globalAvg}d`,       y: globalAvg,    color: '#38b2ac' },
+      { label: `Median: ${globalMedian}d`, y: globalMedian, color: '#667eea' },
+    ].filter(s => s.y !== null);
+
+    const statDatasets = statDefs.map(s => ({
+      label: s.label, type: 'line',
+      data: [{ x: xMin, y: s.y }, { x: xMax, y: s.y }],
+      borderColor: s.color, backgroundColor: 'transparent',
+      borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false, tension: 0, order: 0,
+    }));
+
+    const drawPlugin = {
+      id: 'wipDraw',
+      afterDraw(chart) {
+        const { ctx: c2, chartArea, scales } = chart;
+        c2.save();
+        // Stat end labels
+        c2.font = '700 11px -apple-system, BlinkMacSystemFont, sans-serif';
+        c2.textBaseline = 'middle';
+        statDefs.forEach((s, i) => {
+          const meta = chart.getDatasetMeta(scatterDatasets.length + i);
+          if (!meta.data.length) return;
+          const pt = meta.data[meta.data.length - 1];
+          const tw = c2.measureText(s.label).width;
+          c2.fillStyle = s.color;
+          c2.fillRect(pt.x + 4, pt.y - 9, tw + 10, 18);
+          c2.fillStyle = 'white';
+          c2.fillText(s.label, pt.x + 9, pt.y);
+        });
+        // Column name labels
+        c2.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+        c2.fillStyle = '#4a5568';
+        c2.textAlign = 'center';
+        c2.textBaseline = 'top';
+        inProgColsOrdered.forEach((col, i) => {
+          c2.fillText(col, scales.x.getPixelForValue(i), chartArea.bottom + 8);
+        });
+        c2.restore();
+      },
+    };
+
+    if (scatterChart) scatterChart.destroy();
+    scatterChart = new Chart(scatterCanvas, {
+      type: 'scatter',
+      data: { datasets: [...scatterDatasets, ...statDatasets] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        layout: { padding: { right: 110, bottom: 28 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false, external: wipScatterTooltip },
+        },
+        scales: {
+          x: { type: 'linear', min: xMin, max: xMax, ticks: { display: false }, grid: { color: '#e2e8f0' } },
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: 'Age (days)', color: '#718096', font: { size: 12 } },
+            grid: { color: '#e2e8f0' },
+          },
+        },
+      },
+      plugins: [drawPlugin],
+    });
+  }
+
+  renderScatterChart();
+
+  // Type toggles
+  const toggleContainer = document.getElementById('wipScatterToggles');
+  if (allTypes.length > 1) {
+    toggleContainer.style.display = 'flex';
+    allTypes.forEach(type => {
+      const style = typeStyles[type] || {};
+      const color = style.color || '#667eea';
+      const btn = document.createElement('button');
+      btn.className = 'type-toggle active';
+      btn.dataset.active = 'true';
+      btn.style.setProperty('--type-color', color);
+      const iconHtml = style.icon_url
+        ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+        : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(color)};flex-shrink:0;"></span>`;
+      btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
+      btn.addEventListener('click', () => {
+        const on = btn.dataset.active === 'true';
+        if (on && visibleTypes.size === 1) return;
+        btn.dataset.active = on ? 'false' : 'true';
+        btn.classList.toggle('active', !on);
+        if (on) visibleTypes.delete(type); else visibleTypes.add(type);
+        renderScatterChart();
+      });
+      toggleContainer.appendChild(btn);
+    });
+  }
 })();
 // ────────────────────────────────────────────────────────────────────
 
