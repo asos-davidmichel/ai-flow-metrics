@@ -154,12 +154,37 @@
     </div>
   </div>
 
+  <!-- Cycle time charts (shown if data is available) -->
+  <div id="cycleTimeSection" style="display:none;">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2>Cycle time &mdash; scatter</h2>
+          <p class="card-subtitle" id="ctSubtitle"></p>
+        </div>
+        <div id="ctToggles" class="type-toggles"></div>
+      </div>
+      <div class="chart-wrap" style="height:400px;">
+        <canvas id="ctScatterChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Cycle time &mdash; weekly average &amp; trend</h2>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="ctRollingChart"></canvas>
+      </div>
+    </div>
+  </div>
+
   <div class="card meta" id="metaCard"></div>
 
 </div>
 <div id="chartTooltip" class="chart-tooltip"></div>
 <script>
-const data = /*DATA_PLACEHOLDER*/;
+const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
+const data = dashboard.time_in_columns;
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -360,6 +385,273 @@ metaEl.innerHTML =
   '<strong>Excluded items:</strong> ' + (data.excluded_item_ids.length > 0 ? data.excluded_item_ids.join(', ') : 'none') + '<br>' +
   '<strong>Historical column mapping applied:</strong> ' + mappingHtml +
   warningsHtml;
+
+// ====================================================================
+// Cycle time charts
+// ====================================================================
+(function () {
+  const ct = dashboard.cycle_time;
+  if (!ct || !ct.items || ct.items.length === 0) return;
+
+  document.getElementById('cycleTimeSection').style.display = '';
+
+  const ctItems = ct.items;
+  const ctTypeStyles = ct.work_item_type_styles || {};
+  const ctAllTypes = Object.keys(ctTypeStyles);
+  const ctActiveTypes = new Set(ctAllTypes);
+
+  // Summary subtitle
+  const ov = ct.overall || {};
+  if (ov.n) {
+    document.getElementById('ctSubtitle').textContent =
+      ov.n + ' items · Median: ' + ov.median_days + 'd · P85: ' + ov.p85_days + 'd';
+  }
+
+  // --- Type toggles ---
+  const ctToggleContainer = document.getElementById('ctToggles');
+  if (ctAllTypes.length > 1) {
+    ctToggleContainer.style.display = 'flex';
+    ctAllTypes.forEach(type => {
+      const style = ctTypeStyles[type] || { color: '#718096' };
+      const btn = document.createElement('button');
+      btn.className = 'type-toggle active';
+      btn.style.setProperty('--type-color', style.color);
+      const iconHtml = style.icon_url
+        ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+        : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(style.color)};flex-shrink:0;"></span>`;
+      btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
+      btn.addEventListener('click', () => {
+        if (ctActiveTypes.has(type)) {
+          if (ctActiveTypes.size === 1) return;
+          ctActiveTypes.delete(type);
+          btn.classList.remove('active');
+        } else {
+          ctActiveTypes.add(type);
+          btn.classList.add('active');
+        }
+        updateCtCharts();
+      });
+      ctToggleContainer.appendChild(btn);
+    });
+  }
+
+  // --- Scatter data, pre-grouped by type ---
+  const ctDataByType = {};
+  ctAllTypes.forEach(type => {
+    ctDataByType[type] = ctItems
+      .filter(i => i.type === type)
+      .map(i => ({ x: new Date(i.completed_at).getTime(), y: i.cycle_time_days, _item: i }));
+  });
+
+  function activeScatterPoints() {
+    return ctAllTypes.filter(t => ctActiveTypes.has(t)).flatMap(t => ctDataByType[t]);
+  }
+
+  // Linear regression — returns predict(x) or null
+  function linReg(pts) {
+    const n = pts.length;
+    if (n < 2) return null;
+    const meanX = pts.reduce((s, p) => s + p.x, 0) / n;
+    const meanY = pts.reduce((s, p) => s + p.y, 0) / n;
+    const num = pts.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
+    const den = pts.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
+    if (!den) return null;
+    const slope = num / den;
+    const intercept = meanY - slope * meanX;
+    return x => Math.max(0, slope * x + intercept);
+  }
+
+  function trendLinePoints(pts) {
+    if (pts.length < 2) return [];
+    const xs = pts.map(p => p.x);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const predict = linReg(pts);
+    if (!predict) return [];
+    return [
+      { x: xMin, y: Math.round(predict(xMin) * 10) / 10 },
+      { x: xMax, y: Math.round(predict(xMax) * 10) / 10 },
+    ];
+  }
+
+  function fmtMs(ms) {
+    return new Date(ms).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  }
+
+  // Scatter chart — one dataset per type + trend line
+  const scatterDatasets = [
+    ...ctAllTypes.map(type => {
+      const style = ctTypeStyles[type] || { color: '#718096' };
+      return {
+        label: type,
+        data: ctDataByType[type],
+        backgroundColor: style.color + 'bb',
+        borderColor: style.color,
+        borderWidth: 1.5,
+        pointRadius: 6,
+        pointHoverRadius: 9,
+      };
+    }),
+    {
+      label: '__trend__',
+      data: trendLinePoints(activeScatterPoints()),
+      showLine: true,
+      pointRadius: 0,
+      borderColor: 'rgba(200,60,20,0.75)',
+      borderWidth: 2,
+      borderDash: [6, 4],
+      fill: false,
+    },
+  ];
+
+  const scatterChart = new Chart(document.getElementById('ctScatterChart'), {
+    type: 'scatter',
+    data: { datasets: scatterDatasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          filter: item => item.dataset.label !== '__trend__',
+          callbacks: {
+            title: items => {
+              const i = items[0].raw._item;
+              const t = i.title.length > 50 ? i.title.slice(0, 50) + '\u2026' : i.title;
+              return `#${i.id} \u2014 ${t}`;
+            },
+            label: ctx => {
+              const i = ctx.raw._item;
+              const d = new Date(i.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+              return [i.type, `Cycle time: ${i.cycle_time_days}d`, `Completed: ${d}`];
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          title: { display: true, text: 'Completion date' },
+          ticks: { maxTicksLimit: 8, callback: val => fmtMs(val) },
+          grid: { display: false },
+        },
+        y: { title: { display: true, text: 'Cycle time (days)' }, beginAtZero: true },
+      },
+    },
+  });
+
+  // --- Rolling average chart ---
+  function weekStart(isoStr) {
+    const d = new Date(isoStr);
+    const day = d.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const mon = new Date(d);
+    mon.setUTCDate(d.getUTCDate() + diff);
+    return mon.toISOString().slice(0, 10);
+  }
+
+  function computeWeekly(items) {
+    const buckets = {};
+    items.forEach(item => {
+      const w = weekStart(item.completed_at);
+      (buckets[w] = buckets[w] || []).push(item.cycle_time_days);
+    });
+    return Object.keys(buckets).sort().map(w => ({
+      week_start: w,
+      n: buckets[w].length,
+      mean_days: Math.round(buckets[w].reduce((s, v) => s + v, 0) / buckets[w].length * 10) / 10,
+    }));
+  }
+
+  function weekLabel(isoDate) {
+    return new Date(isoDate).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  }
+
+  function weeklyToChart(weekly) {
+    const means = weekly.map(w => w.mean_days);
+    const predict = linReg(means.map((y, i) => ({ x: i, y })));
+    return {
+      labels: weekly.map(w => weekLabel(w.week_start)),
+      means,
+      trend: predict ? means.map((_, i) => Math.round(predict(i) * 10) / 10) : [],
+    };
+  }
+
+  let currentWeekly = computeWeekly(ctItems);
+  const initRolling = weeklyToChart(currentWeekly);
+
+  const rollingChart = new Chart(document.getElementById('ctRollingChart'), {
+    type: 'line',
+    data: {
+      labels: initRolling.labels,
+      datasets: [
+        {
+          label: 'Weekly average',
+          data: initRolling.means,
+          borderColor: '#667eea',
+          backgroundColor: 'rgba(102,126,234,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          fill: true,
+          tension: 0.3,
+        },
+        {
+          label: 'Trend',
+          data: initRolling.trend,
+          borderColor: 'rgba(200,60,20,0.7)',
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => {
+              const w = currentWeekly[items[0].dataIndex];
+              return w ? 'Week of ' + weekLabel(w.week_start) : '';
+            },
+            label: ctx => {
+              if (ctx.datasetIndex === 1) return null;
+              const w = currentWeekly[ctx.dataIndex];
+              return w ? [`Mean: ${ctx.parsed.y}d`, `Items: ${w.n}`] : [];
+            },
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { title: { display: true, text: 'Cycle time (days)' }, beginAtZero: true },
+      },
+    },
+  });
+
+  // --- Update both charts on type toggle ---
+  function updateCtCharts() {
+    // Scatter: show/hide per-type datasets, recompute trend
+    ctAllTypes.forEach((type, idx) => {
+      scatterChart.setDatasetVisibility(idx, ctActiveTypes.has(type));
+    });
+    scatterChart.data.datasets[ctAllTypes.length].data = trendLinePoints(activeScatterPoints());
+    scatterChart.update();
+
+    // Rolling average: recompute from filtered items
+    const filtered = ctItems.filter(i => ctActiveTypes.has(i.type));
+    currentWeekly = computeWeekly(filtered);
+    const rolling = weeklyToChart(currentWeekly);
+    rollingChart.data.labels = rolling.labels;
+    rollingChart.data.datasets[0].data = rolling.means;
+    rollingChart.data.datasets[1].data = rolling.trend;
+    rollingChart.update();
+  }
+})();
 </script>
 </body>
 </html>

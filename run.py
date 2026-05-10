@@ -96,17 +96,21 @@ def main():
         print()
         print("Next: review output/data/config_draft.json, edit if needed,")
         print("      then save as output/data/config.json to confirm your choices.")
-        print(f"      Once config.json exists, re-run with --window {window} to generate metrics.")
+        print(f"      Once config.json exists, re-run with --window {window} to generate metrics and dashboard.")
         return
 
     print()
     run(
         [sys.executable, "src/metrics.py", "--window", window],
-        f"Step 4 / 5 — Calculate metrics (window: {window})",
+        f"Step 4 / 6 — Calculate time-in-columns (window: {window})",
+    )
+    run(
+        [sys.executable, "src/cycle_time.py", "--window", window],
+        f"Step 5 / 6 — Calculate cycle time (window: {window})",
     )
     run(
         [sys.executable, "src/dashboard.py"],
-        "Step 5 / 5 — Generate dashboard",
+        "Step 6 / 6 — Generate dashboard",
     )
     print()
     print("Dashboard ready: output/dashboard.html")
