@@ -238,6 +238,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="overview">Overview</button>
     <button class="tab-btn" data-tab="delivery">Delivery</button>
+    <button class="tab-btn" data-tab="bugs">Bugs</button>
     <button class="tab-btn" data-tab="process">Process</button>
   </div>
 
@@ -308,6 +309,46 @@
     </div>
 
   </div><!-- /tab-delivery -->
+
+  <!-- ── Bugs tab ──────────────────────────────────────────────────── -->
+  <div id="tab-bugs" class="tab-panel">
+
+    <!-- Bug KPI cards -->
+
+    <!-- Row 0: bugs in system over time (full width) -->
+    <div class="card">
+      <div class="card-header"><h2>Bugs in system &mdash; open (not closed) per week</h2></div>
+      <div class="chart-wrap" style="height:260px;"><canvas id="bugOpenChart"></canvas></div>
+    </div>
+
+    <!-- Row 1: intake + % of new work -->
+    <div class="card-row">
+      <div class="card">
+        <div class="card-header"><h2>Bug intake &mdash; new bugs per week</h2></div>
+        <div class="chart-wrap" style="height:280px;"><canvas id="bugIntakeChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Bug % &mdash; of new work &amp; of WIP per week</h2></div>
+        <div class="chart-wrap" style="height:280px;"><canvas id="bugPctNewChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Row 2: net flow + column distribution side by side -->
+    <div class="card-row">
+      <div class="card">
+        <div class="card-header"><h2>Bug net flow &mdash; completed minus created per week</h2></div>
+        <div style="font-size:12px;color:#718096;margin-bottom:8px;">
+          Positive = more finished than started &nbsp;·&nbsp; Negative = more started than finished
+        </div>
+        <div class="chart-wrap" style="height:280px;"><canvas id="bugCreatedVsClosedChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Bug distribution by column</h2></div>
+        <div class="chart-wrap" style="height:280px;"><canvas id="bugColumnChart"></canvas></div>
+      </div>
+    </div>
+
+  </div><!-- /tab-bugs -->
 
   <!-- ── Process tab ──────────────────────────────────────────────── -->
   <div id="tab-process" class="tab-panel">
@@ -843,7 +884,7 @@ function updateChart() {
           data: initRolling.means,
           borderColor: '#667eea',
           backgroundColor: '#667eea',
-          borderWidth: 2,
+          borderWidth: 3,
           pointRadius: 4,
           pointHoverRadius: 6,
           fill: false,
@@ -854,7 +895,7 @@ function updateChart() {
           label: 'Trend',
           data: initRolling.trend,
           borderColor: 'rgba(200,60,20,0.7)',
-          borderWidth: 2,
+          borderWidth: 3,
           borderDash: [6, 4],
           pointRadius: 0,
           fill: false,
@@ -1082,8 +1123,8 @@ function updateChart() {
     type: 'line',
     data: {
       datasets: [
-        { label: 'Weekly average', data: ltInitRolling.means, borderColor: '#667eea', backgroundColor: '#667eea', borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
-        { label: 'Trend',          data: ltInitRolling.trend, borderColor: 'rgba(200,60,20,0.7)', borderWidth: 2, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
+        { label: 'Weekly average', data: ltInitRolling.means, borderColor: '#667eea', backgroundColor: '#667eea', borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
+        { label: 'Trend',          data: ltInitRolling.trend, borderColor: 'rgba(200,60,20,0.7)', borderWidth: 3, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
       ],
     },
     options: {
@@ -1187,8 +1228,8 @@ function updateChart() {
     type: 'line',
     data: {
       datasets: [
-        { label: 'Items / week', data: tpCounts, borderColor: '#48bb78', backgroundColor: '#48bb78', borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
-        { label: 'Trend',       data: tpTrend,  borderColor: 'rgba(200,60,20,0.7)', borderWidth: 2, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
+        { label: 'Items / week', data: tpCounts, borderColor: '#48bb78', backgroundColor: '#48bb78', borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
+        { label: 'Trend',       data: tpTrend,  borderColor: 'rgba(200,60,20,0.7)', borderWidth: 3, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
       ],
     },
     options: {
@@ -1319,6 +1360,421 @@ function updateChart() {
   }
 
   document.getElementById('kpiGrid').innerHTML = cards.join('');
+})();
+// ────────────────────────────────────────────────────────────────────
+
+// ── Bug metrics ─────────────────────────────────────────────────────
+(function () {
+  const wi  = dashboard.work_items;
+  const ct  = dashboard.cycle_time;
+  const ctx = dashboard.context;
+  if (!wi || !ct) return;
+
+  const windowStart = ct.window.start;
+  const windowEnd   = ct.window.end;
+  const adoBase     = ct.ado_url_base || '';
+
+  const inProgressCols = new Set(
+    (ctx?.columns || []).filter(c => c.column_type === 'inProgress').map(c => c.name)
+  );
+  const bugStyle = (ct.work_item_type_styles || {})['Bug'] || { color: '#e53e3e', abbr: 'Bug' };
+  const bugColor = bugStyle.color || '#e53e3e';
+
+  // Items created within the analysis window
+  const allInWindow  = wi.filter(i => i.created_date >= windowStart && i.created_date <= windowEnd);
+  const bugsInWindow = allInWindow.filter(i => i.type === 'Bug');
+
+  // Build set of all weeks
+  const weekSet = new Set();
+  allInWindow.forEach(i => weekSet.add(weekStart(i.created_date)));
+  (ct.items || []).filter(i => i.type === 'Bug').forEach(i => weekSet.add(weekStart(i.completed_at)));
+  const allWeeks   = [...weekSet].sort();
+  const weekLabels = allWeeks.map(w => weekLabel(w));
+
+  // Item arrays per week
+  const intakeByWeek = {};
+  bugsInWindow.forEach(i => {
+    const w = weekStart(i.created_date);
+    (intakeByWeek[w] = intakeByWeek[w] || []).push(i);
+  });
+
+  const allCreatedByWeek = {};
+  allInWindow.forEach(i => {
+    const w = weekStart(i.created_date);
+    (allCreatedByWeek[w] = allCreatedByWeek[w] || []).push(i);
+  });
+
+  const completedBugsByWeek = {};
+  (ct.items || []).filter(i => i.type === 'Bug').forEach(i => {
+    const w = weekStart(i.completed_at);
+    (completedBugsByWeek[w] = completedBugsByWeek[w] || []).push(i);
+  });
+
+  // Hoisted — needed by tooltip functions and charts before their chart blocks
+  const wih = dashboard.work_item_history || [];
+  const idToType = {};
+  wi.forEach(i => { idToType[i.id] = i.type; });
+
+  const allBugs = wi.filter(i => i.type === 'Bug');
+  const colMap = {};
+  allBugs.forEach(i => { (colMap[i.column] = colMap[i.column] || []).push(i); });
+  const colEntries = Object.entries(colMap).sort((a, b) => b[1].length - a[1].length);
+
+  // ── Shared tooltip helpers ──
+  function bugItemRow(item) {
+    const created = new Date(item.created_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return ttItemRow(bugStyle, adoBase + '/' + item.id, item.id, item.title, created);
+  }
+  function ctBugItemRow(item) {
+    return ttItemRow(bugStyle, adoBase + '/' + item.id, item.id, item.title, item.cycle_time_days + 'd CT');
+  }
+
+  function bugListTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp    = context.tooltip.dataPoints[0];
+    const idx   = dp.dataIndex;
+    const items = intakeByWeek[allWeeks[idx]] || [];
+    if (items.length === 0) { sharedTooltip.hide(); return; }
+    const label = weekLabels[idx] || '';
+    const html = `<div class="tt-total">Week of ${escapeHtml(label)} &middot; ${items.length} bug${items.length > 1 ? 's' : ''}</div>`
+      + '<div class="tt-items">' + items.map(i => bugItemRow(i)).join('') + '</div>'
+      + TT_HINT;
+    sharedTooltip.show(html, context);
+  }
+
+  function bugCreatedVsClosedTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp    = context.tooltip.dataPoints[0];
+    const idx   = dp.dataIndex;
+    const week  = allWeeks[idx];
+    const label = weekLabels[idx] || '';
+    const net   = dp.parsed.y;
+    const createdItems   = intakeByWeek[week] || [];
+    const completedItems = completedBugsByWeek[week] || [];
+    const html =
+      `<div class="tt-total">Week of ${escapeHtml(label)} &middot; Net: ${net > 0 ? '+' : ''}${net}</div>` +
+      `<div class="tt-total">Created: ${createdItems.length} &nbsp;&middot;&nbsp; Completed: ${completedItems.length}</div>` +
+      (completedItems.length ? '<div class="tt-items">' + completedItems.map(i => ctBugItemRow(i)).join('') + '</div>' : '') +
+      (createdItems.length   ? '<div class="tt-items">' + createdItems.map(i => bugItemRow(i)).join('')    + '</div>' : '') +
+      TT_HINT;
+    sharedTooltip.show(html, context);
+  }
+
+  function bugColumnTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp    = context.tooltip.dataPoints[0];
+    const idx   = dp.dataIndex;
+    const col   = colEntries[idx]?.[0] || '';
+    const items = colEntries[idx]?.[1] || [];
+    if (items.length === 0) { sharedTooltip.hide(); return; }
+    const html = `<div class="tt-total">${escapeHtml(col)} &middot; ${items.length} bug${items.length > 1 ? 's' : ''}</div>`
+      + '<div class="tt-items">' + items.map(i => bugItemRow(i)).join('') + '</div>'
+      + TT_HINT;
+    sharedTooltip.show(html, context);
+  }
+
+  const externalTooltipPlugin = handler => ({
+    enabled: false,
+    external: handler,
+  });
+
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { maxRotation: 45 } },
+      y: { beginAtZero: true },
+    },
+  };
+
+  // ── Chart 0: Bugs in system over time (open = not closed) ──
+  // For each week, count bugs that existed (created before week end) and were not yet closed
+  // "closed" = their last column_history entry has left != null and the column is "Closed" (or state Closed)
+  // Simpler: use column_history to check if bug was in a non-closed column at snapshot date.
+  const closedColName = (() => {
+    const ctx2 = dashboard.context;
+    if (!ctx2) return 'Closed';
+    const outgoing = (ctx2.columns || []).find(c => c.column_type === 'outgoing');
+    return outgoing ? outgoing.name : 'Closed';
+  })();
+
+  function openBugCountAt(dateMs) {
+    let count = 0;
+    wih.forEach(entry => {
+      if (idToType[entry.id] !== 'Bug') return;
+      const hist = entry.column_history || [];
+      for (const seg of hist) {
+        const entered = new Date(seg.entered).getTime();
+        const left    = seg.left ? new Date(seg.left).getTime() : Infinity;
+        if (entered <= dateMs && dateMs < left) {
+          if (seg.value !== closedColName) count++;
+          break;
+        }
+      }
+    });
+    return count;
+  }
+
+  const openBugData = allWeeks.map(w => openBugCountAt(new Date(w + 'T00:00:00Z').getTime()));
+
+  function bugOpenTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp  = context.tooltip.dataPoints[0];
+    const idx = dp.dataIndex;
+    const label = weekLabels[idx] || '';
+    const n = dp.parsed.y;
+    sharedTooltip.show(
+      `<div class="tt-total">Week of ${escapeHtml(label)}</div>` +
+      `<div class="tt-total">${n} open bug${n !== 1 ? 's' : ''} in system</div>`,
+      context
+    );
+  }
+
+  // Linear trend over openBugData
+  function linTrendNums(yArr) {
+    const pts = yArr.map((y, i) => ({ x: i, y })).filter(p => p.y != null);
+    if (pts.length < 2) return yArr.map(() => null);
+    const n = pts.length;
+    const meanX = pts.reduce((s, p) => s + p.x, 0) / n;
+    const meanY = pts.reduce((s, p) => s + p.y, 0) / n;
+    const num = pts.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
+    const den = pts.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
+    const slope = den ? num / den : 0;
+    const intercept = meanY - slope * meanX;
+    return yArr.map((_, i) => Math.round((slope * i + intercept) * 10) / 10);
+  }
+  const openBugTrend = linTrendNums(openBugData);
+  const openBugSlope = (() => {
+    const pts = openBugData.map((y, i) => ({ x: i, y })).filter(p => p.y != null);
+    if (pts.length < 2) return null;
+    const n = pts.length, meanX = pts.reduce((s,p)=>s+p.x,0)/n, meanY = pts.reduce((s,p)=>s+p.y,0)/n;
+    const num = pts.reduce((s,p)=>s+(p.x-meanX)*(p.y-meanY),0);
+    const den = pts.reduce((s,p)=>s+(p.x-meanX)**2,0);
+    return den ? num/den : 0; // bugs per week
+  })();
+
+  // Bug KPI card — appended to Overview kpiGrid
+  const currentOpen = openBugData.filter(v => v != null).slice(-1)[0] ?? null;
+  if (currentOpen !== null) {
+    const trendHtml = (() => {
+      if (openBugSlope === null || Math.abs(openBugSlope) < 0.1) return '<span class="kpi-trend neutral">&rarr; Stable</span>';
+      if (openBugSlope > 0) return `<span class="kpi-trend negative">&uarr; +${Math.round(openBugSlope*10)/10}/wk growing</span>`;
+      return `<span class="kpi-trend positive">&darr; ${Math.round(openBugSlope*10)/10}/wk shrinking</span>`;
+    })();
+    const bugCard =
+      `<div class="kpi-card">` +
+      `<div class="kpi-label">Open bugs now</div>` +
+      `<div class="kpi-value">${currentOpen}<span class="kpi-unit">bugs</span></div>` +
+      trendHtml +
+      `</div>`;
+    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend', bugCard);
+  }
+
+  new Chart(document.getElementById('bugOpenChart'), {
+    type: 'line',
+    data: {
+      labels: weekLabels,
+      datasets: [
+        {
+          label: 'Open bugs',
+          data: openBugData,
+          borderColor: bugColor, backgroundColor: bugColor + '22', fill: true,
+          tension: 0.3, pointRadius: 4, spanGaps: false,
+        },
+        {
+          label: 'Trend',
+          data: openBugTrend,
+          borderColor: 'rgba(200,60,20,0.7)', borderWidth: 3, borderDash: [6,4],
+          pointRadius: 0, fill: false, tension: 0, spanGaps: false,
+        },
+      ],
+    },
+    options: {
+      ...chartDefaults,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: externalTooltipPlugin(bugOpenTooltip) },
+      scales: { ...chartDefaults.scales, y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+    },
+  });
+
+  // ── Chart 1: Bug intake ──
+  new Chart(document.getElementById('bugIntakeChart'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [{
+        label: 'Bugs created',
+        data: allWeeks.map(w => (intakeByWeek[w] || []).length),
+        backgroundColor: bugColor + 'bb', borderColor: bugColor, borderWidth: 1, borderRadius: 4,
+      }],
+    },
+    options: {
+      ...chartDefaults,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: externalTooltipPlugin(bugListTooltip) },
+      scales: { ...chartDefaults.scales, y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+    },
+  });
+
+  // ── Chart 2: Bug % of new work + Bug % of WIP (two lines) ──
+  // WIP snapshot per week: for each week start, count items in an in-progress column that day
+  // wih and idToType are hoisted above
+
+  function wipSnapshotAt(dateMs) {
+    let total = 0, bugs = 0;
+    wih.forEach(entry => {
+      const type = idToType[entry.id];
+      const hist = entry.column_history || [];
+      for (const seg of hist) {
+        const entered = new Date(seg.entered).getTime();
+        const left    = seg.left ? new Date(seg.left).getTime() : Infinity;
+        if (entered <= dateMs && dateMs < left) {
+          // item was in this column at snapshot time
+          if (inProgressCols.has(seg.value)) {
+            total++;
+            if (type === 'Bug') bugs++;
+          }
+          break; // only one column at a time
+        }
+      }
+    });
+    return total > 0 ? Math.round(bugs / total * 100) : null;
+  }
+
+  const bugPctNewData = allWeeks.map(w => {
+    const total = (allCreatedByWeek[w] || []).length;
+    const bugs  = (intakeByWeek[w] || []).length;
+    return total > 0 ? Math.round(bugs / total * 100) : null;
+  });
+  const bugPctWipData = allWeeks.map(w => wipSnapshotAt(new Date(w + 'T00:00:00Z').getTime()));
+
+  function bugPctTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp    = context.tooltip.dataPoints[0];
+    const idx   = dp.dataIndex;
+    const week  = allWeeks[idx];
+    const label = weekLabels[idx] || '';
+    const bugs  = intakeByWeek[week] || [];
+    const all   = allCreatedByWeek[week] || [];
+    const pctNew = bugPctNewData[idx];
+    const pctWip = bugPctWipData[idx];
+    const html =
+      `<div class="tt-total">Week of ${escapeHtml(label)}</div>` +
+      (pctNew !== null ? `<div class="tt-total">% of new work: ${pctNew}% (${bugs.length}/${all.length})</div>` : '') +
+      (pctWip !== null ? `<div class="tt-total">% of WIP: ${pctWip}%</div>` : '') +
+      (bugs.length ? '<div class="tt-items">' + bugs.map(i => bugItemRow(i)).join('') + '</div>' : '') +
+      TT_HINT;
+    sharedTooltip.show(html, context);
+  }
+
+  new Chart(document.getElementById('bugPctNewChart'), {
+    type: 'line',
+    data: {
+      labels: weekLabels,
+      datasets: [
+        {
+          label: '% of new work',
+          data: bugPctNewData,
+          borderColor: bugColor, backgroundColor: bugColor + '22', fill: true,
+          tension: 0.3, pointRadius: 4, spanGaps: true,
+        },
+        {
+          label: '% of WIP',
+          data: bugPctWipData,
+          borderColor: '#667eea', backgroundColor: 'transparent', fill: false,
+          borderDash: [5, 4], tension: 0.3, pointRadius: 4, spanGaps: true,
+        },
+      ],
+    },
+    options: {
+      ...chartDefaults,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top' }, tooltip: externalTooltipPlugin(bugPctTooltip) },
+      scales: { ...chartDefaults.scales, y: { beginAtZero: true, ticks: { callback: v => v + '%' } } },
+    },
+  });
+
+  // ── Chart 3: Net flow (completed − created) ──
+  const netFlowData    = allWeeks.map(w => (completedBugsByWeek[w] || []).length - (intakeByWeek[w] || []).length);
+  const netBgColors    = netFlowData.map(v => v >= 0 ? '#48bb78aa' : bugColor + 'aa');
+  const netBorderColors = netFlowData.map(v => v >= 0 ? '#48bb78' : bugColor);
+  new Chart(document.getElementById('bugCreatedVsClosedChart'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [{ label: 'Net flow', data: netFlowData,
+        backgroundColor: netBgColors, borderColor: netBorderColors,
+        borderWidth: 1, borderRadius: 3 }],
+    },
+    options: {
+      ...chartDefaults,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: externalTooltipPlugin(bugCreatedVsClosedTooltip) },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 45 } },
+        y: {
+          ticks: { stepSize: 1 },
+          afterDataLimits(scale) {
+            scale.max = Math.ceil(scale.max) + 1;
+            scale.min = Math.floor(scale.min) - 1;
+          },
+        },
+      },
+    },
+    plugins: [{
+      id: 'netFlowDeco',
+      afterDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        const y0 = scales.y.getPixelForValue(0);
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = '#718096';
+        ctx.lineWidth = 1.5;
+        ctx.moveTo(chartArea.left, y0);
+        ctx.lineTo(chartArea.right, y0);
+        ctx.stroke();
+        ctx.restore();
+      },
+      afterDatasetsDraw(chart) {
+        const { ctx, scales } = chart;
+        const meta = chart.getDatasetMeta(0);
+        ctx.save();
+        ctx.font = '600 11px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        netFlowData.forEach((val, i) => {
+          if (val === 0) return;
+          const bar = meta.data[i];
+          const y   = scales.y.getPixelForValue(val) + (val > 0 ? -6 : 14);
+          ctx.fillStyle = val > 0 ? '#276749' : bugColor;
+          ctx.fillText((val > 0 ? '+' : '') + val, bar.x, y);
+        });
+        ctx.restore();
+      },
+    }],
+  });
+
+  // ── WIP % stat (removed — now shown as a line on the % chart above) ──
+
+  // ── Chart 5: Bug distribution by column (doughnut) ──
+  // colEntries already computed above (hoisted)
+  const pieColors = ['#667eea','#e53e3e','#ed8936','#48bb78','#38b2ac','#9f7aea','#f6ad55','#fc8181'];
+  new Chart(document.getElementById('bugColumnChart'), {
+    type: 'doughnut',
+    data: {
+      labels: colEntries.map(([c]) => c),
+      datasets: [{
+        data: colEntries.map(([, items]) => items.length),
+        backgroundColor: pieColors.slice(0, colEntries.length),
+        borderWidth: 2, borderColor: 'white',
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right' }, tooltip: externalTooltipPlugin(bugColumnTooltip) },
+    },
+  });
 })();
 // ────────────────────────────────────────────────────────────────────
 

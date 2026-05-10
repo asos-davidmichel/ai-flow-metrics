@@ -19,6 +19,7 @@ TIC_PATH     = Path("output/metrics/time_in_columns.json")
 CT_PATH      = Path("output/metrics/cycle_time.json")
 LT_PATH      = Path("output/metrics/lead_time.json")
 CTX_PATH     = Path("output/data/context.json")
+WI_PATH      = Path("output/data/work_items.json")
 TEMPLATE_PATH = Path("src/templates/dashboard.html")
 OUTPUT_PATH  = Path("output/dashboard.html")
 
@@ -34,6 +35,11 @@ def main():
         "cycle_time": json.loads(CT_PATH.read_text(encoding="utf-8")) if CT_PATH.exists() else None,
         "lead_time":  json.loads(LT_PATH.read_text(encoding="utf-8")) if LT_PATH.exists() else None,
         "context":    json.loads(CTX_PATH.read_text(encoding="utf-8")) if CTX_PATH.exists() else None,
+        "work_items": json.loads(WI_PATH.read_text(encoding="utf-8")) if WI_PATH.exists() else None,
+        "work_item_history": [
+            {"id": h["id"], "column_history": h["column_history"]}
+            for h in json.loads(Path("output/data/work_item_history.json").read_text(encoding="utf-8"))
+        ] if Path("output/data/work_item_history.json").exists() else None,
     }
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
