@@ -3,6 +3,7 @@ Dashboard generator.
 
 Reads:  output/metrics/time_in_columns.json
         output/metrics/cycle_time.json        (optional — skipped if not present)
+        output/metrics/lead_time.json         (optional — skipped if not present)
         src/templates/dashboard.html
 Writes: output/dashboard.html
 
@@ -15,7 +16,8 @@ import sys
 from pathlib import Path
 
 TIC_PATH = Path("output/metrics/time_in_columns.json")
-CT_PATH = Path("output/metrics/cycle_time.json")
+CT_PATH  = Path("output/metrics/cycle_time.json")
+LT_PATH  = Path("output/metrics/lead_time.json")
 TEMPLATE_PATH = Path("src/templates/dashboard.html")
 OUTPUT_PATH = Path("output/dashboard.html")
 
@@ -29,6 +31,7 @@ def main():
     dashboard = {
         "time_in_columns": json.loads(TIC_PATH.read_text(encoding="utf-8")),
         "cycle_time": json.loads(CT_PATH.read_text(encoding="utf-8")) if CT_PATH.exists() else None,
+        "lead_time":  json.loads(LT_PATH.read_text(encoding="utf-8")) if LT_PATH.exists() else None,
     }
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")

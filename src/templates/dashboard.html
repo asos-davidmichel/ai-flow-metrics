@@ -181,7 +181,40 @@
     </div>
   </div>
 
-  <div class="card meta" id="metaCard"></div>
+  <!-- Lead time charts (shown if data is available) -->
+  <div id="leadTimeSection" style="display:none;">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2>Lead time &mdash; scatter</h2>
+        </div>
+        <div id="ltToggles" class="type-toggles"></div>
+      </div>
+      <div class="chart-wrap" style="height:400px;">
+        <canvas id="ltScatterChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Lead time &mdash; weekly average &amp; trend</h2>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="ltRollingChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Throughput chart (derived from cycle time completions) -->
+  <div id="throughputSection" style="display:none;">
+    <div class="card">
+      <div class="card-header">
+        <h2>Throughput &mdash; items completed per week &amp; trend</h2>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="throughputChart"></canvas>
+      </div>
+    </div>
+  </div>
 
 </div>
 <div id="sharedTooltip" class="chart-tooltip"></div>
@@ -241,6 +274,62 @@ function ttItemRow(style, url, id, title, days) {
     '</div>';
 }
 const TT_HINT = '<div class="tt-hint">Hover to keep open &middot; click to open in ADO</div>';
+// ────────────────────────────────────────────────────────────────────
+
+// ── Shared date / week helpers ───────────────────────────────────────
+function fmtMs(ms) {
+  return new Date(ms).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
+function weekStart(isoStr) {
+  const d = new Date(isoStr);
+  const day = d.getUTCDay();
+  const mon = new Date(d);
+  mon.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return mon.toISOString().slice(0, 10);
+}
+function weeksInRange(items) {
+  if (!items.length) return [];
+  const ws = items.map(i => weekStart(i.completed_at));
+  const first = ws.reduce((a, b) => a < b ? a : b);
+  const last  = ws.reduce((a, b) => a > b ? a : b);
+  const result = [];
+  const cur = new Date(first + 'T00:00:00Z');
+  const end = new Date(last  + 'T00:00:00Z');
+  while (cur <= end) { result.push(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 7); }
+  return result;
+}
+function weekLabel(isoDate) {
+  return new Date(isoDate).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
+// weeklyToChart: takes a weekly array with {mean_days, mean_completed_ms, _week}
+// and returns {means, trend} datasets for a linear-time-axis Chart.js line chart.
+function weeklyToChart(weekly) {
+  // linear regression over non-null weeks
+  const valid = weekly.filter(w => w.mean_days !== null && w.mean_completed_ms !== null)
+    .map(w => ({ x: w.mean_completed_ms, y: w.mean_days }));
+  let predict = null;
+  if (valid.length >= 2) {
+    const n = valid.length;
+    const meanX = valid.reduce((s, p) => s + p.x, 0) / n;
+    const meanY = valid.reduce((s, p) => s + p.y, 0) / n;
+    const num = valid.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
+    const den = valid.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
+    if (den) {
+      const slope = num / den, intercept = meanY - slope * meanX;
+      const firstX = valid[0].x, lastX = valid[valid.length - 1].x;
+      predict = x => (x < firstX || x > lastX) ? null
+        : Math.round(Math.max(0, slope * x + intercept) * 10) / 10;
+    }
+  }
+  const means = weekly
+    .filter(w => w.mean_days !== null && w.mean_completed_ms !== null)
+    .map(w => ({ x: w.mean_completed_ms, y: w.mean_days, _week: w }));
+  const trend = weekly
+    .filter(w => w.mean_completed_ms !== null)
+    .map(w => { const y = predict ? predict(w.mean_completed_ms) : null; return y !== null ? { x: w.mean_completed_ms, y } : null; })
+    .filter(p => p !== null);
+  return { means, trend };
+}
 // ────────────────────────────────────────────────────────────────────
 
 document.getElementById('subtitle').textContent =
@@ -482,12 +571,7 @@ metaEl.innerHTML =
     ];
   }
 
-  function fmtMs(ms) {
-    return new Date(ms).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-  }
-
   // --- External tooltip for scatter ---
-
   function buildCtTooltip(item) {
     const style = ctTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
     const completed = new Date(item.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -596,30 +680,6 @@ metaEl.innerHTML =
   });
 
   // --- Rolling average chart ---
-  function weekStart(isoStr) {
-    const d = new Date(isoStr);
-    const day = d.getUTCDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const mon = new Date(d);
-    mon.setUTCDate(d.getUTCDate() + diff);
-    return mon.toISOString().slice(0, 10);
-  }
-
-  function weeksInRange(items) {
-    if (!items.length) return [];
-    const ws = items.map(i => weekStart(i.completed_at));
-    const first = ws.reduce((a, b) => a < b ? a : b);
-    const last  = ws.reduce((a, b) => a > b ? a : b);
-    const result = [];
-    const cur = new Date(first + 'T00:00:00Z');
-    const end = new Date(last  + 'T00:00:00Z');
-    while (cur <= end) {
-      result.push(cur.toISOString().slice(0, 10));
-      cur.setUTCDate(cur.getUTCDate() + 7);
-    }
-    return result;
-  }
-
   function computeWeekly(items) {
     const buckets = {};
     items.forEach(item => {
@@ -633,41 +693,6 @@ metaEl.innerHTML =
       const meanDays = Math.round(its.reduce((s, i) => s + i.cycle_time_days, 0) / its.length * 10) / 10;
       return { week_start: w, n: its.length, mean_days: meanDays, mean_completed_ms: meanMs, items: its };
     });
-  }
-
-  function weekLabel(isoDate) {
-    return new Date(isoDate).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-  }
-
-  function linReg(weekly) {
-    // Work in ms for x so regression aligns with the linear time axis
-    const valid = weekly.filter(w => w.mean_days !== null && w.mean_completed_ms !== null)
-      .map(w => ({ x: w.mean_completed_ms, y: w.mean_days }));
-    const n = valid.length;
-    if (n < 2) return null;
-    const meanX = valid.reduce((s, p) => s + p.x, 0) / n;
-    const meanY = valid.reduce((s, p) => s + p.y, 0) / n;
-    const num = valid.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
-    const den = valid.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
-    if (!den) return null;
-    const slope = num / den, intercept = meanY - slope * meanX;
-    const firstX = valid[0].x, lastX = valid[valid.length - 1].x;
-    return (x) => (x < firstX || x > lastX) ? null : Math.round(Math.max(0, slope * x + intercept) * 10) / 10;
-  }
-
-  function weeklyToChart(weekly) {
-    const predict = linReg(weekly);
-    const means = weekly
-      .filter(w => w.mean_days !== null && w.mean_completed_ms !== null)
-      .map(w => ({ x: w.mean_completed_ms, y: w.mean_days, _week: w }));
-    const trend = weekly
-      .filter(w => w.mean_completed_ms !== null)
-      .map(w => {
-        const x = w.mean_completed_ms;
-        const y = predict ? predict(x) : null;
-        return y !== null ? { x, y } : null;
-      }).filter(p => p !== null);
-    return { means, trend };
   }
 
   // Lookup weekly bucket by ms timestamp for tooltip
@@ -760,6 +785,294 @@ metaEl.innerHTML =
     rollingChart.data.datasets[1].data = rolling.trend;
     rollingChart.update();
   }
+})();
+
+// ====================================================================
+// Lead time charts (identical structure to cycle time)
+// ====================================================================
+(function () {
+  const lt = dashboard.lead_time;
+  if (!lt || !lt.items || lt.items.length === 0) return;
+
+  document.getElementById('leadTimeSection').style.display = '';
+
+  const ltItems = lt.items;
+  const ltTypeStyles = lt.work_item_type_styles || {};
+  const ltAllTypes = Object.keys(ltTypeStyles);
+  const ltActiveTypes = new Set(ltAllTypes);
+
+  const _ltMs = ltItems.map(i => new Date(i.completed_at).getTime());
+  const _ltPad = 7 * 24 * 3600 * 1000;
+  const ltMinMs = Math.min(..._ltMs) - _ltPad;
+  const ltMaxMs = Math.max(..._ltMs) + _ltPad;
+
+  // Type toggles
+  const ltToggleContainer = document.getElementById('ltToggles');
+  if (ltAllTypes.length > 1) {
+    ltToggleContainer.style.display = 'flex';
+    ltAllTypes.forEach(type => {
+      const style = ltTypeStyles[type] || { color: '#718096' };
+      const btn = document.createElement('button');
+      btn.className = 'type-toggle active';
+      btn.style.setProperty('--type-color', style.color);
+      const iconHtml = style.icon_url
+        ? `<img src="${escapeHtml(style.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+        : `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(style.color)};flex-shrink:0;"></span>`;
+      btn.innerHTML = iconHtml + ' ' + escapeHtml(type);
+      btn.addEventListener('click', () => {
+        if (ltActiveTypes.has(type)) {
+          if (ltActiveTypes.size === 1) return;
+          ltActiveTypes.delete(type);
+          btn.classList.remove('active');
+        } else {
+          ltActiveTypes.add(type);
+          btn.classList.add('active');
+        }
+        updateLtCharts();
+      });
+      ltToggleContainer.appendChild(btn);
+    });
+  }
+
+  const ltDataByType = {};
+  ltAllTypes.forEach(type => {
+    ltDataByType[type] = ltItems
+      .filter(i => i.type === type)
+      .map(i => ({ x: new Date(i.completed_at).getTime(), y: i.lead_time_days, _item: i }));
+  });
+
+  function ltComputeStats(items) {
+    if (!items.length) return null;
+    const times = items.map(i => i.lead_time_days).sort((a, b) => a - b);
+    const mean = times.reduce((s, v) => s + v, 0) / times.length;
+    return {
+      mean: Math.round(mean * 10) / 10,
+      p50:  Math.round(times[Math.floor(times.length * 0.5)] * 10) / 10,
+      p85:  Math.round(times[Math.min(Math.floor(times.length * 0.85), times.length - 1)] * 10) / 10,
+    };
+  }
+
+  function ltRefLineDatasets(items) {
+    const s = ltComputeStats(items);
+    if (!s) return [];
+    return [
+      { label: 'Mean', _ref: true, data: [{ x: ltMinMs, y: s.mean }, { x: ltMaxMs, y: s.mean }], showLine: true, pointRadius: 0, borderColor: '#667eea', borderWidth: 1.5, borderDash: [4,4], fill: false },
+      { label: 'P50',  _ref: true, data: [{ x: ltMinMs, y: s.p50  }, { x: ltMaxMs, y: s.p50  }], showLine: true, pointRadius: 0, borderColor: '#48bb78', borderWidth: 1.5, borderDash: [4,4], fill: false },
+      { label: 'P85',  _ref: true, data: [{ x: ltMinMs, y: s.p85  }, { x: ltMaxMs, y: s.p85  }], showLine: true, pointRadius: 0, borderColor: '#ed8936', borderWidth: 1.5, borderDash: [4,4], fill: false },
+    ];
+  }
+
+  function buildLtTooltip(item) {
+    const style = ltTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0,4) };
+    const completed = new Date(item.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return (
+      `<div class="tt-total">Completed: ${escapeHtml(completed)}</div>` +
+      '<div class="tt-items">' +
+      ttItemRow(style, lt.ado_url_base + '/' + item.id, item.id, item.title, item.lead_time_days) +
+      '</div>' + TT_HINT
+    );
+  }
+
+  function ltExternalTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const raw = context.tooltip.dataPoints[0].raw;
+    if (!raw._item) { sharedTooltip.hide(); return; }
+    sharedTooltip.show(buildLtTooltip(raw._item), context);
+  }
+
+  const ltActiveItemsForRef = () => ltItems.filter(i => ltActiveTypes.has(i.type));
+
+  const ltScatterChart = new Chart(document.getElementById('ltScatterChart'), {
+    type: 'scatter',
+    data: {
+      datasets: [
+        ...ltAllTypes.map(type => {
+          const style = ltTypeStyles[type] || { color: '#718096' };
+          return {
+            label: type,
+            data: ltDataByType[type],
+            backgroundColor: style.color + 'bb',
+            borderColor: style.color,
+            borderWidth: 1.5,
+            pointRadius: 6,
+            pointHoverRadius: 9,
+          };
+        }),
+        ...ltRefLineDatasets(ltItems),
+      ],
+    },
+    plugins: [refLabelPlugin],
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: ltExternalTooltip } },
+      scales: {
+        x: { type: 'linear', min: ltMinMs, max: ltMaxMs, title: { display: true, text: 'Completion date' }, ticks: { maxTicksLimit: 8, callback: val => fmtMs(val) }, grid: { display: false } },
+        y: { title: { display: true, text: 'Lead time (days)' }, beginAtZero: true },
+      },
+    },
+  });
+
+  // Rolling helpers (reuse weekStart / weeksInRange / linReg from outer scope)
+  function ltComputeWeekly(items) {
+    const buckets = {};
+    items.forEach(item => {
+      const w = weekStart(item.completed_at);
+      (buckets[w] = buckets[w] || []).push(item);
+    });
+    return weeksInRange(items).map(w => {
+      const its = buckets[w];
+      if (!its) return { week_start: w, n: 0, mean_days: null, mean_completed_ms: null, items: [] };
+      const meanMs   = its.reduce((s, i) => s + new Date(i.completed_at).getTime(), 0) / its.length;
+      const meanDays = Math.round(its.reduce((s, i) => s + i.lead_time_days, 0) / its.length * 10) / 10;
+      return { week_start: w, n: its.length, mean_days: meanDays, mean_completed_ms: meanMs, items: its };
+    });
+  }
+
+  let ltCurrentWeekly = ltComputeWeekly(ltItems);
+  const ltInitRolling = weeklyToChart(ltCurrentWeekly);
+
+  function ltRollingTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp = context.tooltip.dataPoints[0];
+    if (dp.datasetIndex !== 0) { sharedTooltip.hide(); return; }
+    const w = dp.raw._week;
+    if (!w || w.mean_days === null) { sharedTooltip.hide(); return; }
+    let html =
+      `<div class="tt-title">Week of ${escapeHtml(weekLabel(w.week_start))}</div>` +
+      `<div class="tt-total">Mean: ${w.mean_days}d &middot; ${w.n} item${w.n !== 1 ? 's' : ''}</div>` +
+      '<div class="tt-items">';
+    (w.items || []).forEach(item => {
+      const style = ltTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0,4) };
+      html += ttItemRow(style, lt.ado_url_base + '/' + item.id, item.id, item.title, item.lead_time_days);
+    });
+    html += '</div>' + TT_HINT;
+    sharedTooltip.show(html, context);
+  }
+
+  const ltRollingChart = new Chart(document.getElementById('ltRollingChart'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Weekly average', data: ltInitRolling.means, borderColor: '#667eea', backgroundColor: '#667eea', borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
+        { label: 'Trend',          data: ltInitRolling.trend, borderColor: 'rgba(200,60,20,0.7)', borderWidth: 2, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'point', intersect: true },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: ltRollingTooltip } },
+      scales: {
+        x: { type: 'linear', min: ltMinMs, max: ltMaxMs, grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45, callback: val => fmtMs(val) } },
+        y: { title: { display: true, text: 'Lead time (days)' }, beginAtZero: true },
+      },
+    },
+  });
+
+  function updateLtCharts() {
+    ltAllTypes.forEach((type, idx) => { ltScatterChart.setDatasetVisibility(idx, ltActiveTypes.has(type)); });
+    ltScatterChart.data.datasets.splice(ltAllTypes.length);
+    ltRefLineDatasets(ltActiveItemsForRef()).forEach(ds => ltScatterChart.data.datasets.push(ds));
+    ltScatterChart.update();
+    ltCurrentWeekly = ltComputeWeekly(ltActiveItemsForRef());
+    const rolling = weeklyToChart(ltCurrentWeekly);
+    ltRollingChart.data.datasets[0].data = rolling.means;
+    ltRollingChart.data.datasets[1].data = rolling.trend;
+    ltRollingChart.update();
+  }
+})();
+
+// ====================================================================
+// Throughput chart (items completed per week, derived from cycle_time)
+// ====================================================================
+(function () {
+  const ct = dashboard.cycle_time;
+  if (!ct || !ct.items || ct.items.length === 0) return;
+
+  document.getElementById('throughputSection').style.display = '';
+
+  // Build weekly counts over the same data range as cycle time
+  const allItems = ct.items;
+  const _tpMs  = allItems.map(i => new Date(i.completed_at).getTime());
+  const _tpPad = 7 * 24 * 3600 * 1000;
+  const tpMinMs = Math.min(..._tpMs) - _tpPad;
+  const tpMaxMs = Math.max(..._tpMs) + _tpPad;
+
+  function tpComputeWeekly(items) {
+    const buckets = {};
+    items.forEach(item => {
+      const w = weekStart(item.completed_at);
+      (buckets[w] = buckets[w] || []).push(item);
+    });
+    return weeksInRange(items).map(w => {
+      const its = buckets[w];
+      if (!its) return { week_start: w, n: 0, mean_completed_ms: null, items: [] };
+      const meanMs = its.reduce((s, i) => s + new Date(i.completed_at).getTime(), 0) / its.length;
+      return { week_start: w, n: its.length, mean_completed_ms: meanMs, items: its };
+    });
+  }
+
+  const tpWeekly = tpComputeWeekly(allItems);
+
+  // Linear regression on counts
+  function tpLinReg(weekly) {
+    const valid = weekly.filter(w => w.mean_completed_ms !== null).map(w => ({ x: w.mean_completed_ms, y: w.n }));
+    const n = valid.length;
+    if (n < 2) return null;
+    const meanX = valid.reduce((s, p) => s + p.x, 0) / n;
+    const meanY = valid.reduce((s, p) => s + p.y, 0) / n;
+    const num = valid.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
+    const den = valid.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
+    if (!den) return null;
+    const slope = num / den, intercept = meanY - slope * meanX;
+    const firstX = valid[0].x, lastX = valid[valid.length - 1].x;
+    return x => (x < firstX || x > lastX) ? null : Math.round(Math.max(0, slope * x + intercept) * 10) / 10;
+  }
+
+  const tpPredict = tpLinReg(tpWeekly);
+  const tpCounts = tpWeekly.filter(w => w.mean_completed_ms !== null).map(w => ({ x: w.mean_completed_ms, y: w.n, _week: w }));
+  const tpTrend  = tpWeekly.filter(w => w.mean_completed_ms !== null).map(w => {
+    const y = tpPredict ? tpPredict(w.mean_completed_ms) : null;
+    return y !== null ? { x: w.mean_completed_ms, y } : null;
+  }).filter(p => p !== null);
+
+  function tpTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dp = context.tooltip.dataPoints[0];
+    if (dp.datasetIndex !== 0) { sharedTooltip.hide(); return; }
+    const w = dp.raw._week;
+    if (!w) { sharedTooltip.hide(); return; }
+    const typeStyles = ct.work_item_type_styles || {};
+    let html =
+      `<div class="tt-title">Week of ${escapeHtml(weekLabel(w.week_start))}</div>` +
+      `<div class="tt-total">${w.n} item${w.n !== 1 ? 's' : ''} completed</div>` +
+      '<div class="tt-items">';
+    (w.items || []).forEach(item => {
+      const style = typeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0,4) };
+      html += ttItemRow(style, ct.ado_url_base + '/' + item.id, item.id, item.title, item.cycle_time_days);
+    });
+    html += '</div>' + TT_HINT;
+    sharedTooltip.show(html, context);
+  }
+
+  new Chart(document.getElementById('throughputChart'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Items / week', data: tpCounts, borderColor: '#48bb78', backgroundColor: '#48bb78', borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
+        { label: 'Trend',       data: tpTrend,  borderColor: 'rgba(200,60,20,0.7)', borderWidth: 2, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'point', intersect: true },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: tpTooltip } },
+      scales: {
+        x: { type: 'linear', min: tpMinMs, max: tpMaxMs, grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45, callback: val => fmtMs(val) } },
+        y: { title: { display: true, text: 'Items completed' }, beginAtZero: true, ticks: { stepSize: 1 } },
+      },
+    },
+  });
 })();
 </script>
 </body>
