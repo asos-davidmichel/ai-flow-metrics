@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -149,16 +149,20 @@
       background: white;
       border-radius: 12px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.07);
-      padding: 24px 28px;
+      padding: 22px 24px 22px 20px;
+      border-left: 4px solid #cbd5e0;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
+    .kpi-card.trend-positive { border-left-color: #48bb78; }
+    .kpi-card.trend-negative { border-left-color: #fc8181; }
+    .kpi-card.trend-neutral  { border-left-color: #a0aec0; }
     .kpi-label {
-      font-size: 12px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
+      letter-spacing: 0.7px;
       color: #a0aec0;
     }
     .kpi-value {
@@ -166,23 +170,35 @@
       font-weight: 700;
       color: #2d3748;
       line-height: 1;
+      min-height: 44px;
       display: flex;
-      align-items: baseline;
-      gap: 6px;
-    }
-    .kpi-unit { font-size: 16px; font-weight: 400; color: #718096; }
-    .kpi-trend {
-      display: inline-flex;
       align-items: center;
-      gap: 5px;
-      font-size: 13px;
-      font-weight: 600;
+      gap: 8px;
+    }
+    .kpi-arrow {
+      font-size: 40px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .kpi-arrow.positive { color: #48bb78; }
+    .kpi-arrow.negative { color: #fc8181; }
+    .kpi-arrow.neutral  { color: #a0aec0; }
+    .kpi-unit { font-size: 13px; font-weight: 400; color: #718096; margin-top: 2px; }
+    .kpi-pill {
+      display: inline-flex;
+      align-self: flex-start;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 500;
       padding: 3px 10px;
       border-radius: 20px;
+      background: #edf2f7;
+      color: #4a5568;
+      margin-top: 4px;
     }
-    .kpi-trend.positive { background: #c6f6d5; color: #276749; }
-    .kpi-trend.negative { background: #fed7d7; color: #9b2c2c; }
-    .kpi-trend.neutral  { background: #e2e8f0; color: #4a5568; }
+    .kpi-pill.pill-positive { background: #c6f6d5; color: #276749; }
+    .kpi-pill.pill-negative { background: #fed7d7; color: #9b2c2c; }
     .kpi-sub { font-size: 12px; color: #718096; }
     .tabs {
       display: flex;
@@ -239,7 +255,7 @@
     <button class="tab-btn active" data-tab="overview">Overview</button>
     <button class="tab-btn" data-tab="delivery">Delivery</button>
     <button class="tab-btn" data-tab="bugs">Bugs</button>
-    <button class="tab-btn" data-tab="process">Process</button>
+    <button class="tab-btn" data-tab="process">Flow</button>
   </div>
 
   <!-- ── Overview tab ─────────────────────────────────────────────── -->
@@ -350,17 +366,43 @@
 
   </div><!-- /tab-bugs -->
 
-  <!-- ── Process tab ──────────────────────────────────────────────── -->
+  <!-- ── Flow tab ──────────────────────────────────────────────── -->
   <div id="tab-process" class="tab-panel">
+
+    <!-- CFD - full width -->
     <div class="card">
       <div class="card-header">
-        <h2>Total time spent in each in-progress column</h2>
-        <div id="typeToggles" class="type-toggles"></div>
+        <h2>Cumulative Flow &mdash; arrivals per column over time</h2>
       </div>
-      <div class="chart-wrap">
-        <canvas id="timeInColumnsChart"></canvas>
-      </div>
+      <div id="cfdToggles" style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:14px;"></div>
+      <div class="chart-wrap" style="height:360px;"><canvas id="cfdChart"></canvas></div>
     </div>
+
+    <!-- A/D ratio + Time in columns side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+
+      <!-- Arrival / Departure ratio -->
+      <div class="card">
+        <div class="card-header"><h2>Arrival / Departure ratio per column</h2></div>
+        <div style="font-size:12px;color:#718096;margin-bottom:8px;">
+          &lt;0.95 = flowing well &nbsp;&middot;&nbsp; &gt;1.05 = building up
+        </div>
+        <div class="chart-wrap" id="adRatioWrap" style="height:320px;"><canvas id="adRatioChart"></canvas></div>
+      </div>
+
+      <!-- Time in columns -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Total time spent in each in-progress column</h2>
+          <div id="typeToggles" class="type-toggles"></div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="timeInColumnsChart"></canvas>
+        </div>
+      </div>
+
+    </div>
+
   </div><!-- /tab-process -->
 
 </div>
@@ -1275,19 +1317,16 @@ function updateChart() {
     return (positiveIsDown ? goingDown : !goingDown) ? 'positive' : 'negative';
   }
 
-  function makeTrendBadge(slope, positiveIsDown) {
-    if (slope === null) return '';
-    const cls = trendClass(slope, positiveIsDown);
-    const label = slope > 0.1 ? 'Trending up' : slope < -0.1 ? 'Trending down' : 'Stable';
-    return `<span class="kpi-trend ${cls}">${arrow(slope)} ${label}</span>`;
-  }
-
-  function kpiCard(label, valueHtml, trendHtml, subHtml) {
-    return `<div class="kpi-card">`
+  // label, value (number/text), unit (subtitle), arrowCls ('positive'|'negative'|'neutral'|null), slope, pillHtml
+  function kpiCard(label, valueText, unitText, arrowCls, slope, pillHtml) {
+    const cardCls = arrowCls ? `kpi-card trend-${arrowCls}` : 'kpi-card trend-neutral';
+    const arrowHtml = arrowCls && slope !== null
+      ? `<span class="kpi-arrow ${arrowCls}">${arrow(slope)}</span>` : '';
+    return `<div class="${cardCls}">`
       + `<div class="kpi-label">${label}</div>`
-      + `<div class="kpi-value">${valueHtml}</div>`
-      + (trendHtml ? trendHtml : '')
-      + (subHtml ? `<div class="kpi-sub">${subHtml}</div>` : '')
+      + `<div class="kpi-value">${valueText}${arrowHtml}</div>`
+      + (unitText ? `<div class="kpi-unit">${unitText}</div>` : '')
+      + (pillHtml ? pillHtml : '')
       + `</div>`;
   }
 
@@ -1305,37 +1344,41 @@ function updateChart() {
     const weeklyTp = weeks.map(w => ({ week_start: w, n: buckets[w], mean_days: buckets[w] }));
     const slope  = weeklyTrend(weeklyTp, 'mean_days');
     const avgAll = weeks.length ? Math.round(ct.items.length / weeks.length * 10) / 10 : 0;
+    const cls = slope === null ? null : trendClass(slope, false);
     cards.push(kpiCard(
       'Throughput',
-      `${avgAll}<span class="kpi-unit">items/wk</span>`,
-      makeTrendBadge(slope, false),
-      `${ct.items.length} items completed over ${weeks.length} weeks`
+      `${avgAll}`,
+      'items/week average',
+      cls, slope,
+      `<div class="kpi-pill">${ct.items.length} items &middot; ${weeks.length} weeks</div>`
     ));
   }
 
   // ── Cycle time ──
   if (ct) {
-    const slope  = weeklyTrend(ct.weekly_stats, 'mean_days');
-    const val = Math.round(ct.overall.mean_days);
-    const sub = `Median ${Math.round(ct.overall.median_days)}d &middot; P85 ${Math.round(ct.overall.p85_days)}d`;
+    const slope = weeklyTrend(ct.weekly_stats, 'mean_days');
+    const val   = Math.round(ct.overall.mean_days * 10) / 10;
+    const cls   = slope === null ? null : trendClass(slope, true);
     cards.push(kpiCard(
       'Cycle time',
-      `${val}<span class="kpi-unit">days</span>`,
-      makeTrendBadge(slope, true),
-      sub
+      `${val}`,
+      'days average',
+      cls, slope,
+      `<div class="kpi-pill">Median ${Math.round(ct.overall.median_days)}d &nbsp;|&nbsp; P85 ${Math.round(ct.overall.p85_days)}d</div>`
     ));
   }
 
   // ── Lead time ──
   if (lt) {
-    const slope  = weeklyTrend(lt.weekly_stats, 'mean_days');
-    const val = Math.round(lt.overall.mean_days);
-    const sub = `Median ${Math.round(lt.overall.median_days)}d &middot; P85 ${Math.round(lt.overall.p85_days)}d`;
+    const slope = weeklyTrend(lt.weekly_stats, 'mean_days');
+    const val   = Math.round(lt.overall.mean_days * 10) / 10;
+    const cls   = slope === null ? null : trendClass(slope, true);
     cards.push(kpiCard(
       'Lead time',
-      `${val}<span class="kpi-unit">days</span>`,
-      makeTrendBadge(slope, true),
-      sub
+      `${val}`,
+      'days average',
+      cls, slope,
+      `<div class="kpi-pill">Median ${Math.round(lt.overall.median_days)}d &nbsp;|&nbsp; P85 ${Math.round(lt.overall.p85_days)}d</div>`
     ));
   }
 
@@ -1347,14 +1390,13 @@ function updateChart() {
       const avgTotal = inProgress.reduce((s, c) => s + c.total_hours, 0) / inProgress.length;
       const ratio = Math.round(bottleneck.total_hours / avgTotal * 10) / 10;
       const avgDays = Math.round(bottleneck.mean_hours / 24 * 10) / 10;
-      const badge = ratio >= 2
-        ? `<span class="kpi-trend negative">⚠ ${ratio}× avg column</span>`
-        : `<span class="kpi-trend neutral">${ratio}× avg column</span>`;
+      const pillCls = ratio >= 2 ? 'kpi-pill pill-negative' : 'kpi-pill';
       cards.push(kpiCard(
         'Bottleneck',
-        `<span style="font-size:22px;font-weight:700;color:#2d3748;">${escapeHtml(bottleneck.name)}</span>`,
-        badge,
-        `Avg ${avgDays}d per item &middot; ${ratio}× the column average`
+        `<span style="font-size:24px;font-weight:700;">${escapeHtml(bottleneck.name)}</span>`,
+        `Avg ${avgDays}d per item`,
+        ratio >= 2 ? 'negative' : 'neutral', null,
+        `<div class="${pillCls}">${ratio >= 2 ? '&#9888; ' : ''}${ratio}&times; avg column</div>`
       ));
     }
   }
@@ -1557,16 +1599,22 @@ function updateChart() {
   // Bug KPI card — appended to Overview kpiGrid
   const currentOpen = openBugData.filter(v => v != null).slice(-1)[0] ?? null;
   if (currentOpen !== null) {
-    const trendHtml = (() => {
-      if (openBugSlope === null || Math.abs(openBugSlope) < 0.1) return '<span class="kpi-trend neutral">&rarr; Stable</span>';
-      if (openBugSlope > 0) return `<span class="kpi-trend negative">&uarr; +${Math.round(openBugSlope*10)/10}/wk growing</span>`;
-      return `<span class="kpi-trend positive">&darr; ${Math.round(openBugSlope*10)/10}/wk shrinking</span>`;
-    })();
+    const arrowCls = openBugSlope === null || Math.abs(openBugSlope) < 0.1 ? 'neutral'
+      : openBugSlope > 0 ? 'negative' : 'positive';
+    const cardCls = `kpi-card trend-${arrowCls}`;
+    const arrowSym = openBugSlope === null || Math.abs(openBugSlope) < 0.1 ? '→'
+      : openBugSlope > 0 ? '↑' : '↓';
+    const pillText = openBugSlope === null || Math.abs(openBugSlope) < 0.1
+      ? 'Stable'
+      : `${openBugSlope > 0 ? '+' : ''}${Math.round(openBugSlope*10)/10}/wk ${openBugSlope > 0 ? 'growing' : 'shrinking'}`;
+    const pillCls = arrowCls === 'negative' ? 'kpi-pill pill-negative'
+      : arrowCls === 'positive' ? 'kpi-pill pill-positive' : 'kpi-pill';
     const bugCard =
-      `<div class="kpi-card">` +
+      `<div class="${cardCls}">` +
       `<div class="kpi-label">Open bugs now</div>` +
-      `<div class="kpi-value">${currentOpen}<span class="kpi-unit">bugs</span></div>` +
-      trendHtml +
+      `<div class="kpi-value">${currentOpen}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+      `<div class="kpi-unit">bugs in system</div>` +
+      `<div class="${pillCls}">${pillText}</div>` +
       `</div>`;
     document.getElementById('kpiGrid').insertAdjacentHTML('beforeend', bugCard);
   }
@@ -1579,13 +1627,13 @@ function updateChart() {
         {
           label: 'Open bugs',
           data: openBugData,
-          borderColor: bugColor, backgroundColor: bugColor + '22', fill: true,
+          borderColor: bugColor, backgroundColor: bugColor + '12', fill: true,
           tension: 0.3, pointRadius: 4, spanGaps: false,
         },
         {
           label: 'Trend',
           data: openBugTrend,
-          borderColor: 'rgba(200,60,20,0.7)', borderWidth: 3, borderDash: [6,4],
+          borderColor: '#718096', borderWidth: 2, borderDash: [6,4],
           pointRadius: 0, fill: false, tension: 0, spanGaps: false,
         },
       ],
@@ -1606,7 +1654,7 @@ function updateChart() {
       datasets: [{
         label: 'Bugs created',
         data: allWeeks.map(w => (intakeByWeek[w] || []).length),
-        backgroundColor: bugColor + 'bb', borderColor: bugColor, borderWidth: 1, borderRadius: 4,
+        backgroundColor: '#e8853dbb', borderColor: '#e8853d', borderWidth: 1, borderRadius: 4,
       }],
     },
     options: {
@@ -1676,7 +1724,7 @@ function updateChart() {
         {
           label: '% of new work',
           data: bugPctNewData,
-          borderColor: bugColor, backgroundColor: bugColor + '22', fill: true,
+          borderColor: '#e8853d', backgroundColor: '#e8853d22', fill: true,
           tension: 0.3, pointRadius: 4, spanGaps: true,
         },
         {
@@ -1697,8 +1745,8 @@ function updateChart() {
 
   // ── Chart 3: Net flow (completed − created) ──
   const netFlowData    = allWeeks.map(w => (completedBugsByWeek[w] || []).length - (intakeByWeek[w] || []).length);
-  const netBgColors    = netFlowData.map(v => v >= 0 ? '#48bb78aa' : bugColor + 'aa');
-  const netBorderColors = netFlowData.map(v => v >= 0 ? '#48bb78' : bugColor);
+  const netBgColors    = netFlowData.map(v => v >= 0 ? '#48bb78aa' : '#fc8181aa');
+  const netBorderColors = netFlowData.map(v => v >= 0 ? '#48bb78' : '#fc8181');
   new Chart(document.getElementById('bugCreatedVsClosedChart'), {
     type: 'bar',
     data: {
@@ -1747,7 +1795,7 @@ function updateChart() {
           if (val === 0) return;
           const bar = meta.data[i];
           const y   = scales.y.getPixelForValue(val) + (val > 0 ? -6 : 14);
-          ctx.fillStyle = val > 0 ? '#276749' : bugColor;
+          ctx.fillStyle = val > 0 ? '#276749' : '#e53e3e';
           ctx.fillText((val > 0 ? '+' : '') + val, bar.x, y);
         });
         ctx.restore();
@@ -1775,6 +1823,331 @@ function updateChart() {
       plugins: { legend: { position: 'right' }, tooltip: externalTooltipPlugin(bugColumnTooltip) },
     },
   });
+})();
+// ────────────────────────────────────────────────────────────────────
+
+// ── Flow charts (CFD + Arrival/Departure ratio) ──────────────────────
+(function () {
+  const wih = dashboard.work_item_history;
+  const ctx = dashboard.context;
+  const ct  = dashboard.cycle_time;
+  if (!wih || !ctx || !ct) return;
+
+  const winStart   = ct.window.start;
+  const winEnd     = ct.window.end;
+  const winStartMs = new Date(winStart).getTime();
+  const winEndMs   = new Date(winEnd).getTime();
+
+  const allCols = (ctx.columns || []).map(c => c.name);
+  const colSet  = new Set(allCols);
+
+  // Generate weekly buckets within the analysis window
+  const cfdWeeks = [];
+  const cur = new Date(weekStart(winStart) + 'T00:00:00Z');
+  const fin = new Date(winEnd);
+  while (cur <= fin) { cfdWeeks.push(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 7); }
+  const cfdLabels    = cfdWeeks.map(w => weekLabel(w));
+  const MS_WEEK      = 7 * 24 * 3600 * 1000;
+  const cfdWeekEndMs = cfdWeeks.map(w => new Date(w + 'T00:00:00Z').getTime() + MS_WEEK - 1);
+
+  // Correct CFD: for each item track its "furthest stage ever reached" at each point.
+  // At snapshot T, count items that have reached at least column C_i.
+  // This guarantees: count(New) >= count(Ready for Dev) >= ... >= count(Closed)
+  // so bands never invert, regardless of items skipping or revisiting stages.
+  const colOrder = {};
+  allCols.forEach((col, i) => { colOrder[col] = i; });
+
+  // Pre-build per-item progression: sorted list of (ms, runningMaxColIdx)
+  const itemProgressions = [];
+  wih.forEach(entry => {
+    const events = [];
+    (entry.column_history || []).forEach(seg => {
+      const idx = colOrder[seg.value];
+      if (idx === undefined) return;
+      events.push({ ms: new Date(seg.entered).getTime(), idx });
+    });
+    if (!events.length) return;
+    events.sort((a, b) => a.ms - b.ms);
+    const sortedMs = [], maxIdxAt = [];
+    let runMax = -1;
+    events.forEach(e => { runMax = Math.max(runMax, e.idx); sortedMs.push(e.ms); maxIdxAt.push(runMax); });
+    itemProgressions.push({ sortedMs, maxIdxAt });
+  });
+
+  function maxIdxAtSnap(prog, snapMs) {
+    let lo = 0, hi = prog.sortedMs.length - 1, res = -1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (prog.sortedMs[mid] <= snapMs) { res = mid; lo = mid + 1; } else hi = mid - 1; }
+    return res >= 0 ? prog.maxIdxAt[res] : -1;
+  }
+
+  // cumAtOrBeyond[col][weekIdx] = # items that have ever reached col or further by that week
+  const cumAtOrBeyond = {};
+  allCols.forEach((col, i) => {
+    cumAtOrBeyond[col] = cfdWeekEndMs.map(snapMs =>
+      itemProgressions.reduce((n, prog) => n + (maxIdxAtSnap(prog, snapMs) >= i ? 1 : 0), 0)
+    );
+  });
+
+  // Palette: one colour per column, consistent across chart + legend
+  const palette = ['#667eea','#e53e3e','#ed8936','#48bb78','#38b2ac','#9f7aea','#f6ad55','#fc8181','#68d391','#76e4f7'];
+  const colColors = {};
+  allCols.forEach((col, i) => { colColors[col] = palette[i % palette.length]; });
+
+  // Stack bottom-up: Closed at bottom, New at top
+  const colsBottomUp = [...allCols].reverse();
+
+  const cfdDatasets = colsBottomUp.map((col, i) => ({
+    label: col,
+    data: cumAtOrBeyond[col],
+    borderColor: colColors[col],
+    backgroundColor: colColors[col] + 'bb',
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.4,
+    fill: i === 0 ? 'origin' : '-1',
+    _col: col,
+  }));
+
+  // Compute linear trend line over a cumulative series (indexed 0..n-1)
+  // Returns { line, slope } where slope is items/week
+  function linTrendLine(values) {
+    const pts = values.map((y, x) => ({ x, y }));
+    const n = pts.length;
+    const meanX = (n - 1) / 2;
+    const meanY = pts.reduce((s, p) => s + p.y, 0) / n;
+    const num = pts.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
+    const den = pts.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
+    const slope = den ? num / den : 0; // items per week-bucket
+    const intercept = meanY - slope * meanX;
+    return { line: pts.map(p => Math.max(0, Math.round((slope * p.x + intercept) * 10) / 10)), slope };
+  }
+
+  // Arrival = topmost line (New). Departure = bottommost (Closed).
+  const firstCol = allCols[0];
+  const lastCol  = allCols[allCols.length - 1];
+  const arrivalResult   = linTrendLine(cumAtOrBeyond[firstCol]);
+  const departureResult = linTrendLine(cumAtOrBeyond[lastCol]);
+  const arrivalSlope    = Math.round(arrivalResult.slope * 10) / 10;
+  const departureSlope  = Math.round(departureResult.slope * 10) / 10;
+
+  const trendDatasets = [
+    {
+      label: 'Arrival rate',
+      data: arrivalResult.line,
+      borderColor: '#1a202c', backgroundColor: 'transparent',
+      borderWidth: 2.5, borderDash: [8, 5], pointRadius: 0,
+      tension: 0, fill: false, _trend: true,
+    },
+    {
+      label: 'Departure rate',
+      data: departureResult.line,
+      borderColor: '#718096', backgroundColor: 'transparent',
+      borderWidth: 2.5, borderDash: [8, 5], pointRadius: 0,
+      tension: 0, fill: false, _trend: true,
+    },
+  ];
+
+  function cfdTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const dps = context.tooltip.dataPoints;
+    const label = dps[0]?.label || '';
+    const rows = dps
+      .filter(dp => !cfdDatasets[dp.datasetIndex]?._trend)
+      .map(dp => {
+        const col = dp.dataset.label;
+        const color = colColors[col] || '#718096';
+        return `<div class="tt-item" style="grid-template-columns:12px 1fr auto;">`
+          + `<span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${color};"></span>`
+          + `<span class="tt-item-title">${escapeHtml(col)}</span>`
+          + `<span class="tt-item-days">${dp.parsed.y}</span></div>`;
+      }).join('');
+    const trendRows = dps
+      .filter(dp => trendDatasets.some(t => t.label === dp.dataset.label))
+      .map(dp => `<div style="font-size:11px;color:#718096;">${escapeHtml(dp.dataset.label)}: ${dp.parsed.y}</div>`)
+      .join('');
+    sharedTooltip.show(
+      `<div class="tt-total">Week of ${escapeHtml(label)}</div>`
+      + `<div class="tt-items">${rows}</div>`
+      + (trendRows ? `<div style="margin-top:6px;">${trendRows}</div>` : '')
+      + TT_HINT, context
+    );
+  }
+
+  const cfdChart = new Chart(document.getElementById('cfdChart'), {
+    type: 'line',
+    data: { labels: cfdLabels, datasets: [...cfdDatasets, ...trendDatasets] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 110 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false, external: cfdTooltip },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 45 } },
+        y: { beginAtZero: true, stacked: false },
+      },
+    },
+    plugins: [{
+      id: 'trendLabels',
+      afterDraw(chart) {
+        const ctx = chart.ctx;
+        trendDatasets.forEach((ds, ti) => {
+          const di = cfdDatasets.length + ti;
+          const meta = chart.getDatasetMeta(di);
+          if (!meta.data.length) return;
+          const last = meta.data[meta.data.length - 1];
+          const slope = ti === 0 ? arrivalSlope : departureSlope;
+          const label = (ti === 0 ? 'Arrival' : 'Departure') + ` (${slope > 0 ? '+' : ''}${slope}/wk)`;
+          ctx.save();
+          ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillStyle = ti === 0 ? '#1a202c' : '#718096';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, last.x + 6, last.y);
+          ctx.restore();
+        });
+      },
+    }],
+  });
+
+  // Legend-style toggles: coloured square + label, like a Chart.js legend
+  const toggleContainer = document.getElementById('cfdToggles');
+  toggleContainer.style.cssText = 'display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:4px;';
+  const activeColSet = new Set(allCols);
+
+  function updateCfdVisibility() {
+    cfdDatasets.forEach((ds, i) => {
+      cfdChart.data.datasets[i].hidden = !activeColSet.has(ds._col);
+    });
+    cfdChart.update();
+  }
+
+  // Trend line legend items (no badge — rate shown on the line itself)
+  [['Arrival rate', '#1a202c'], ['Departure rate', '#718096']].forEach(([label, color]) => {
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;gap:6px;';
+    const line = document.createElement('span');
+    line.style.cssText = `display:inline-block;width:32px;height:0;border-top:2.5px dashed ${color};flex-shrink:0;margin-top:1px;`;
+    const lbl = document.createElement('span');
+    lbl.textContent = label;
+    lbl.style.cssText = 'font-size:12px;color:#4a5568;';
+    item.appendChild(line); item.appendChild(lbl);
+    toggleContainer.appendChild(item);
+  });
+
+  // Show legend in natural column order (top→bottom = New→Closed), same as reference screenshot
+  [...allCols].reverse().forEach(col => {
+    const color = colColors[col];
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;';
+    item.dataset.active = 'true';
+
+    const box = document.createElement('span');
+    box.style.cssText = `display:inline-block;width:32px;height:14px;border-radius:3px;background:${color};flex-shrink:0;`;
+
+    const lbl = document.createElement('span');
+    lbl.textContent = col;
+    lbl.style.cssText = 'font-size:12px;color:#4a5568;';
+
+    item.appendChild(box);
+    item.appendChild(lbl);
+    item.addEventListener('click', () => {
+      const on = item.dataset.active === 'true';
+      item.dataset.active = on ? 'false' : 'true';
+      box.style.opacity = on ? '0.2' : '1';
+      lbl.style.color   = on ? '#a0aec0' : '#4a5568';
+      if (on) activeColSet.delete(col); else activeColSet.add(col);
+      updateCfdVisibility();
+    });
+    toggleContainer.appendChild(item);
+  });
+
+  // ── Arrival / Departure ratio (events within the analysis window only) ──
+  const arrInWindow = {};
+  const depInWindow = {};
+  allCols.forEach(col => { arrInWindow[col] = 0; depInWindow[col] = 0; });
+
+  wih.forEach(entry => {
+    (entry.column_history || []).forEach(seg => {
+      const col = seg.value;
+      if (!colSet.has(col)) return;
+      const enteredMs = new Date(seg.entered).getTime();
+      if (enteredMs >= winStartMs && enteredMs <= winEndMs) arrInWindow[col]++;
+      if (seg.left) {
+        const leftMs = new Date(seg.left).getTime();
+        if (leftMs >= winStartMs && leftMs <= winEndMs) depInWindow[col]++;
+      }
+    });
+  });
+
+  // Per-column A/D ratio: arrivals into col ÷ departures from col.
+  // Only in-progress columns: skip first (incoming) and last (outgoing).
+  const inProgressColsForRatio = allCols.slice(1, -1);
+  const adColData = inProgressColsForRatio.map(col => ({
+    col,
+    arr: arrInWindow[col],
+    dep: depInWindow[col],
+    ratio: depInWindow[col] > 0 ? Math.round(arrInWindow[col] / depInWindow[col] * 100) / 100 : null,
+  })).filter(d => d.ratio !== null);
+
+  function adRatioTooltip(context) {
+    if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+    const idx = context.tooltip.dataPoints[0]?.dataIndex;
+    const d = adColData[idx];
+    if (!d) return;
+    const ratioCls = d.ratio > 1.05 ? 'color:#9b2c2c' : d.ratio < 0.95 ? 'color:#276749' : 'color:#4a5568';
+    sharedTooltip.show(
+      `<div class="tt-total" style="font-weight:600;">${escapeHtml(d.col)}</div>` +
+      `<div class="tt-total">Arrivals into column: ${d.arr}</div>` +
+      `<div class="tt-total">Departures from column: ${d.dep}</div>` +
+      `<div class="tt-total" style="${ratioCls};font-weight:700;">Ratio: ${d.ratio.toFixed(2)}</div>` +
+      TT_HINT,
+      context
+    );
+  }
+
+  // Compute symmetric x-axis bounds centred on 1.0
+  const adMaxDev = Math.max(...adColData.map(d => Math.abs(d.ratio - 1)), 0.15);
+  const adXPad   = adMaxDev * 1.3;
+  const adXMin   = +(Math.max(0, 1 - adXPad).toFixed(2));
+  const adXMax   = +(( 1 + adXPad).toFixed(2));
+
+  new Chart(document.getElementById('adRatioChart'), {
+    type: 'bar',
+    data: {
+      labels: adColData.map(d => d.col),
+      datasets: [{
+        label: 'Arrival/Departure ratio',
+        data: adColData.map(d => d.ratio),
+        backgroundColor: adColData.map(d =>
+          d.ratio > 1.05 ? '#fc8181' : d.ratio < 0.95 ? '#48bb78' : '#a0aec0'
+        ),
+        borderRadius: 4, borderSkipped: false,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false, external: adRatioTooltip },
+      },
+      scales: {
+        x: {
+          min: adXMin,
+          max: adXMax,
+          title: { display: true, text: 'Ratio (arrivals ÷ departures)', color: '#718096', font: { size: 12 } },
+          grid: {
+            color:     c => c.tick.value === 1 ? '#2d3748' : '#e2e8f0',
+            lineWidth: c => c.tick.value === 1 ? 2 : 1,
+          },
+        },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+
 })();
 // ────────────────────────────────────────────────────────────────────
 
