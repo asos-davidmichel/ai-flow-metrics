@@ -500,14 +500,14 @@ metaEl.innerHTML =
       : `<span class="tt-badge" style="background:${escapeHtml(style.color)}">${escapeHtml(style.abbr)}</span>`;
     const title = item.title.length > 55 ? item.title.slice(0, 55) + '\u2026' : item.title;
     return (
+      `<div class="tt-total">Completed: ${escapeHtml(completed)}</div>` +
       '<div class="tt-items"><div class="tt-item">' +
       iconHtml +
       `<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${item.id}</a>` +
       `<span class="tt-item-title">${escapeHtml(title)}</span>` +
       `<span class="tt-item-days">${days}d</span>` +
       '</div></div>' +
-      `<div class="tt-total" style="margin-top:6px;">Completed: ${escapeHtml(completed)}</div>` +
-      '<div class="tt-hint">Click to open in ADO</div>'
+      '<div class="tt-hint">Hover to keep open \u00b7 click to open in ADO</div>'
     );
   }
 
@@ -644,6 +644,35 @@ metaEl.innerHTML =
   let currentWeekly = computeWeekly(ctItems);
   const initRolling = weeklyToChart(currentWeekly);
 
+  // --- External tooltip for rolling chart (reuses ctTooltipEl) ---
+  function rollingExternalTooltip(context) {
+    const { tooltip } = context;
+    if (tooltip.opacity === 0) {
+      if (!ctTooltipFrozen) ctTooltipEl.style.display = 'none';
+      return;
+    }
+    // Only show tooltip for the weekly average dataset (index 0), not trend line
+    const dp = tooltip.dataPoints[0];
+    if (dp.datasetIndex !== 0 || dp.parsed.y === null) {
+      if (!ctTooltipFrozen) ctTooltipEl.style.display = 'none';
+      return;
+    }
+    const w = currentWeekly[dp.dataIndex];
+    if (!w || w.mean_days === null) return;
+    ctTooltipEl.innerHTML =
+      `<div class="tt-title">Week of ${escapeHtml(weekLabel(w.week_start))}</div>` +
+      `<div class="tt-total">Mean: ${w.mean_days}d &middot; ${w.n} item${w.n !== 1 ? 's' : ''}</div>`;
+    ctTooltipEl.style.display = 'block';
+    const rect = context.chart.canvas.getBoundingClientRect();
+    let left = rect.left + window.pageXOffset + tooltip.caretX + 16;
+    const top = rect.top + window.pageYOffset + tooltip.caretY;
+    if (left + 440 > window.innerWidth + window.pageXOffset) {
+      left = rect.left + window.pageXOffset + tooltip.caretX - 440;
+    }
+    ctTooltipEl.style.left = left + 'px';
+    ctTooltipEl.style.top = top + 'px';
+  }
+
   const rollingChart = new Chart(document.getElementById('ctRollingChart'), {
     type: 'line',
     data: {
@@ -653,13 +682,13 @@ metaEl.innerHTML =
           label: 'Weekly average',
           data: initRolling.means,
           borderColor: '#667eea',
-          backgroundColor: 'rgba(102,126,234,0.08)',
+          backgroundColor: '#667eea',
           borderWidth: 2,
           pointRadius: 4,
           pointHoverRadius: 6,
-          fill: true,
+          fill: false,
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
         },
         {
           label: 'Trend',
@@ -670,7 +699,7 @@ metaEl.innerHTML =
           pointRadius: 0,
           fill: false,
           tension: 0,
-          spanGaps: false,
+          spanGaps: true,
         },
       ],
     },
@@ -679,19 +708,7 @@ metaEl.innerHTML =
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: items => {
-              const w = currentWeekly[items[0].dataIndex];
-              return w ? 'Week of ' + weekLabel(w.week_start) : '';
-            },
-            label: ctx => {
-              if (ctx.datasetIndex === 1 || ctx.parsed.y === null) return null;
-              const w = currentWeekly[ctx.dataIndex];
-              return w ? ['Mean: ' + ctx.parsed.y + 'd', 'Items: ' + w.n] : [];
-            },
-          },
-        },
+        tooltip: { enabled: false, external: rollingExternalTooltip },
       },
       scales: {
         x: { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45 } },

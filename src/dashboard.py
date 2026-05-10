@@ -3,7 +3,7 @@ Dashboard generator.
 
 Reads:  output/metrics/time_in_columns.json
         output/metrics/cycle_time.json        (optional — skipped if not present)
-        src/templates/time_in_columns.html
+        src/templates/dashboard.html
 Writes: output/dashboard.html
 
 Usage:
@@ -16,7 +16,7 @@ from pathlib import Path
 
 TIC_PATH = Path("output/metrics/time_in_columns.json")
 CT_PATH = Path("output/metrics/cycle_time.json")
-TEMPLATE_PATH = Path("src/templates/time_in_columns.html")
+TEMPLATE_PATH = Path("src/templates/dashboard.html")
 OUTPUT_PATH = Path("output/dashboard.html")
 
 

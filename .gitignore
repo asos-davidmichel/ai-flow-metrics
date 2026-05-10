@@ -21,5 +21,5 @@ prompts/interpret_metrics.prompt.md
 output/metrics/
 output/dashboard.html
 
-# Confirmed interpretation choices — track these
-# output/data/config.json  ← intentionally NOT ignored
+# Confirmed interpretation choices — team-specific, not tracked
+output/data/config.json
