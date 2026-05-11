@@ -1,0 +1,907 @@
+"""
+AI interpretation — computes flow metrics summary and builds prompts for chart insights
+and a holistic leadership overview.
+
+Reads:
+  output/metrics/cycle_time.json
+  output/metrics/lead_time.json
+  output/metrics/time_in_columns.json
+  output/data/context.json
+  output/data/config.json
+  output/data/work_items.json
+  output/data/work_item_history.json
+
+Writes (depending on --mode):
+  prompts/interpret_metrics.prompt.md      (--mode copilot)
+  output/data/interpret_metrics_prompt.txt (--mode prompt)
+  output/data/insights.json               (--mode openai)
+
+Usage:
+  python src/interpret_metrics.py
+  python src/interpret_metrics.py --mode copilot
+  python src/interpret_metrics.py --mode prompt
+  python src/interpret_metrics.py --mode openai
+"""
+
+import json
+import math
+import sys
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+DATA_DIR    = Path("output/data")
+METRICS_DIR = Path("output/metrics")
+PROMPTS_DIR = Path("prompts")
+
+CT_PATH      = METRICS_DIR / "cycle_time.json"
+LT_PATH      = METRICS_DIR / "lead_time.json"
+TIC_PATH     = METRICS_DIR / "time_in_columns.json"
+CTX_PATH     = DATA_DIR / "context.json"
+CFG_PATH     = DATA_DIR / "config.json"
+WI_PATH      = DATA_DIR / "work_items.json"
+WIH_PATH     = DATA_DIR / "work_item_history.json"
+
+PROMPT_MD_PATH  = PROMPTS_DIR / "interpret_metrics.prompt.md"
+PROMPT_TXT_PATH = DATA_DIR / "interpret_metrics_prompt.txt"
+INSIGHTS_PATH   = DATA_DIR / "insights.json"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def load(path, required=True):
+    p = Path(path)
+    if not p.exists():
+        if required:
+            print(f"Error: required file not found: {path}", file=sys.stderr)
+            sys.exit(1)
+        return None
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def _parse_dt(s):
+    if not s:
+        return None
+    s = s.rstrip("Z").split("+")[0]
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _week_start(dt):
+    """ISO Monday of the week containing dt."""
+    d = dt - __import__("datetime").timedelta(days=dt.weekday())
+    return d.strftime("%Y-%m-%d")
+
+
+def _linreg_slope(pairs):
+    """Slope of linear regression on [(x, y), ...]. x can be float."""
+    n = len(pairs)
+    if n < 2:
+        return None
+    mx = sum(x for x, _ in pairs) / n
+    my = sum(y for _, y in pairs) / n
+    num = sum((x - mx) * (y - my) for x, y in pairs)
+    den = sum((x - mx) ** 2 for x, _ in pairs)
+    return num / den if den else 0.0
+
+
+def _round(v, d=1):
+    return round(v, d) if v is not None else None
+
+
+def _type_breakdown(items, field="cycle_time_days"):
+    by_type = defaultdict(list)
+    for i in items:
+        by_type[i.get("type", "Unknown")].append(i.get(field, 0) or 0)
+    return {
+        t: {"n": len(vs), "mean": _round(sum(vs)/len(vs)), "median": _round(sorted(vs)[len(vs)//2])}
+        for t, vs in sorted(by_type.items(), key=lambda x: -len(x[1]))
+    }
+
+
+# ---------------------------------------------------------------------------
+# Summary builders (one per chart / section)
+# ---------------------------------------------------------------------------
+
+def summarise_cycle_time(ct):
+    if not ct:
+        return None
+    items = ct.get("items", [])
+    overall = ct.get("overall", {})
+    weekly = ct.get("weekly_stats", [])
+
+    # Trend: slope of weekly mean_days over time (days per week)
+    trend_pts = [
+        (i, w["mean_days"])
+        for i, w in enumerate(weekly)
+        if w.get("n", 0) > 0 and w.get("mean_days") is not None
+    ]
+    slope = _linreg_slope(trend_pts)  # days per weekly bucket
+    slope_per_week = _round(slope, 2) if slope is not None else None
+
+    # Items above P85
+    p85 = overall.get("p85_days", 0)
+    outlier_count = sum(1 for i in items if (i.get("cycle_time_days") or 0) > p85)
+
+    return {
+        "chart": "cycle_time_histogram",
+        "window_days": ct.get("window", {}).get("parameter"),
+        "item_count": overall.get("n"),
+        "mean_days": _round(overall.get("mean_days")),
+        "median_days": _round(overall.get("median_days")),
+        "p85_days": _round(overall.get("p85_days")),
+        "min_days": _round(overall.get("min_days")),
+        "max_days": _round(overall.get("max_days")),
+        "weekly_trend_slope_days_per_week": slope_per_week,
+        "trend_direction": (
+            "improving" if slope_per_week and slope_per_week < -0.1
+            else "worsening" if slope_per_week and slope_per_week > 0.1
+            else "stable"
+        ),
+        "items_above_p85": outlier_count,
+        "by_type": _type_breakdown(items, "cycle_time_days"),
+    }
+
+
+def summarise_lead_time(lt):
+    if not lt:
+        return None
+    items = lt.get("items", [])
+    overall = lt.get("overall", {})
+    weekly = lt.get("weekly_stats", [])
+
+    trend_pts = [
+        (i, w["mean_days"])
+        for i, w in enumerate(weekly)
+        if w.get("n", 0) > 0 and w.get("mean_days") is not None
+    ]
+    slope = _linreg_slope(trend_pts)
+    slope_per_week = _round(slope, 2) if slope is not None else None
+
+    return {
+        "chart": "lead_time_histogram",
+        "item_count": overall.get("n"),
+        "mean_days": _round(overall.get("mean_days")),
+        "median_days": _round(overall.get("median_days")),
+        "p85_days": _round(overall.get("p85_days")),
+        "min_days": _round(overall.get("min_days")),
+        "max_days": _round(overall.get("max_days")),
+        "weekly_trend_slope_days_per_week": slope_per_week,
+        "trend_direction": (
+            "improving" if slope_per_week and slope_per_week < -0.1
+            else "worsening" if slope_per_week and slope_per_week > 0.1
+            else "stable"
+        ),
+        "by_type": _type_breakdown(items, "lead_time_days"),
+    }
+
+
+def summarise_throughput(ct):
+    if not ct:
+        return None
+    items = ct.get("items", [])
+    window = ct.get("window", {})
+
+    # Weekly counts
+    by_week = defaultdict(int)
+    for i in items:
+        dt = _parse_dt(i.get("completed_at"))
+        if dt:
+            by_week[_week_start(dt)] += 1
+
+    weeks_sorted = sorted(by_week)
+    counts = [by_week[w] for w in weeks_sorted]
+
+    # Window total weeks
+    w_start = _parse_dt(window.get("start"))
+    w_end   = _parse_dt(window.get("end"))
+    total_weeks = max(1, round((w_end - w_start).days / 7)) if w_start and w_end else len(counts) or 1
+    avg_per_week = _round(len(items) / total_weeks)
+
+    trend_pts = [(i, c) for i, c in enumerate(counts)]
+    slope = _linreg_slope(trend_pts)
+    slope_per_week = _round(slope, 2) if slope is not None else None
+
+    # Weeks with zero throughput
+    zero_weeks = total_weeks - len(weeks_sorted)
+
+    return {
+        "chart": "throughput",
+        "total_items": len(items),
+        "total_weeks": total_weeks,
+        "avg_per_week": avg_per_week,
+        "weeks_with_zero_completions": zero_weeks,
+        "weekly_trend_slope": slope_per_week,
+        "trend_direction": (
+            "improving" if slope_per_week and slope_per_week > 0.05
+            else "worsening" if slope_per_week and slope_per_week < -0.05
+            else "stable"
+        ),
+        "by_type": {
+            t: sum(1 for i in items if i.get("type") == t)
+            for t in sorted(set(i.get("type", "Unknown") for i in items))
+        },
+    }
+
+
+def summarise_time_in_columns(tic):
+    if not tic:
+        return None
+    cols = tic.get("columns", [])
+    in_progress = [c for c in cols if c.get("column_type") == "inProgress"]
+    if not in_progress:
+        return None
+
+    avg_total = sum(c["mean_hours"] for c in in_progress) / len(in_progress)
+    col_stats = []
+    for c in in_progress:
+        ratio = _round(c["mean_hours"] / avg_total, 2) if avg_total else None
+        col_stats.append({
+            "column": c["name"],
+            "mean_hours": _round(c["mean_hours"]),
+            "median_hours": _round(c["median_hours"]),
+            "items_through": c.get("n"),
+            "ratio_vs_avg": ratio,
+        })
+
+    bottleneck = max(in_progress, key=lambda c: c["mean_hours"])
+    return {
+        "chart": "time_in_columns",
+        "columns": col_stats,
+        "bottleneck_column": bottleneck["name"],
+        "bottleneck_mean_hours": _round(bottleneck["mean_hours"]),
+        "bottleneck_ratio_vs_avg": _round(bottleneck["mean_hours"] / avg_total, 2) if avg_total else None,
+    }
+
+
+def summarise_flow_efficiency(tic, cfg):
+    if not tic or not cfg:
+        return None
+    fe_cfg = cfg.get("flow_efficiency", {})
+    active_cols  = set(fe_cfg.get("active_columns", []))
+    waiting_cols = set(fe_cfg.get("waiting_columns", []))
+    if not active_cols and not waiting_cols:
+        return None
+
+    tic_items = tic.get("items", [])
+    effs = []
+    for ti in tic_items:
+        ch = ti.get("column_hours", {})
+        active_h  = sum(ch.get(c, 0) for c in active_cols)
+        waiting_h = sum(ch.get(c, 0) for c in waiting_cols)
+        total_h   = active_h + waiting_h
+        if total_h > 0:
+            effs.append(active_h / total_h * 100)
+
+    if not effs:
+        return None
+    effs_sorted = sorted(effs)
+    mean_eff  = _round(sum(effs) / len(effs))
+    median_eff = _round(effs_sorted[len(effs_sorted) // 2])
+    p85_eff   = _round(effs_sorted[int(len(effs_sorted) * 0.85)])
+
+    return {
+        "chart": "flow_efficiency",
+        "item_count": len(effs),
+        "active_columns": sorted(active_cols),
+        "waiting_columns": sorted(waiting_cols),
+        "mean_pct": mean_eff,
+        "median_pct": median_eff,
+        "p85_pct": p85_eff,
+        "items_below_20pct": sum(1 for e in effs if e < 20),
+        "items_above_40pct": sum(1 for e in effs if e >= 40),
+    }
+
+
+def summarise_work_start_efficiency(ct, lt):
+    if not ct or not lt:
+        return None
+    lt_map = {i["id"]: i for i in lt.get("items", [])}
+    pairs = []
+    for ci in ct.get("items", []):
+        li = lt_map.get(ci["id"])
+        if li and li.get("lead_time_days", 0) > 0:
+            eff = ci["cycle_time_days"] / li["lead_time_days"] * 100
+            if 0 <= eff <= 100:
+                wait = li["lead_time_days"] - ci["cycle_time_days"]
+                pairs.append({"eff": eff, "wait_days": wait})
+
+    if not pairs:
+        return None
+    effs   = sorted(p["eff"]  for p in pairs)
+    waits  = sorted(p["wait_days"] for p in pairs)
+    mean_eff  = _round(sum(effs)  / len(effs))
+    mean_wait = _round(sum(waits) / len(waits))
+
+    return {
+        "chart": "work_start_efficiency",
+        "item_count": len(pairs),
+        "mean_efficiency_pct": mean_eff,
+        "median_efficiency_pct": _round(effs[len(effs) // 2]),
+        "mean_wait_before_dev_days": mean_wait,
+        "median_wait_before_dev_days": _round(waits[len(waits) // 2]),
+        "items_below_50pct": sum(1 for e in effs if e < 50),
+    }
+
+
+def summarise_wip(wi, ctx, ct):
+    if not wi or not ctx:
+        return None
+    in_prog_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"}
+    out_cols     = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
+
+    current_wip = [i for i in wi if i.get("column") in in_prog_cols]
+    by_col = defaultdict(int)
+    for i in current_wip:
+        by_col[i["column"]] += 1
+
+    # WIP limit violations
+    col_limits = {c["name"]: c.get("wip_limit") for c in ctx.get("columns", [])}
+    violations = {col: cnt for col, cnt in by_col.items()
+                  if col_limits.get(col) and cnt > col_limits[col]}
+
+    return {
+        "chart": "wip",
+        "current_wip": len(current_wip),
+        "by_column": dict(by_col),
+        "wip_limit_violations": violations,
+        "by_type": {
+            t: sum(1 for i in current_wip if i.get("type") == t)
+            for t in sorted(set(i.get("type", "Unknown") for i in current_wip))
+        },
+    }
+
+
+def summarise_blockers(wi, wih, ctx, ct):
+    if not wi or not ctx:
+        return None
+
+    BLOCKED_TAGS = ['blocked', 'blocked by bag', 'blocked by plp']
+    HOLD_TAGS    = ['hold']
+
+    win_start_ms = None
+    win_end_ms   = None
+    if ct:
+        ws = _parse_dt(ct.get("window", {}).get("start"))
+        we = _parse_dt(ct.get("window", {}).get("end"))
+        if ws: win_start_ms = ws.timestamp() * 1000
+        if we: win_end_ms   = we.timestamp() * 1000
+
+    out_cols  = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
+
+    def parse_tags(s):
+        return [t.strip().lower() for t in (s or "").split(";") if t.strip()]
+
+    def has_b(s): return any(t in BLOCKED_TAGS for t in parse_tags(s))
+    def has_h(s): return any(t in HOLD_TAGS    for t in parse_tags(s))
+
+    tag_hist_map = {}
+    if wih:
+        for h in wih:
+            tag_hist_map[h["id"]] = [
+                e for e in h.get("tag_history", [])
+                if e.get("field") == "System.Tags"
+            ]
+
+    def get_intervals(item_id, current_tags):
+        tl  = [t.lower() for t in (current_tags or [])]
+        is_b = any(t in BLOCKED_TAGS for t in tl)
+        is_h = any(t in HOLD_TAGS    for t in tl)
+        history = sorted(tag_hist_map.get(item_id, []), key=lambda e: e.get("changed_at", ""))
+        b_start = h_start = None
+        b_ivs, h_ivs = [], []
+        for ev in history:
+            ms = _parse_dt(ev.get("changed_at"))
+            if not ms: continue
+            ms = ms.timestamp() * 1000
+            had_b, has_b_ = has_b(ev.get("old_value")), has_b(ev.get("new_value"))
+            had_h, has_h_ = has_h(ev.get("old_value")), has_h(ev.get("new_value"))
+            if not had_b and has_b_: b_start = ms
+            if had_b and not has_b_ and b_start: b_ivs.append((b_start, ms)); b_start = None
+            if not had_h and has_h_: h_start = ms
+            if had_h and not has_h_ and h_start: h_ivs.append((h_start, ms)); h_start = None
+        if b_start and is_b and win_end_ms: b_ivs.append((b_start, win_end_ms))
+        if h_start and is_h and win_end_ms: h_ivs.append((h_start, win_end_ms))
+
+        def clip(a, b):
+            s = max(a, win_start_ms or a)
+            e = min(b, win_end_ms   or b)
+            return (s, e) if e > s else None
+
+        b_ivs = [r for r in (clip(*iv) for iv in b_ivs) if r]
+        h_ivs = [r for r in (clip(*iv) for iv in h_ivs) if r]
+        return b_ivs, h_ivs
+
+    def sum_days(ivs):
+        return sum((e - s) / 86400000 for s, e in ivs)
+
+    def merge(ivs):
+        sorted_ivs = sorted(ivs)
+        merged = []
+        for iv in sorted_ivs:
+            if merged and iv[0] <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], iv[1]))
+            else:
+                merged.append(list(iv))
+        return merged
+
+    active_blocked = [i for i in wi if i.get("column") not in out_cols
+                      and any(t.lower() in BLOCKED_TAGS + HOLD_TAGS for t in (i.get("tags") or []))]
+
+    total_days_lost = 0
+    by_col = defaultdict(int)
+    max_days = 0
+    for item in active_blocked:
+        b_ivs, h_ivs = get_intervals(item["id"], item.get("tags"))
+        merged = merge(b_ivs + h_ivs)
+        days = sum_days(merged)
+        total_days_lost += days
+        by_col[item.get("column", "Unknown")] += 1
+        if days > max_days:
+            max_days = days
+
+    return {
+        "chart": "blockers",
+        "currently_blocked_count": len(active_blocked),
+        "total_days_lost_to_blocking": _round(total_days_lost),
+        "longest_single_block_days": _round(max_days),
+        "blocked_by_column": dict(by_col),
+    }
+
+
+def summarise_net_flow(ct, ctx):
+    if not ct or not ctx:
+        return None
+    cols = ctx.get("columns", [])
+    first_in_prog = next((c["name"] for c in cols if c.get("column_type") == "inProgress"), None)
+    last_col = cols[-1]["name"] if cols else None
+    if not first_in_prog or not last_col:
+        return None
+
+    # Use arrival slope vs departure slope from cycle_time items as proxy
+    # (same approach as the dashboard JS)
+    wih_path = WIH_PATH
+    # We don't have cumAtOrBeyond here, so approximate from item counts
+    window = ct.get("window", {})
+    w_start = _parse_dt(window.get("start"))
+    w_end   = _parse_dt(window.get("end"))
+    if not w_start or not w_end:
+        return None
+    total_weeks = max(1, round((w_end - w_start).days / 7))
+    completed = len(ct.get("items", []))
+    dep_rate = _round(completed / total_weeks)
+
+    return {
+        "chart": "net_flow",
+        "total_weeks": total_weeks,
+        "completed_items": completed,
+        "departure_rate_per_week": dep_rate,
+        "note": "arrival rate requires full work_item_history scan — omitted from summary",
+    }
+
+
+def summarise_ad_ratio(ct, ctx, wih):
+    """Arrival/Departure ratio per in-progress column."""
+    if not ct or not ctx or not wih:
+        return None
+    window = ct.get("window", {})
+    win_start_ms = _parse_dt(window.get("start"))
+    win_end_ms   = _parse_dt(window.get("end"))
+    if not win_start_ms or not win_end_ms:
+        return None
+    ws_ms = win_start_ms.timestamp() * 1000
+    we_ms = win_end_ms.timestamp() * 1000
+
+    col_names = {c["name"] for c in ctx.get("columns", [])}
+    in_prog   = [c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"]
+
+    arr = defaultdict(int)
+    dep = defaultdict(int)
+    for h in wih:
+        for seg in h.get("column_history", []):
+            col = seg.get("value")
+            if col not in col_names: continue
+            ent_ms = _parse_dt(seg.get("entered"))
+            if ent_ms and ws_ms <= ent_ms.timestamp() * 1000 <= we_ms:
+                arr[col] += 1
+            if seg.get("left"):
+                left_ms = _parse_dt(seg.get("left"))
+                if left_ms and ws_ms <= left_ms.timestamp() * 1000 <= we_ms:
+                    dep[col] += 1
+
+    ratios = []
+    for col in in_prog:
+        if dep[col] > 0:
+            ratios.append({
+                "column": col,
+                "arrivals": arr[col],
+                "departures": dep[col],
+                "ratio": _round(arr[col] / dep[col], 2),
+                "status": (
+                    "accumulating" if arr[col] / dep[col] > 1.1
+                    else "draining"  if arr[col] / dep[col] < 0.9
+                    else "balanced"
+                ),
+            })
+    return {
+        "chart": "arrival_departure_ratio",
+        "columns": ratios,
+        "accumulating_columns": [r["column"] for r in ratios if r["status"] == "accumulating"],
+        "draining_columns":     [r["column"] for r in ratios if r["status"] == "draining"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Assemble all summaries
+# ---------------------------------------------------------------------------
+
+def build_summary():
+    ct  = load(CT_PATH,  required=False)
+    lt  = load(LT_PATH,  required=False)
+    tic = load(TIC_PATH, required=True)
+    ctx = load(CTX_PATH, required=False)
+    cfg = load(CFG_PATH, required=False)
+    wi  = load(WI_PATH,  required=False)
+    wih = load(WIH_PATH, required=False)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "analysis_window": ct.get("window") if ct else None,
+        "cycle_time":            summarise_cycle_time(ct),
+        "lead_time":             summarise_lead_time(lt),
+        "throughput":            summarise_throughput(ct),
+        "time_in_columns":       summarise_time_in_columns(tic),
+        "flow_efficiency":       summarise_flow_efficiency(tic, cfg),
+        "work_start_efficiency": summarise_work_start_efficiency(ct, lt),
+        "wip":                   summarise_wip(wi, ctx, ct),
+        "blockers":              summarise_blockers(wi, wih, ctx, ct),
+        "net_flow":              summarise_net_flow(ct, ctx),
+        "arrival_departure":     summarise_ad_ratio(ct, ctx, wih),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Prompt building
+# ---------------------------------------------------------------------------
+
+SYSTEM_ROLE = """\
+You are an expert in software delivery flow metrics (Kanban, Lean). \
+You interpret quantitative flow data and produce clear, jargon-free insights \
+for both practitioners and leadership. \
+You do not describe charts. You identify patterns and their implications.
+"""
+
+CHART_PROMPTS = {
+    "cycle_time": {
+        "title": "Cycle Time",
+        "instruction": """\
+Given the cycle time statistics below, write a 2-3 sentence insight.
+Focus on: what the spread between median and P85 reveals about predictability, \
+whether the trend is cause for concern or encouragement, and what the \
+variation across work item types suggests about how the team processes work.
+Do NOT describe the numbers. Interpret what they mean for the team and their stakeholders.
+""",
+    },
+    "lead_time": {
+        "title": "Lead Time",
+        "instruction": """\
+Given the lead time statistics below, write a 2-3 sentence insight.
+Focus on: how far ahead stakeholders can reliably plan based on this data, \
+whether lead time is driven by wait time or active work time, and what the \
+gap between lead time and cycle time implies about how work enters the system.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "throughput": {
+        "title": "Throughput",
+        "instruction": """\
+Given the throughput statistics below, write a 2-3 sentence insight.
+Focus on: whether the delivery rate is stable enough for meaningful forecasting, \
+what weeks with zero completions suggest about batch delivery vs. steady flow, \
+and whether the trend points toward acceleration or deceleration of delivery.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "time_in_columns": {
+        "title": "Time in Columns",
+        "instruction": """\
+Given the time-in-column statistics below, write a 2-3 sentence insight.
+Focus on: where work accumulates and why that column is the likely constraint, \
+whether the pattern suggests a capacity problem, a handoff delay, or work arriving \
+faster than it can be processed, and what addressing this bottleneck could mean \
+for overall cycle time.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "flow_efficiency": {
+        "title": "Flow Efficiency",
+        "instruction": """\
+Given the flow efficiency statistics below, write a 2-3 sentence insight.
+Flow efficiency = active time / (active + waiting time) across the cycle.
+Industry typical range is 15-40%.
+Focus on: what this efficiency level implies about how much of cycle time \
+is actually productive, what the likely drivers of low efficiency are in this \
+type of team, and what a meaningful improvement would require.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "work_start_efficiency": {
+        "title": "Work Start Efficiency",
+        "instruction": """\
+Given the work start efficiency statistics below, write a 2-3 sentence insight.
+Work start efficiency = cycle time / lead time — it measures how quickly \
+work moves from intake to active development.
+Focus on: what a long average wait before development starts implies about \
+prioritisation, queue management, or batch-intake practices, and what the team \
+could do to start work sooner after committing to it.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "wip": {
+        "title": "WIP (Work in Progress)",
+        "instruction": """\
+Given the current WIP snapshot below, write a 2-3 sentence insight.
+Focus on: whether the WIP level is likely to be causing multitasking and \
+context-switching overhead, which columns hold the most inventory and what \
+that suggests about flow, and what reducing WIP might do to cycle time \
+based on Little's Law.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "blockers": {
+        "title": "Blocked Items",
+        "instruction": """\
+Given the blocker statistics below, write a 2-3 sentence insight.
+Focus on: the systemic cost of blocking (days lost vs. value delivered), \
+whether blockers are concentrated in specific columns (suggesting handoff or \
+dependency problems), and what a persistent blocking pattern implies about \
+how the team manages dependencies and escalations.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "net_flow": {
+        "title": "Net Flow",
+        "instruction": """\
+Given the net flow statistics below, write a 2-3 sentence insight.
+Net flow = items finished minus items started each week. \
+Positive = more finishing than starting (backlog shrinking). \
+Negative = more starting than finishing (backlog growing).
+Focus on: whether the current pattern is sustainable, what it implies \
+about team capacity vs. demand, and what the trend suggests about future \
+delivery risk.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+    "arrival_departure": {
+        "title": "Arrival / Departure Ratio by Column",
+        "instruction": """\
+Given the arrival/departure ratio data below, write a 2-3 sentence insight.
+A ratio > 1 means work arrives into a column faster than it leaves (accumulating). \
+A ratio < 1 means it drains faster (clearing). Ratio = 1 is balanced.
+Focus on: which columns are the system's current pressure points, \
+what that pattern suggests about where to focus improvement effort, \
+and whether the accumulation is likely temporary or structural.
+Do NOT describe the numbers. Interpret what they mean.
+""",
+    },
+}
+
+OVERVIEW_PROMPT = """\
+## Task: Holistic flow analysis
+
+You are analysing flow metrics for a software delivery team. \
+All statistics are anonymised — no item titles or individual names are included.
+
+Using ALL the metric summaries below, produce TWO sections:
+
+### Section 1 — What is happening (leadership narrative)
+Write 3-5 sentences of plain English narrative suitable for a non-technical \
+leadership audience. No jargon. No metric names. Describe the situation as a story: \
+what is the team's current state of flow, what patterns stand out, \
+and what is the most likely underlying cause.
+
+### Section 2 — Suggested actions
+Provide a numbered list of 5-8 specific actions. Each action should be one sentence. \
+Mix two types:
+- Generic flow improvement practices that apply to this pattern
+- Specific actions grounded in this team's data (e.g. "investigate why X column \
+  has a 2x higher wait time than the others")
+
+Do NOT repeat the metrics back. Focus entirely on what to do and why.
+"""
+
+
+def build_prompt_text(summary):
+    lines = []
+    lines.append(SYSTEM_ROLE)
+    lines.append("")
+    lines.append("=" * 70)
+    lines.append("FLOW METRICS SUMMARY (anonymised)")
+    lines.append("=" * 70)
+    lines.append("")
+    lines.append(json.dumps(summary, indent=2))
+    lines.append("")
+    lines.append("=" * 70)
+    lines.append("CHART INSIGHTS REQUIRED")
+    lines.append("=" * 70)
+    lines.append("")
+    lines.append(
+        "For each chart listed below, write the insight as instructed. "
+        "Use the relevant section of the summary above. "
+        "Format your response as a JSON object keyed by chart name, "
+        "each value being the insight string.\n"
+    )
+    lines.append("Charts and instructions:")
+    lines.append("")
+
+    key_map = {
+        "cycle_time":            "cycle_time",
+        "lead_time":             "lead_time",
+        "throughput":            "throughput",
+        "time_in_columns":       "time_in_columns",
+        "flow_efficiency":       "flow_efficiency",
+        "work_start_efficiency": "work_start_efficiency",
+        "wip":                   "wip",
+        "blockers":              "blockers",
+        "net_flow":              "net_flow",
+        "arrival_departure":     "arrival_departure",
+    }
+    for key, cfg in CHART_PROMPTS.items():
+        lines.append(f"### {cfg['title']} (key: \"{key}\")")
+        lines.append(cfg["instruction"].strip())
+        lines.append("")
+
+    lines.append("=" * 70)
+    lines.append("HOLISTIC OVERVIEW")
+    lines.append("=" * 70)
+    lines.append("")
+    lines.append(OVERVIEW_PROMPT.strip())
+    lines.append("")
+    lines.append(
+        'Add the overview as two keys in your JSON response: '
+        '"overview_narrative" and "overview_actions" (array of strings).'
+    )
+    lines.append("")
+    lines.append("Return ONLY a valid JSON object. No markdown fences, no explanation.")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Modes
+# ---------------------------------------------------------------------------
+
+def write_plain_prompt(summary):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    content = build_prompt_text(summary)
+    PROMPT_TXT_PATH.write_text(content, encoding="utf-8")
+    print(f"Written: {PROMPT_TXT_PATH}")
+    print()
+    print("Next steps:")
+    print("  1. Paste the contents of the file into any AI assistant.")
+    print("  2. Copy the JSON response into output/data/insights.json.")
+    print("  3. Run python src/dashboard.py to inject insights into the dashboard.")
+
+
+def write_copilot_prompt(summary):
+    import subprocess
+    PROMPTS_DIR.mkdir(exist_ok=True)
+    header = """\
+---
+mode: ask
+description: "Flow metrics — generate chart insights and leadership overview"
+---
+
+"""
+    content = header + build_prompt_text(summary)
+    PROMPT_MD_PATH.write_text(content, encoding="utf-8")
+    print(f"Written: {PROMPT_MD_PATH}")
+    try:
+        subprocess.Popen(["code", str(PROMPT_MD_PATH)])
+        print("Opened in VS Code — click 'Run in Chat' and select your model.")
+    except FileNotFoundError:
+        print(f"Open manually: {PROMPT_MD_PATH}")
+    print()
+    print("Next steps:")
+    print("  1. Click 'Run in Chat' and select your model.")
+    print("  2. Copy the JSON response into output/data/insights.json.")
+    print("  3. Run python src/dashboard.py to inject insights into the dashboard.")
+
+
+def call_openai(summary):
+    import os, urllib.request
+    api_key = os.environ.get("OPENAI_API_KEY")
+    model   = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    if not api_key:
+        print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
+        sys.exit(1)
+
+    prompt = build_prompt_text(summary)
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    print(f"Calling OpenAI ({model})…")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read())
+    except Exception as e:
+        print(f"Error calling OpenAI API: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    content = result["choices"][0]["message"]["content"].strip()
+    # Strip markdown fences if present
+    if content.startswith("```"):
+        content = "\n".join(content.split("\n")[1:])
+        if content.endswith("```"):
+            content = content[:-3]
+
+    try:
+        insights = json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"Warning: could not parse AI response as JSON: {e}", file=sys.stderr)
+        print("Raw response saved to output/data/insights_raw.txt")
+        (DATA_DIR / "insights_raw.txt").write_text(content, encoding="utf-8")
+        sys.exit(1)
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    INSIGHTS_PATH.write_text(json.dumps(insights, indent=2), encoding="utf-8")
+    print(f"Written: {INSIGHTS_PATH}")
+    print("Run python src/dashboard.py to inject insights into the dashboard.")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Generate AI prompts or call OpenAI to produce chart insights."
+    )
+    parser.add_argument(
+        "--mode", choices=["copilot", "prompt", "openai"], default="copilot",
+        help="How to deliver the prompt (default: copilot)",
+    )
+    parser.add_argument(
+        "--dump-summary", action="store_true",
+        help="Write the computed summary JSON to stdout and exit (for inspection).",
+    )
+    args = parser.parse_args()
+
+    summary = build_summary()
+
+    if args.dump_summary:
+        print(json.dumps(summary, indent=2))
+        return
+
+    if args.mode == "copilot":
+        write_copilot_prompt(summary)
+    elif args.mode == "prompt":
+        write_plain_prompt(summary)
+    elif args.mode == "openai":
+        call_openai(summary)
+
+
+if __name__ == "__main__":
+    main()

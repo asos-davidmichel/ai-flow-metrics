@@ -1467,8 +1467,8 @@ function updateChart() {
     const weeklyTp = weeks.map(w => ({ week_start: w, n: buckets[w], mean_days: buckets[w] }));
     const slope  = weeklyTrend(weeklyTp, 'mean_days');
     // Divide by total weeks in window (not just weeks with completions) for an accurate average
-    const winStartD = new Date(ct.window.start + 'T00:00:00Z');
-    const winEndD   = new Date(ct.window.end   + 'T00:00:00Z');
+    const winStartD = new Date(ct.window.start);
+    const winEndD   = new Date(ct.window.end);
     const totalWks  = Math.max(1, Math.round((winEndD - winStartD) / (7 * 24 * 3600 * 1000)));
     const avgAll = Math.round(ct.items.length / totalWks * 10) / 10;
     const cls = slope === null ? null : trendClass(slope, false);
