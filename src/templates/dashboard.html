@@ -2983,6 +2983,9 @@ function updateChart() {
   const wihMap = {};
   wih.forEach(h => { wihMap[h.id] = h.column_history || []; });
 
+  const tagHistMap = {};
+  wih.forEach(h => { tagHistMap[h.id] = (h.tag_history || []).filter(e => e.field === 'System.Tags'); });
+
   function firstInProgMs(id) {
     const segs = (wihMap[id] || []).filter(s => inProgCols.has(s.value));
     return segs.length ? Math.min(...segs.map(s => new Date(s.entered).getTime())) : null;
@@ -2995,6 +2998,57 @@ function updateChart() {
       isBlocked: tl.some(t => BLOCKED_TAGS.includes(t)),
       isOnHold:  tl.includes('hold'),
     };
+  }
+
+  // Parse semicolon-separated ADO tag string into lowercase array
+  function parseTags(str) {
+    return (str || '').split(';').map(t => t.trim().toLowerCase()).filter(Boolean);
+  }
+  function hasBlockerTag(str) { return parseTags(str).some(t => BLOCKED_TAGS.includes(t)); }
+  function hasHoldTag(str)    { return parseTags(str).includes('hold'); }
+
+  // Compute exact blocked/hold intervals for an item from tag_history, clipped to analysis window.
+  // Returns { blockedIntervals: [[startMs, endMs], ...], holdIntervals: [...] }
+  function getTagIntervals(id, currentTags) {
+    const history = [...(tagHistMap[id] || [])].sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
+    const blockedIntervals = [], holdIntervals = [];
+    let bStart = null, hStart = null;
+    for (const ev of history) {
+      const ms = new Date(ev.changed_at).getTime();
+      const hadB = hasBlockerTag(ev.old_value), hasB = hasBlockerTag(ev.new_value);
+      const hadH = hasHoldTag(ev.old_value),    hasH = hasHoldTag(ev.new_value);
+      if (!hadB && hasB) bStart = ms;
+      if (hadB && !hasB && bStart !== null) { blockedIntervals.push([bStart, ms]); bStart = null; }
+      if (!hadH && hasH) hStart = ms;
+      if (hadH && !hasH && hStart !== null) { holdIntervals.push([hStart, ms]); hStart = null; }
+    }
+    // If tag still present now, interval extends to winEndMs
+    const s = getSignals(currentTags);
+    if (bStart !== null || s.isBlocked) { if (bStart !== null) blockedIntervals.push([bStart, winEndMs]); }
+    if (hStart !== null || s.isOnHold)  { if (hStart !== null) holdIntervals.push([hStart, winEndMs]); }
+    // Clip to analysis window, drop zero-length
+    const clip = ([a, b]) => { const s2 = Math.max(a, winStartMs), e2 = Math.min(b, winEndMs); return e2 > s2 ? [s2, e2] : null; };
+    return {
+      blockedIntervals: blockedIntervals.map(clip).filter(Boolean),
+      holdIntervals:    holdIntervals.map(clip).filter(Boolean),
+    };
+  }
+
+  // Sum interval durations in days
+  function sumIntervalDays(intervals) {
+    return intervals.reduce((s, [a, b]) => s + (b - a) / MS_DAY, 0);
+  }
+
+  // Merge overlapping intervals (to avoid double-counting blocked + on-hold)
+  function mergeIntervals(ivs) {
+    const sorted = [...ivs].sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const iv of sorted) {
+      if (merged.length && iv[0] <= merged[merged.length - 1][1])
+        merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], iv[1]);
+      else merged.push([...iv]);
+    }
+    return merged;
   }
 
   const allBlockedItems    = wi.filter(i => { const s = getSignals(i.tags); return s.isBlocked || s.isOnHold; });
@@ -3046,14 +3100,20 @@ function updateChart() {
   const holdPerWeek    = new Array(weekMsList.length).fill(0);
   const blockedItemsByWeek = weekMsList.map(() => []);
   const holdItemsByWeek    = weekMsList.map(() => []);
+  // Count items whose blocked/hold interval overlaps each week (exact, from tag_history)
   allBlockedItems.forEach(item => {
-    const changedMs = item.changed_date ? new Date(item.changed_date).getTime() : null;
-    if (!changedMs) return;
-    const idx = weekIdxMap.get(weekMonMs(changedMs));
-    if (idx === undefined) return;
-    const s = getSignals(item.tags);
-    if (s.isBlocked) { blockedPerWeek[idx]++; blockedItemsByWeek[idx].push(item); }
-    if (s.isOnHold)  { holdPerWeek[idx]++;    holdItemsByWeek[idx].push(item); }
+    const { blockedIntervals, holdIntervals } = getTagIntervals(item.id, item.tags);
+    weekMsList.forEach((wkMs, idx) => {
+      const wkEnd = wkMs + 7 * MS_DAY;
+      if (blockedIntervals.some(([s, e]) => s < wkEnd && e > wkMs)) {
+        blockedPerWeek[idx]++;
+        blockedItemsByWeek[idx].push(item);
+      }
+      if (holdIntervals.some(([s, e]) => s < wkEnd && e > wkMs)) {
+        holdPerWeek[idx]++;
+        holdItemsByWeek[idx].push(item);
+      }
+    });
   });
 
   new Chart(document.getElementById('blockerTimelineChart'), {
@@ -3159,7 +3219,10 @@ function updateChart() {
   const sortedBlocked = [...activeBlockedItems]
     .map(i => {
       const s = getSignals(i.tags);
-      return { ...i, style: typeStyles[i.type] || {}, days: Math.max(0, Math.round((winEndMs - new Date(i.changed_date).getTime()) / MS_DAY)), signals: s };
+      const { blockedIntervals, holdIntervals } = getTagIntervals(i.id, i.tags);
+      const daysB = Math.round(sumIntervalDays(blockedIntervals));
+      const daysH = Math.round(sumIntervalDays(holdIntervals));
+      return { ...i, style: typeStyles[i.type] || {}, days: Math.max(daysB, daysH), daysB, daysH, signals: s };
     })
     .sort((a, b) => b.days - a.days)
     .slice(0, 10);
@@ -3187,8 +3250,8 @@ function updateChart() {
           const short = (item.title||'').length > 55 ? item.title.slice(0,55)+'\u2026' : (item.title||'');
           sharedTooltip.show(
             ttItemRow(item.style, url, item.id, item.title||'', item.days) +
-            (item.signals.isBlocked ? `<div class="tt-total" style="color:#e53e3e">Blocked</div>` : '') +
-            (item.signals.isOnHold  ? `<div class="tt-total" style="color:#3182ce">On Hold</div>` : '') +
+            (item.signals.isBlocked ? `<div class="tt-total" style="color:#e53e3e">Blocked: ${item.daysB}d</div>` : '') +
+            (item.signals.isOnHold  ? `<div class="tt-total" style="color:#3182ce">On Hold: ${item.daysH}d</div>` : '') +
             TT_HINT, c
           );
         }},
@@ -3241,13 +3304,18 @@ function updateChart() {
   // ── Chart 4: Days Lost to Blockers ────────────────────────────────
   const lostItems = [...activeBlockedItems]
     .map(i => {
-      const changedMs = new Date(i.changed_date).getTime();
-      const fProg     = firstInProgMs(i.id);
+      const { blockedIntervals, holdIntervals } = getTagIntervals(i.id, i.tags);
+      // Merge blocked + hold to avoid double-counting if both apply simultaneously
+      const merged      = mergeIntervals([...blockedIntervals, ...holdIntervals]);
+      const daysBlocked = Math.round(sumIntervalDays(merged));
+      const fProg       = firstInProgMs(i.id);
+      const totalInProgDays = fProg ? Math.max(0, (winEndMs - fProg) / MS_DAY) : 0;
+      const daysNotBlocked  = Math.max(0, Math.round(totalInProgDays - daysBlocked));
       return {
         ...i,
         style: typeStyles[i.type] || {},
-        daysBlocked:    Math.max(0, Math.round((winEndMs - changedMs) / MS_DAY)),
-        daysNotBlocked: fProg ? Math.max(0, Math.round((Math.min(changedMs, winEndMs) - fProg) / MS_DAY)) : 0,
+        daysBlocked,
+        daysNotBlocked,
       };
     })
     .sort((a, b) => b.daysBlocked - a.daysBlocked)

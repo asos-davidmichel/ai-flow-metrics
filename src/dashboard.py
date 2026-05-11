@@ -39,7 +39,7 @@ def main():
         "config":     json.loads(CFG_PATH.read_text(encoding="utf-8")) if CFG_PATH.exists() else None,
         "work_items": json.loads(WI_PATH.read_text(encoding="utf-8")) if WI_PATH.exists() else None,
         "work_item_history": [
-            {"id": h["id"], "column_history": h["column_history"]}
+            {"id": h["id"], "column_history": h["column_history"], "tag_history": h.get("tag_history", [])}
             for h in json.loads(Path("output/data/work_item_history.json").read_text(encoding="utf-8"))
         ] if Path("output/data/work_item_history.json").exists() else None,
     }
