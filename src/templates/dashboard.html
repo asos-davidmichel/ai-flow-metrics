@@ -511,6 +511,7 @@
         <div class="chart-wrap" style="height:300px;"><canvas id="startEfficiencyChart"></canvas></div>
         <div id="startEfficiencySidebar" style="font-size:13px;"></div>
       </div>
+      <div id="startEffStats" style="margin-top:10px;font-size:12px;"></div>
     </div>
 
     <!-- Row 2: Flow Efficiency histogram + sidebar -->
@@ -522,6 +523,7 @@
         <div class="chart-wrap" style="height:300px;"><canvas id="flowEfficiencyChart"></canvas></div>
         <div id="flowEfficiencySidebar" style="font-size:13px;"></div>
       </div>
+      <div id="flowEffStats" style="margin-top:10px;font-size:12px;"></div>
     </div>
 
   </div><!-- /tab-efficiency -->
@@ -3415,9 +3417,10 @@ function updateChart() {
       id: 'startEffStatLines',
       afterDraw(chart) {
         const { ctx: c2, scales, chartArea } = chart;
-        [[p50_1, '#38b2ac', 'P50 ' + p50_1 + '%'], [mean1, '#718096', 'Mean ' + mean1 + '%'], [p85_1, '#9f7aea', 'P85 ' + p85_1 + '%']].forEach(([val, colour, lbl]) => {
-          // Find which bucket this falls in
-          const bIdx = buckets.findIndex(b => val >= b.lo && val < b.hi + 0.001);
+        const h = chartArea.bottom - chartArea.top;
+        const yPositions = [chartArea.top + 12, chartArea.top + h * 0.45, chartArea.bottom - 8];
+        [[p50_1, '#38b2ac', 'P50 ' + p50_1 + '%'], [mean1, '#718096', 'Mean ' + mean1 + '%'], [p85_1, '#9f7aea', 'P85 ' + p85_1 + '%']].forEach(([val, colour, lbl], i) => {
+          const bIdx = buckets.findIndex(b => val >= b.lo && val <= b.hi);
           if (bIdx < 0) return;
           const x = scales.x.getPixelForValue(bIdx);
           c2.save();
@@ -3426,15 +3429,22 @@ function updateChart() {
           c2.lineWidth = 1.5;
           c2.beginPath(); c2.moveTo(x, chartArea.top); c2.lineTo(x, chartArea.bottom); c2.stroke();
           c2.setLineDash([]);
-          c2.fillStyle = colour;
-          c2.font = '11px system-ui, sans-serif';
+          c2.font = 'bold 11px system-ui, sans-serif';
           c2.textAlign = 'center';
-          c2.fillText('\u25CF' + lbl, x, chartArea.top + 10);
+          c2.strokeStyle = 'white'; c2.lineWidth = 3; c2.lineJoin = 'round';
+          c2.strokeText('\u25CF ' + lbl, x, yPositions[i]);
+          c2.fillStyle = colour;
+          c2.fillText('\u25CF ' + lbl, x, yPositions[i]);
           c2.restore();
         });
       },
     }],
   });
+
+  document.getElementById('startEffStats').innerHTML =
+    `<span style="margin-right:16px;"><span style="color:#38b2ac;font-weight:700;">&#9632; P50</span> ${p50_1}%</span>` +
+    `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${mean1}%</span>` +
+    `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85_1}%</span>`;
 
   // ── Chart 2: Flow Efficiency within Cycle Time ────────────────────
   const flowCfg     = cfg.flow_efficiency || {};
@@ -3515,8 +3525,10 @@ function updateChart() {
       id: 'flowEffStatLines',
       afterDraw(chart) {
         const { ctx: c2, scales, chartArea } = chart;
-        [[p50F, '#38b2ac', 'P50 '+p50F+'%'], [meanF, '#718096', 'Mean '+meanF+'%'], [p85F, '#9f7aea', 'P85 '+p85F+'%']].forEach(([val, colour, lbl]) => {
-          const bIdx = bucketsF.findIndex(b => val >= b.lo && val < b.hi + 0.001);
+        const h = chartArea.bottom - chartArea.top;
+        const yPositions = [chartArea.top + 12, chartArea.top + h * 0.45, chartArea.bottom - 8];
+        [[p50F, '#38b2ac', 'P50 '+p50F+'%'], [meanF, '#718096', 'Mean '+meanF+'%'], [p85F, '#9f7aea', 'P85 '+p85F+'%']].forEach(([val, colour, lbl], i) => {
+          const bIdx = bucketsF.findIndex(b => val >= b.lo && val <= b.hi);
           if (bIdx < 0) return;
           const x = scales.x.getPixelForValue(bIdx);
           c2.save();
@@ -3525,15 +3537,22 @@ function updateChart() {
           c2.lineWidth = 1.5;
           c2.beginPath(); c2.moveTo(x, chartArea.top); c2.lineTo(x, chartArea.bottom); c2.stroke();
           c2.setLineDash([]);
-          c2.fillStyle = colour;
-          c2.font = '11px system-ui, sans-serif';
+          c2.font = 'bold 11px system-ui, sans-serif';
           c2.textAlign = 'center';
-          c2.fillText('\u25CF'+lbl, x, chartArea.top + 10);
+          c2.strokeStyle = 'white'; c2.lineWidth = 3; c2.lineJoin = 'round';
+          c2.strokeText('\u25CF '+lbl, x, yPositions[i]);
+          c2.fillStyle = colour;
+          c2.fillText('\u25CF '+lbl, x, yPositions[i]);
           c2.restore();
         });
       },
     }],
   });
+
+  document.getElementById('flowEffStats').innerHTML =
+    `<span style="margin-right:16px;"><span style="color:#38b2ac;font-weight:700;">&#9632; P50</span> ${p50F}%</span>` +
+    `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${meanF}%</span>` +
+    `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85F}%</span>`;
 
   // ── Efficiency KPI cards on Overview ──────────────────────────────
   // Helper: split items by window midpoint and return mean of a field
