@@ -141,7 +141,7 @@
     /* KPI overview cards */
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 20px;
       margin-bottom: 24px;
     }
@@ -1503,25 +1503,6 @@ function updateChart() {
     ));
   }
 
-  // ── Bottleneck ──
-  if (tic) {
-    const inProgress = (tic.columns || []).filter(c => c.column_type === 'inProgress' && c.total_hours > 0);
-    if (inProgress.length) {
-      const bottleneck = inProgress.reduce((a, b) => b.total_hours > a.total_hours ? b : a);
-      const avgTotal = inProgress.reduce((s, c) => s + c.total_hours, 0) / inProgress.length;
-      const ratio = Math.round(bottleneck.total_hours / avgTotal * 10) / 10;
-      const avgDays = Math.round(bottleneck.mean_hours / 24 * 10) / 10;
-      const pillCls = ratio >= 2 ? 'kpi-pill pill-negative' : 'kpi-pill';
-      cards.push(kpiCard(
-        'Bottleneck',
-        `<span style="font-size:24px;font-weight:700;">${escapeHtml(bottleneck.name)}</span>`,
-        `Avg ${avgDays}d per item`,
-        ratio >= 2 ? 'negative' : 'neutral', null,
-        `<div class="${pillCls}">${ratio >= 2 ? '&#9888; ' : ''}${ratio}&times; avg column</div>`
-      ));
-    }
-  }
-
   document.getElementById('kpiGrid').innerHTML = cards.join('');
 })();
 // ────────────────────────────────────────────────────────────────────
@@ -2856,7 +2837,7 @@ function updateChart() {
     );
   }
 
-  // Backlog growth KPI card — reuses arrival/departure slopes from the Flow CFD
+  // Started vs Finished + Backlog growth KPI cards — reuses arrival/departure slopes from the Flow CFD
   (() => {
     const rates = window._flowRates;
     if (!rates) return;
@@ -2865,18 +2846,20 @@ function updateChart() {
 
     const arrowCls = Math.abs(netWk) < 0.5 ? 'neutral' : netWk > 0 ? 'negative' : 'positive';
     const arrowSym = arrowCls === 'neutral' ? '→' : netWk > 0 ? '↑' : '↓';
-    const pillText = arrowCls === 'neutral' ? 'Stable' : netWk > 0 ? 'Growing' : 'Shrinking';
     const pillCls  = arrowCls === 'negative' ? 'kpi-pill pill-negative'
       : arrowCls === 'positive' ? 'kpi-pill pill-positive' : 'kpi-pill';
-    const displayNet = `${netWk > 0 ? '+' : ''}${netWk}`;
+
+    // Card 1: Started vs finished (rates)
+    const sfPill = arrowCls === 'neutral' ? 'Balanced' : netWk > 0 ? 'More starting than finishing' : 'More finishing than starting';
     document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
       `<div class="kpi-card trend-${arrowCls}">` +
-      `<div class="kpi-label">Backlog growth</div>` +
-      `<div class="kpi-value">${displayNet}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
-      `<div class="kpi-unit">${arrWk} in &minus; ${depWk} out / week</div>` +
-      `<div class="${pillCls}">${pillText}</div>` +
+      `<div class="kpi-label">Started vs finished</div>` +
+      `<div class="kpi-value">${arrWk} / ${depWk}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+      `<div class="kpi-unit">items started / finished per week</div>` +
+      `<div class="${pillCls}">${sfPill}</div>` +
       `</div>`
     );
+
   })();
 
   function dailyWipTooltip(context) {
@@ -3121,18 +3104,18 @@ function updateChart() {
       if (s.isBlocked) blockedCount[col] = (blockedCount[col] || 0) + 1;
       if (s.isOnHold)  holdCount[col]    = (holdCount[col]    || 0) + 1;
     });
-    // Filter to columns with at least one item
-    const activeCols = colOrder.filter(c => (blockedCount[c] || 0) + (holdCount[c] || 0) > 0);
-    if (!activeCols.length) return;
+    // Always show all in-progress columns
+    const allBlockedCols = colOrder;
 
     const blockedByColTooltip = (c) => {
       if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
       const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
-      const col = activeCols[idx]; if (!col) return;
+      const col = allBlockedCols[idx]; if (!col) return;
       const b = blockedCount[col] || 0, h = holdCount[col] || 0;
       let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(col)}</div>`;
       if (b) html += `<div class="tt-total" style="color:#e53e3e;">Blocked: ${b}</div>`;
       if (h) html += `<div class="tt-total" style="color:#3182ce;">On Hold: ${h}</div>`;
+      if (!b && !h) html += `<div class="tt-total" style="color:#718096;">No blocked items</div>`;
       activeBlockedItems.filter(i => i.column === col).forEach(item => {
         const url = adoBase ? `${adoBase}/${item.id}` : '';
         html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
@@ -3143,10 +3126,10 @@ function updateChart() {
     new Chart(document.getElementById('blockedByColumnChart'), {
       type: 'bar',
       data: {
-        labels: activeCols,
+        labels: allBlockedCols,
         datasets: [
-          { label: 'Blocked', data: activeCols.map(c => blockedCount[c] || 0), backgroundColor: '#fc8181', stack: 'col', borderRadius: 3 },
-          { label: 'On Hold', data: activeCols.map(c => holdCount[c]    || 0), backgroundColor: '#63b3ed', stack: 'col', borderRadius: 3 },
+          { label: 'Blocked', data: allBlockedCols.map(c => blockedCount[c] || 0), backgroundColor: '#fc8181', stack: 'col', borderRadius: 3 },
+          { label: 'On Hold', data: allBlockedCols.map(c => holdCount[c]    || 0), backgroundColor: '#63b3ed', stack: 'col', borderRadius: 3 },
         ],
       },
       options: {
@@ -3296,6 +3279,45 @@ function updateChart() {
     },
     plugins: [makeIconPlugin(lostItemsFn)],
   });
+
+  // ── Blocker KPI cards on Overview ─────────────────────────────────
+  // Card: blocked items count + trend (slope of weekly blocked count over window)
+  (() => {
+    const totalBlocked = activeBlockedItems.length;
+    // Weekly slope from blockedPerWeek (re-compute since we have it in scope)
+    const bwPts = blockedPerWeek.map((y, x) => ({ x, y }));
+    const bwN = bwPts.length;
+    if (bwN < 2) return;
+    const bwMx = bwPts.reduce((s,p)=>s+p.x,0)/bwN, bwMy = bwPts.reduce((s,p)=>s+p.y,0)/bwN;
+    const bwSlope = (() => { const num=bwPts.reduce((s,p)=>s+(p.x-bwMx)*(p.y-bwMy),0), den=bwPts.reduce((s,p)=>s+(p.x-bwMx)**2,0); return den?num/den:0; })();
+    const bwSlopeWk = Math.round(bwSlope*10)/10;
+    const arrowCls = Math.abs(bwSlopeWk) < 0.3 ? 'neutral' : bwSlopeWk > 0 ? 'negative' : 'positive';
+    const arrowSym = arrowCls === 'neutral' ? '→' : bwSlopeWk > 0 ? '↑' : '↓';
+    const pillText = arrowCls === 'neutral' ? 'Stable' : bwSlopeWk > 0 ? 'Increasing' : 'Decreasing';
+    const pillCls  = arrowCls === 'negative' ? 'kpi-pill pill-negative' : arrowCls === 'positive' ? 'kpi-pill pill-positive' : 'kpi-pill';
+    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
+      `<div class="kpi-card trend-${arrowCls}">` +
+      `<div class="kpi-label">Blocked items</div>` +
+      `<div class="kpi-value">${totalBlocked}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+      `<div class="kpi-unit">currently blocked or on-hold</div>` +
+      `<div class="${pillCls}">${pillText}</div>` +
+      `</div>`
+    );
+  })();
+
+  // Card: total days lost to blockers
+  (() => {
+    const totalDaysLost = lostItems.reduce((s, i) => s + i.daysBlocked, 0);
+    const arrowCls = totalDaysLost === 0 ? 'positive' : totalDaysLost < 30 ? 'neutral' : 'negative';
+    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
+      `<div class="kpi-card trend-${arrowCls}">` +
+      `<div class="kpi-label">Days lost to blockers</div>` +
+      `<div class="kpi-value">${totalDaysLost}</div>` +
+      `<div class="kpi-unit">days blocked (active items)</div>` +
+      `<div class="kpi-pill">${lostItems.length} items affected</div>` +
+      `</div>`
+    );
+  })();
 })();
 // ───────────────────────────────────────────────────────────────────────
 
@@ -3324,7 +3346,7 @@ function updateChart() {
     if (!li || li.lead_time_days <= 0) return;
     const eff = Math.round(ci.cycle_time_days / li.lead_time_days * 1000) / 10;
     if (eff < 0 || eff > 100) return;
-    startEffItems.push({ id: ci.id, title: ci.title, type: ci.type, eff, ct: ci.cycle_time_days, lt: li.lead_time_days });
+    startEffItems.push({ id: ci.id, title: ci.title, type: ci.type, eff, ct: ci.cycle_time_days, lt: li.lead_time_days, completedAt: ci.completed_at });
   });
 
   // Histogram buckets: 0-15, 15-30, …, 90-100
@@ -3435,7 +3457,7 @@ function updateChart() {
     const totalH   = activeH + waitingH;
     if (totalH <= 0) return;
     const eff = Math.round(activeH / totalH * 1000) / 10;
-    flowEffItems.push({ id: ti.id, title: ti.title, type: ti.type, eff, activeH: Math.round(activeH*10)/10, totalH: Math.round(totalH*10)/10 });
+    flowEffItems.push({ id: ti.id, title: ti.title, type: ti.type, eff, activeH: Math.round(activeH*10)/10, totalH: Math.round(totalH*10)/10, completedAt: ctMap.get(ti.id)?.completed_at || null });
   });
 
   const sortedF = [...flowEffItems].sort((a, b) => a.eff - b.eff);
@@ -3512,8 +3534,85 @@ function updateChart() {
       },
     }],
   });
+
+  // ── Efficiency KPI cards on Overview ──────────────────────────────
+  // Helper: split items by window midpoint and return mean of a field
+  const winStart = new Date((ct.window?.start || '').slice(0, 10) + 'T00:00:00Z').getTime();
+  const winEnd   = new Date((ct.window?.end   || '').slice(0, 10) + 'T00:00:00Z').getTime();
+  const midMs    = (winStart + winEnd) / 2;
+
+  // Card: mean flow efficiency (active time / total cycle time)
+  if (meanF !== undefined && valsF.length) {
+    const firstH  = flowEffItems.filter(i => i.completedAt && new Date(i.completedAt).getTime() < midMs);
+    const secondH = flowEffItems.filter(i => i.completedAt && new Date(i.completedAt).getTime() >= midMs);
+    const mFirst  = firstH.length  ? firstH.reduce((s, i) => s + i.eff, 0)  / firstH.length  : null;
+    const mSecond = secondH.length ? secondH.reduce((s, i) => s + i.eff, 0) / secondH.length : null;
+    const tDelta  = (mFirst !== null && mSecond !== null) ? Math.round((mSecond - mFirst) * 10) / 10 : null;
+    const arrowCls = tDelta === null || Math.abs(tDelta) < 1 ? 'neutral' : tDelta > 0 ? 'positive' : 'negative';
+    const arrowSym = arrowCls === 'neutral' ? '→' : tDelta > 0 ? '↑' : '↓';
+    const benchCls = meanF >= 40 ? 'positive' : meanF >= 20 ? 'neutral' : 'negative';
+    const pillText = meanF >= 40 ? 'Good (≥40%)' : meanF >= 20 ? 'Typical (20–40%)' : 'Low (<20%)';
+    const pillCls  = benchCls === 'positive' ? 'kpi-pill pill-positive' : benchCls === 'neutral' ? 'kpi-pill' : 'kpi-pill pill-negative';
+    const unitTxt  = tDelta !== null ? `mean active / total &middot; ${tDelta > 0 ? '+' : ''}${tDelta}% vs first half` : 'mean active / total time';
+    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
+      `<div class="kpi-card trend-${arrowCls}">` +
+      `<div class="kpi-label">Flow efficiency</div>` +
+      `<div class="kpi-value">${meanF}%<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+      `<div class="kpi-unit">${unitTxt}</div>` +
+      `<div class="${pillCls}">${pillText}</div>` +
+      `</div>`
+    );
+  }
+
+  // Card: average delay before work starts (mean of lead_time - cycle_time)
+  if (startEffItems.length) {
+    const firstH  = startEffItems.filter(i => i.completedAt && new Date(i.completedAt).getTime() < midMs);
+    const secondH = startEffItems.filter(i => i.completedAt && new Date(i.completedAt).getTime() >= midMs);
+    const waitFn  = arr => arr.length ? Math.round(arr.reduce((s, i) => s + (i.lt - i.ct), 0) / arr.length * 10) / 10 : null;
+    const avgWait   = waitFn(startEffItems);
+    const waitFirst = waitFn(firstH);
+    const waitSec   = waitFn(secondH);
+    const tDelta    = (waitFirst !== null && waitSec !== null) ? Math.round((waitSec - waitFirst) * 10) / 10 : null;
+    const benchCls  = avgWait <= 5 ? 'positive' : avgWait <= 15 ? 'neutral' : 'negative';
+    const pillCls   = benchCls === 'positive' ? 'kpi-pill pill-positive' : benchCls === 'neutral' ? 'kpi-pill' : 'kpi-pill pill-negative';
+    const pillText  = benchCls === 'positive' ? 'Low wait' : benchCls === 'neutral' ? 'Moderate wait' : 'High wait';
+    // Lower wait = positive trend
+    const arrowCls  = tDelta === null || Math.abs(tDelta) < 0.5 ? 'neutral' : tDelta < 0 ? 'positive' : 'negative';
+    const arrowSym  = arrowCls === 'neutral' ? '→' : tDelta < 0 ? '↓' : '↑';
+    const unitTxt   = tDelta !== null ? `mean delay before dev &middot; ${tDelta > 0 ? '+' : ''}${tDelta}d vs first half` : 'mean delay before dev begins';
+    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
+      `<div class="kpi-card trend-${arrowCls}">` +
+      `<div class="kpi-label">Avg wait to start</div>` +
+      `<div class="kpi-value">${avgWait}d<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+      `<div class="kpi-unit">${unitTxt}</div>` +
+      `<div class="${pillCls}">${pillText}</div>` +
+      `</div>`
+    );
+  }
 })();
 // ───────────────────────────────────────────────────────────────────────
+
+// ── KPI card order ───────────────────────────────────────────────────
+// Row 1: delivery output  |  Row 2: process health & quality
+(function () {
+  const orderMap = {
+    'Throughput':           1,
+    'Cycle time':           2,
+    'Lead time':            3,
+    'WIP now':              4,
+    'Started vs finished':  5,
+    'Flow efficiency':      6,
+    'Avg wait to start':    7,
+    'Blocked items':        8,
+    'Days lost to blockers':9,
+    'Open bugs now':       10,
+  };
+  document.querySelectorAll('#kpiGrid .kpi-card').forEach(card => {
+    const label = card.querySelector('.kpi-label')?.textContent?.trim();
+    const ord = orderMap[label];
+    if (ord) card.style.order = ord;
+  });
+})();
 
 // ── Tab switching ────────────────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
