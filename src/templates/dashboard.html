@@ -2056,8 +2056,8 @@ function updateChart() {
   // Colours: positive = blue-grey (more finished), negative = orange (more started)
   const netFlowColors = netFlowVals.map(v => v >= 0 ? '#718096' : '#ed8936');
 
-  const netFlowMin = Math.min(0, ...netFlowVals) - 1;
-  const netFlowMax = Math.max(0, ...netFlowVals) + 1;
+  const netFlowMin = Math.min(0, ...netFlowVals) - 2;
+  const netFlowMax = Math.max(0, ...netFlowVals) + 2;
 
   new Chart(document.getElementById('netFlowChart'), {
     type: 'bar',
