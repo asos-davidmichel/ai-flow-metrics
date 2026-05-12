@@ -1325,8 +1325,13 @@ function updateChart() {
 
   document.getElementById('throughputSection').style.display = '';
 
-  // Build weekly counts over the same data range as cycle time
-  const allItems = ct.items;
+  // Use throughput_items (all completions in window) if available, else fall back to ct.items
+  // throughput_items includes items that completed in window but have no clock_start (no cycle time)
+  const ctItemsById = {};
+  (ct.items || []).forEach(i => { ctItemsById[i.id] = i; });
+  const allItems = (ct.throughput_items && ct.throughput_items.length > 0)
+    ? ct.throughput_items.map(i => ({ ...i, title: (ctItemsById[i.id] || {}).title || '', cycle_time_days: (ctItemsById[i.id] || {}).cycle_time_days ?? null }))
+    : ct.items;
   const _tpMs  = allItems.map(i => new Date(i.completed_at).getTime());
   const _tpPad = 7 * 24 * 3600 * 1000;
   const tpMinMs = Math.min(..._tpMs) - _tpPad;
@@ -1457,27 +1462,38 @@ function updateChart() {
 
   // ── Throughput ──
   if (ct) {
-    // Build weekly counts from ct.items
-    const buckets = {};
-    (ct.items || []).forEach(i => {
-      const w = weekStart(i.completed_at);
-      buckets[w] = (buckets[w] || 0) + 1;
-    });
-    const weeks = Object.keys(buckets).sort();
-    const weeklyTp = weeks.map(w => ({ week_start: w, n: buckets[w], mean_days: buckets[w] }));
-    const slope  = weeklyTrend(weeklyTp, 'mean_days');
-    // Divide by total weeks in window (not just weeks with completions) for an accurate average
-    const winStartD = new Date(ct.window.start);
-    const winEndD   = new Date(ct.window.end);
-    const totalWks  = Math.max(1, Math.round((winEndD - winStartD) / (7 * 24 * 3600 * 1000)));
-    const avgAll = Math.round(ct.items.length / totalWks * 10) / 10;
+    // Use throughput_items (all completions) if available, else fall back to ct.items
+    const tpItems = (ct.throughput_items && ct.throughput_items.length > 0) ? ct.throughput_items : ct.items;
+    // Build all weeks in window
+    const winStartMs = new Date(ct.window.start).getTime();
+    const winEndMs   = new Date(ct.window.end).getTime();
+    const MS_WEEK    = 7 * 24 * 3600 * 1000;
+    const totalWks   = Math.max(1, Math.round((winEndMs - winStartMs) / MS_WEEK));
+    const tpBuckets  = {};
+    tpItems.forEach(i => { const w = weekStart(i.completed_at); tpBuckets[w] = (tpBuckets[w] || 0) + 1; });
+    // Build cumulative series over every week in window (same method as CFD linTrendLine)
+    let cum = 0;
+    const cumSeries = [];
+    for (let ms = winStartMs; ms <= winEndMs + MS_WEEK; ms += MS_WEEK) {
+      cum += tpBuckets[weekStart(new Date(ms).toISOString())] || 0;
+      cumSeries.push(cum);
+    }
+    const tpN     = cumSeries.length;
+    const tpMeanX = (tpN - 1) / 2;
+    const tpMeanY = cumSeries.reduce((s, y) => s + y, 0) / tpN;
+    const tpNum   = cumSeries.reduce((s, y, x) => s + (x - tpMeanX) * (y - tpMeanY), 0);
+    const tpDen   = cumSeries.reduce((s, _, x) => s + (x - tpMeanX) ** 2, 0);
+    const tpRate  = tpDen ? Math.round(tpNum / tpDen * 10) / 10 : 0;
+    // Trend direction from weekly counts (is throughput improving over time?)
+    const weeklyTp = Object.keys(tpBuckets).sort().map(w => ({ week_start: w, n: tpBuckets[w], mean_days: tpBuckets[w] }));
+    const slope = weeklyTrend(weeklyTp, 'mean_days');
     const cls = slope === null ? null : trendClass(slope, false);
     cards.push(kpiCard(
       'Throughput',
-      `${avgAll}`,
-      'items/week average',
+      `${tpRate}`,
+      'items/week (trend)',
       cls, slope,
-      `<div class="kpi-pill">${ct.items.length} items &middot; ${totalWks} weeks</div>`
+      `<div class="kpi-pill">${tpItems.length} items &middot; ${totalWks} weeks</div>`
     ));
   }
 

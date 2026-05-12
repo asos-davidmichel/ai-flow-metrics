@@ -135,6 +135,7 @@ def main():
 
     all_warnings = []
     items_output = []
+    throughput_items = []  # all completions within window, regardless of started_at
 
     for item in history:
         item_id = item["id"]
@@ -168,6 +169,14 @@ def main():
             continue
         if not (window_start <= completed_at <= window_end):
             continue
+
+        # Count this item for throughput regardless of whether we have a start date
+        meta = item_meta.get(item_id, {})
+        throughput_items.append({
+            "id": item_id,
+            "type": meta.get("type", ""),
+            "completed_at": completed_at.isoformat(),
+        })
 
         if started_at is None:
             item_warnings.append(
@@ -253,6 +262,7 @@ def main():
         "overall": overall,
         "weekly_stats": weekly_stats,
         "items": items_output,
+        "throughput_items": throughput_items,
     }
 
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
