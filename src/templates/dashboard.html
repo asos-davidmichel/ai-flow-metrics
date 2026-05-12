@@ -2034,10 +2034,10 @@ function updateChart() {
   const firstInProgressCol = (ctx.columns || []).find(c => c.column_type === 'inProgress')?.name || allCols[1];
   const firstCol = allCols[0];
   const lastCol  = allCols[allCols.length - 1];
-  const arrivalResult   = linTrendLine(cumAtOrBeyond[firstInProgressCol]);
+  const arrivalResult   = linTrendLine(cumAtOrBeyond[firstCol]);
   const departureResult = linTrendLine(cumAtOrBeyond[lastCol]);
-  const arrivalSlope    = Math.round(arrivalResult.slope * 10) / 10;
-  const departureSlope  = Math.round(departureResult.slope * 10) / 10;
+  let arrivalSlope    = Math.round(arrivalResult.slope * 10) / 10;
+  let departureSlope  = Math.round(departureResult.slope * 10) / 10;
   // Expose for reuse by other IIFEs
   window._flowRates = { arrivalSlope, departureSlope };
 
@@ -2208,13 +2208,40 @@ function updateChart() {
   // Legend-style toggles: coloured square + label, like a Chart.js legend
   const toggleContainer = document.getElementById('cfdToggles');
   toggleContainer.style.cssText = 'display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:4px;';
-  const activeColSet = new Set(allCols);
+
+  // Restore persisted hidden columns
+  const CFD_STORAGE_KEY = 'cfd_hidden_cols';
+  let _storedHidden = [];
+  try { _storedHidden = JSON.parse(localStorage.getItem(CFD_STORAGE_KEY) || '[]'); } catch(e) {}
+  const activeColSet = new Set(allCols.filter(c => !_storedHidden.includes(c)));
+
+  // Recompute arrival/departure trend lines based on currently visible columns
+  function recomputeTrends() {
+    const visibleAll = allCols.filter(c => activeColSet.has(c));
+    if (visibleAll.length < 2) return;
+    const arrCol = visibleAll[0];
+    const depCol = visibleAll[visibleAll.length - 1];
+    const ar = linTrendLine(cumAtOrBeyond[arrCol]);
+    const dr = linTrendLine(cumAtOrBeyond[depCol]);
+    arrivalSlope   = Math.round(ar.slope * 10) / 10;
+    departureSlope = Math.round(dr.slope * 10) / 10;
+    // Update chart's live dataset references (not the original trendDatasets array)
+    const trendBase = cfdDatasets.length;
+    cfdChart.data.datasets[trendBase].data     = ar.line;
+    cfdChart.data.datasets[trendBase + 1].data = dr.line;
+    window._flowRates = { arrivalSlope, departureSlope };
+    if (window._updateSfKpi) window._updateSfKpi(arrivalSlope, departureSlope);
+  }
 
   function updateCfdVisibility() {
     cfdDatasets.forEach((ds, i) => {
       cfdChart.data.datasets[i].hidden = !activeColSet.has(ds._col);
     });
+    recomputeTrends();
     cfdChart.update();
+    // Persist hidden state
+    const hiddenCols = allCols.filter(c => !activeColSet.has(c));
+    try { localStorage.setItem(CFD_STORAGE_KEY, JSON.stringify(hiddenCols)); } catch(e) {}
   }
 
   // Trend line legend items (no badge — rate shown on the line itself)
@@ -2234,15 +2261,17 @@ function updateChart() {
   [...allCols].reverse().forEach(col => {
     const color = colColors[col];
     const item = document.createElement('div');
+    const isActive = activeColSet.has(col);
     item.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;';
-    item.dataset.active = 'true';
+    item.dataset.active = isActive ? 'true' : 'false';
 
     const box = document.createElement('span');
     box.style.cssText = `display:inline-block;width:32px;height:14px;border-radius:3px;background:${color};flex-shrink:0;`;
+    if (!isActive) box.style.opacity = '0.2';
 
     const lbl = document.createElement('span');
     lbl.textContent = col;
-    lbl.style.cssText = 'font-size:12px;color:#4a5568;';
+    lbl.style.cssText = `font-size:12px;color:${isActive ? '#4a5568' : '#a0aec0'};`;
 
     item.appendChild(box);
     item.appendChild(lbl);
@@ -2256,6 +2285,9 @@ function updateChart() {
     });
     toggleContainer.appendChild(item);
   });
+
+  // Apply persisted hidden state on initial load
+  if (_storedHidden.length) updateCfdVisibility();
 
   // ── Arrival / Departure ratio (events within the analysis window only) ──
   const arrInWindow = {};
@@ -2846,29 +2878,39 @@ function updateChart() {
     );
   }
 
-  // Started vs Finished + Backlog growth KPI cards — reuses arrival/departure slopes from the Flow CFD
+  // Started vs Finished KPI card — reuses arrival/departure slopes from the Flow CFD
   (() => {
+    function renderSfKpi(arrWk, depWk) {
+      const netWk = Math.round((arrWk - depWk) * 10) / 10;
+      const arrowCls = Math.abs(netWk) < 0.5 ? 'neutral' : netWk > 0 ? 'negative' : 'positive';
+      const arrowSym = arrowCls === 'neutral' ? '→' : netWk > 0 ? '↑' : '↓';
+      const pillCls  = arrowCls === 'negative' ? 'kpi-pill pill-negative'
+        : arrowCls === 'positive' ? 'kpi-pill pill-positive' : 'kpi-pill';
+      const sfPill = arrowCls === 'neutral' ? 'Balanced' : netWk > 0 ? 'More starting than finishing' : 'More finishing than starting';
+      return `<div class="kpi-card trend-${arrowCls}" id="sfKpiCard">` +
+        `<div class="kpi-label">Started vs finished</div>` +
+        `<div class="kpi-value">${arrWk} / ${depWk}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+        `<div class="kpi-unit">items started / finished per week</div>` +
+        `<div class="${pillCls}">${sfPill}</div>` +
+        `</div>`;
+    }
     const rates = window._flowRates;
     if (!rates) return;
-    const { arrivalSlope: arrWk, departureSlope: depWk } = rates;
-    const netWk = Math.round((arrWk - depWk) * 10) / 10;
-
-    const arrowCls = Math.abs(netWk) < 0.5 ? 'neutral' : netWk > 0 ? 'negative' : 'positive';
-    const arrowSym = arrowCls === 'neutral' ? '→' : netWk > 0 ? '↑' : '↓';
-    const pillCls  = arrowCls === 'negative' ? 'kpi-pill pill-negative'
-      : arrowCls === 'positive' ? 'kpi-pill pill-positive' : 'kpi-pill';
-
-    // Card 1: Started vs finished (rates)
-    const sfPill = arrowCls === 'neutral' ? 'Balanced' : netWk > 0 ? 'More starting than finishing' : 'More finishing than starting';
-    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
-      `<div class="kpi-card trend-${arrowCls}">` +
-      `<div class="kpi-label">Started vs finished</div>` +
-      `<div class="kpi-value">${arrWk} / ${depWk}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
-      `<div class="kpi-unit">items started / finished per week</div>` +
-      `<div class="${pillCls}">${sfPill}</div>` +
-      `</div>`
-    );
-
+    document.getElementById('kpiGrid').insertAdjacentHTML('beforeend', renderSfKpi(rates.arrivalSlope, rates.departureSlope));
+    window._updateSfKpi = (arr, dep) => {
+      const card = document.getElementById('sfKpiCard');
+      if (!card) return;
+      const netWk = Math.round((arr - dep) * 10) / 10;
+      const arrowCls = Math.abs(netWk) < 0.5 ? 'neutral' : netWk > 0 ? 'negative' : 'positive';
+      const arrowSym = arrowCls === 'neutral' ? '→' : netWk > 0 ? '↑' : '↓';
+      const pillCls  = arrowCls === 'negative' ? 'kpi-pill pill-negative'
+        : arrowCls === 'positive' ? 'kpi-pill pill-positive' : 'kpi-pill';
+      const sfPill = arrowCls === 'neutral' ? 'Balanced' : netWk > 0 ? 'More starting than finishing' : 'More finishing than starting';
+      card.className = `kpi-card trend-${arrowCls}`;
+      card.querySelector('.kpi-value').innerHTML = `${arr} / ${dep}<span class="kpi-arrow ${arrowCls}">${arrowSym}</span>`;
+      const pillEl = card.querySelector('[class^="kpi-pill"]');
+      if (pillEl) { pillEl.className = pillCls; pillEl.textContent = sfPill; }
+    };
   })();
 
   function dailyWipTooltip(context) {
