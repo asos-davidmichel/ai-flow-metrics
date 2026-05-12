@@ -3180,15 +3180,25 @@ function updateChart() {
       if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
       const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
       const col = allBlockedCols[idx]; if (!col) return;
-      const b = blockedCount[col] || 0, h = holdCount[col] || 0;
+      const colItems = activeBlockedItems.filter(i => i.column === col);
+      const bItems = colItems.filter(i => getSignals(i.tags).isBlocked);
+      const hItems = colItems.filter(i => getSignals(i.tags).isOnHold);
       let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(col)}</div>`;
-      if (b) html += `<div class="tt-total" style="color:#e53e3e;">Blocked: ${b}</div>`;
-      if (h) html += `<div class="tt-total" style="color:#3182ce;">On Hold: ${h}</div>`;
-      if (!b && !h) html += `<div class="tt-total" style="color:#718096;">No blocked items</div>`;
-      activeBlockedItems.filter(i => i.column === col).forEach(item => {
-        const url = adoBase ? `${adoBase}/${item.id}` : '';
-        html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
-      });
+      if (bItems.length) {
+        html += `<div class="tt-total" style="color:#e53e3e;font-weight:600;margin-top:4px;">Blocked (${bItems.length})</div>`;
+        bItems.forEach(item => {
+          const url = adoBase ? `${adoBase}/${item.id}` : '';
+          html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
+        });
+      }
+      if (hItems.length) {
+        html += `<div class="tt-total" style="color:#3182ce;font-weight:600;margin-top:4px;">On Hold (${hItems.length})</div>`;
+        hItems.forEach(item => {
+          const url = adoBase ? `${adoBase}/${item.id}` : '';
+          html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
+        });
+      }
+      if (!bItems.length && !hItems.length) html += `<div class="tt-total" style="color:#718096;">No blocked items</div>`;
       sharedTooltip.show(html + TT_HINT, c);
     };
 
