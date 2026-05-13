@@ -2,6 +2,8 @@
 
 A Python + Chart.js tool that fetches work item data from **Azure DevOps**, calculates flow metrics, and generates a self-contained HTML dashboard.
 
+![Dashboard screenshot](docs/screenshot.png)
+
 ## What it produces
 
 - **Cycle time** — histogram, P85, trend, and breakdown by work item type
