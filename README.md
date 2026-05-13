@@ -60,22 +60,27 @@ flowchart TD
     calcct["5 · calc_cycle_time.py\nCycle time & throughput"]:::script
     calclt["6 · calc_lead_time.py\nLead time"]:::script
     dash["7 · create_dashboard.py\nRender dashboard"]:::script
-    out(["🌐 dashboard.html"]):::output
+    out(["🌐 dashboard.html\n(basic)"]):::output
 
-    aimetrics["ai_interpret_metrics.py\nBuild metrics interpretation prompt"]:::script
-    savemetrics{{"🤖✎ Run AI prompt → save response\nas insights.json"}}:::humanai
-    autoinsights["OpenAI API\nauto-writes insights.json"]:::autoai
-    insights[("insights.json")]:::file
+    subgraph optional ["Optional — AI chart insights"]
+        aimetrics["8 · ai_interpret_metrics.py\nBuild metrics interpretation prompt"]:::script
+        savemetrics{{"🤖✎ Run AI prompt → save response\nas insights.json"}}:::humanai
+        autoinsights["OpenAI API\nauto-writes insights.json"]:::autoai
+        insights[("insights.json")]:::file
+        redash["7 again · create_dashboard.py\nRe-render with insights"]:::script
+        out2(["🌐 dashboard.html\n(with AI insights)"]):::output
+    end
 
     ADO -->|"reads via REST API"| fetch
     fetch --> check --> aiconf --> aiconfprompt
-    aiconfprompt --> calccol --> calcct --> calclt --> dash
+    aiconfprompt --> calccol --> calcct --> calclt --> dash --> out
+
+    out -->|"then optionally"| aimetrics
     aimetrics -->|"--mode copilot / prompt"| savemetrics
     aimetrics -->|"--mode openai"| autoinsights
     savemetrics --> insights
     autoinsights --> insights
-    insights -.->|"optional enrichment"| dash
-    dash --> out
+    insights --> redash --> out2
 
     classDef script  fill:#667eea,color:#fff,stroke:#4c51bf
     classDef humanai fill:#9f7aea,color:#fff,stroke:#6b46c1
@@ -92,11 +97,12 @@ flowchart TD
 | 1 | `src/fetch_data.py` | Fetches board context, work items, and full column + tag history from ADO |
 | 2 | `src/check_data.py` | Runs data quality checks; writes `data_quality_report.json`, `excluded_items.json`, `work_item_rework.json` |
 | 3 | `src/ai_configure_board.py` | Generates an AI prompt to propose `config_draft.json` |
-| — | *(manual)* | Review `config_draft.json`, edit if needed, save as `config.json` |
+| — | *(human + AI)* | Review `config_draft.json`, edit if needed, save as `config.json` |
 | 4 | `src/calc_columns.py` | Calculates time-in-columns → `output/metrics/time_in_columns.json` |
 | 5 | `src/calc_cycle_time.py` | Calculates cycle time and throughput → `output/metrics/cycle_time.json` |
 | 6 | `src/calc_lead_time.py` | Calculates lead time → `output/metrics/lead_time.json` |
 | 7 | `src/create_dashboard.py` | Renders everything into `output/dashboard.html` |
+| 8 *(optional)* | `src/ai_interpret_metrics.py` | Generates AI chart insights → `output/data/insights.json`; re-run step 7 to embed them |
 
 Steps 4–6 require `output/data/config.json` to exist.
 
