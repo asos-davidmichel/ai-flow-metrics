@@ -12,7 +12,7 @@ Reads:
   output/data/work_item_history.json
 
 Writes (depending on --mode):
-  prompts/ai_interpret_metrics.prompt.md      static template (tracked in git)
+  src/prompts/ai_interpret_metrics.prompt.md      static template (tracked in git)
   output/data/ai_interpret_metrics.prompt.md  (--mode copilot)  open in VS Code chat, pick your model
   output/data/ai_interpret_metrics_prompt.txt (--mode prompt)   paste into any AI assistant
   output/data/insights.json               (--mode openai)
@@ -37,7 +37,7 @@ from pathlib import Path
 
 DATA_DIR    = Path("output/data")
 METRICS_DIR = Path("output/metrics")
-PROMPTS_DIR = Path("prompts")
+PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 CT_PATH      = METRICS_DIR / "cycle_time.json"
 LT_PATH      = METRICS_DIR / "lead_time.json"
@@ -1070,10 +1070,10 @@ def build_summary():
 # Prompt building
 # ---------------------------------------------------------------------------
 
-PROMPT_TEMPLATE_PATH = Path(__file__).parent.parent / "prompts" / "ai_interpret_metrics.prompt.md"
+PROMPT_TEMPLATE_PATH = Path(__file__).parent / "prompts" / "ai_interpret_metrics.prompt.md"
 
 # Legacy in-code constants kept only so call_openai can still reference CHART_PROMPTS keys.
-# All prompt text is now in prompts/ai_interpret_metrics.prompt.md.
+# All prompt text is now in src/prompts/ai_interpret_metrics.prompt.md.
 CHART_PROMPTS = {
     "cycle_time": {
         "title": "Cycle Time",

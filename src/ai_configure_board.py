@@ -13,7 +13,7 @@ Reads:
   output/data/data_quality_report.json
 
 Writes (depending on --mode):
-  prompts/ai_configure_board.prompt.md      (--mode copilot)  open in VS Code chat, pick your model
+  src/prompts/ai_configure_board.prompt.md      (--mode copilot)  open in VS Code chat, pick your model
   output/data/ai_configure_board_prompt.txt (--mode prompt)   paste into any AI assistant
   output/data/config.json                   (--mode openai)   direct API call (not yet implemented)
 
@@ -38,7 +38,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 DATA_DIR = Path("output/data")
-PROMPTS_DIR = Path("prompts")
+PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 CONTEXT_PATH = DATA_DIR / "context.json"
 HISTORY_PATH = DATA_DIR / "work_item_history.json"
