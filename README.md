@@ -49,45 +49,48 @@ python src/create_dashboard.py
 `run.py` orchestrates the full pipeline. You can also run each step individually.
 
 ```mermaid
-flowchart TD
+flowchart LR
+
+  subgraph main["⬇ Main pipeline"]
+    direction TB
     ADO[("☁ Azure DevOps\nboard URL + PAT")]:::external
-
-    fetch["1 · fetch_data.py\nFetch board context & work items"]:::script
-    check["2 · check_data.py\nData quality checks"]:::script
-    aiconf["3 · ai_configure_board.py\nBuild board config prompt"]:::script
-    aiconfprompt{{"🤖✎ Run AI prompt → review config_draft.json\n→ edit if needed → save as config.json"}}:::humanai
-    calccol["4 · calc_columns.py\nTime in columns"]:::script
-    calcct["5 · calc_cycle_time.py\nCycle time & throughput"]:::script
-    calclt["6 · calc_lead_time.py\nLead time"]:::script
-    dash["7 · create_dashboard.py\nRender dashboard"]:::script
+    fetch["1 · fetch_data.py\n─────────────────────\n📄 context.json\n📄 work_items.json\n📄 work_item_history.json"]:::script
+    check["2 · check_data.py\n─────────────────────\n📄 data_quality_report.json\n📄 excluded_items.json\n📄 work_item_rework.json"]:::script
+    aiconf["3 · ai_configure_board.py\n─────────────────────\n📄 config_draft.json"]:::script
+    aiconfprompt{{"🤖✎ Run AI prompt\n→ review config_draft.json\n→ save as config.json"}}:::humanai
+    calccol["4 · calc_columns.py\n─────────────────────\n📄 time_in_columns.json"]:::script
+    calcct["5 · calc_cycle_time.py\n─────────────────────\n📄 cycle_time.json"]:::script
+    calclt["6 · calc_lead_time.py\n─────────────────────\n📄 lead_time.json"]:::script
+    dash["7 · create_dashboard.py\n─────────────────────\n📄 dashboard.html"]:::script
     out(["🌐 dashboard.html\n(basic)"]):::output
-
-    subgraph optional ["Optional — AI chart insights"]
-        aimetrics["8 · ai_interpret_metrics.py\nBuild metrics interpretation prompt"]:::script
-        savemetrics{{"🤖✎ Run AI prompt → save response\nas insights.json"}}:::humanai
-        autoinsights["OpenAI API\nauto-writes insights.json"]:::autoai
-        insights[("insights.json")]:::file
-        redash["7 again · create_dashboard.py\nRe-render with insights"]:::script
-        out2(["🌐 dashboard.html\n(with AI insights)"]):::output
-    end
 
     ADO -->|"reads via REST API"| fetch
     fetch --> check --> aiconf --> aiconfprompt
     aiconfprompt --> calccol --> calcct --> calclt --> dash --> out
+  end
 
-    out -->|"then optionally"| aimetrics
-    aimetrics -->|"--mode copilot / prompt"| savemetrics
-    aimetrics -->|"--mode openai"| autoinsights
-    savemetrics --> insights
-    autoinsights --> insights
+  subgraph opt["⬇ Optional — AI chart insights"]
+    direction TB
+    aimetrics["8 · ai_interpret_metrics.py\n─────────────────────\n📄 prompt file"]:::script
+    savemetrics{{"🤖✎ Run AI prompt\n→ save response as insights.json"}}:::humanai
+    autoinsights["OpenAI API\n─────────────────────\n📄 insights.json"]:::autoai
+    insights[/"insights.json"/]:::file
+    redash["7 again · create_dashboard.py\n─────────────────────\n📄 dashboard.html"]:::script
+    out2(["🌐 dashboard.html\n(with AI insights)"]):::output
+
+    aimetrics -->|"--mode copilot / prompt"| savemetrics --> insights
+    aimetrics -->|"--mode openai"| autoinsights --> insights
     insights --> redash --> out2
+  end
 
-    classDef script  fill:#667eea,color:#fff,stroke:#4c51bf
-    classDef humanai fill:#9f7aea,color:#fff,stroke:#6b46c1
-    classDef autoai  fill:#48bb78,color:#fff,stroke:#276749
-    classDef external fill:#e2e8f0,color:#2d3748,stroke:#a0aec0
-    classDef file    fill:#f7fafc,color:#4a5568,stroke:#cbd5e0
-    classDef output  fill:#fefcbf,color:#744210,stroke:#d69e2e
+  out -->|"then optionally"| aimetrics
+
+  classDef script  fill:#667eea,color:#fff,stroke:#4c51bf
+  classDef humanai fill:#9f7aea,color:#fff,stroke:#6b46c1
+  classDef autoai  fill:#48bb78,color:#fff,stroke:#276749
+  classDef external fill:#e2e8f0,color:#2d3748,stroke:#a0aec0
+  classDef file    fill:#f7fafc,color:#4a5568,stroke:#cbd5e0
+  classDef output  fill:#fefcbf,color:#744210,stroke:#d69e2e
 ```
 
 > 🟦 Automated script &nbsp;·&nbsp; 🟣 Human-in-the-loop with AI &nbsp;·&nbsp; 🟩 Fully automated AI &nbsp;·&nbsp; ⬜ External system
