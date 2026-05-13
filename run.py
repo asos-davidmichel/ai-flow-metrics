@@ -3,6 +3,7 @@ Full pipeline runner.
 
 Usage:
   python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai] [--window 6m] [--clean]
+  python run.py --clean   (clean output files only, no board URL required)
 
 Runs:
   1. fetch_data.py         — fetch board context and work items from Azure DevOps
@@ -71,11 +72,19 @@ def run(cmd, description):
 
 
 def main():
-    if len(sys.argv) < 2:
+    if "--clean" in sys.argv and len(sys.argv) == 2:
+        # clean-only mode — no board URL required
+        clean_output()
+        return
+
+    # Expect board URL as first positional argument
+    positional = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if not positional:
         print("Usage: python run.py <board-url> [--short-dwell-minutes N] [--window 6m] [--clean]", file=sys.stderr)
+        print("       python run.py --clean   (clean output files only)", file=sys.stderr)
         sys.exit(1)
 
-    board_url = sys.argv[1]
+    board_url = positional[0]
 
     if "--clean" in sys.argv:
         clean_output()
@@ -110,6 +119,26 @@ def main():
         except IndexError:
             print("Error: --window requires a value (e.g. 1m, 3m, 6m, 1y).", file=sys.stderr)
             sys.exit(1)
+
+    config_path = Path("output/data/config.json")
+    config_exists = config_path.exists()
+
+    print()
+    print("Run configuration")
+    print("-" * 40)
+    print(f"  Board URL       : {board_url}")
+    print(f"  Interpret mode  : {interpret_mode}")
+    print(f"  Metrics window  : {window}")
+    if check_args:
+        print(f"  Short dwell     : {check_args[1]} minutes")
+    print(f"  config.json     : {'found — metrics will run' if config_exists else 'not found — will stop after step 3'}")
+    print()
+
+    try:
+        input("Press Enter to start, or Ctrl+C to abort...")
+    except KeyboardInterrupt:
+        print("\nAborted.")
+        sys.exit(0)
 
     run(
         [sys.executable, "src/fetch_data.py", board_url],

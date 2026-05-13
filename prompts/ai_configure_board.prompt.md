@@ -11,7 +11,7 @@ Before it can compute metrics, four configuration decisions must be made.
 Board structure and card rules: #file:output/data/context.json
 Data quality findings: #file:output/data/data_quality_report.json
 
-The script `src/interpret_config.py` also performed an automated analysis.
+The script `src/ai_configure_board.py` also performed an automated analysis.
 Its findings are embedded below.
 
 ## Board: Backlog items
@@ -20,15 +20,15 @@ Org: asos | Project: Customer | Team: Analytics and Experimentation
 ## Columns
 | Name | Type | WIP limit | Dwell (n, avg, median) |
 |------|------|-----------|------------------------|
-| New | incoming | 0 | n=83, avg=156.0h, median=22.8h |
-| Ready for Dev | inProgress | 5 | n=168, avg=90.1h, median=26.5h |
-| In Development | inProgress | 5 | n=286, avg=488832.3h, median=22.9h |
-| In Review | inProgress | 5 | n=170, avg=2055957.1h, median=137.5h |
-| External Review | inProgress | 5 | n=71, avg=151.2h, median=66.8h |
-| Ready for QA | inProgress | 3 | n=50, avg=55.1h, median=4.4h |
-| QA | inProgress | 3 | n=97, avg=170.1h, median=68.8h |
-| Ready for release | inProgress | 5 | n=77, avg=2723434.1h, median=462.4h |
-| Closed | outgoing | 0 | n=10, avg=13.5h, median=0.0h |
+| New | incoming | 0 | n=86, avg=150.6h, median=22.7h |
+| Ready for Dev | inProgress | 5 | n=169, avg=90.3h, median=26.5h |
+| In Development | inProgress | 5 | n=292, avg=239450.3h, median=22.2h |
+| In Review | inProgress | 5 | n=179, avg=2343015.1h, median=118.0h |
+| External Review | inProgress | 5 | n=78, avg=143.4h, median=66.8h |
+| Ready for QA | inProgress | 3 | n=61, avg=1145737.7h, median=4.6h |
+| QA | inProgress | 3 | n=107, avg=653304.1h, median=68.0h |
+| Ready for release | inProgress | 5 | n=85, avg=7400311.7h, median=481.0h |
+| Closed | outgoing | 0 | n=11, avg=12.3h, median=0.0h |
 
 ## Unknown historical columns (no longer on current board)
 - QA / External Review
@@ -41,13 +41,13 @@ Org: asos | Project: Customer | Team: Analytics and Experimentation
 Always waiting (deterministic): New, Closed
 
 inProgress columns to classify (active or waiting):
-- Ready for Dev (avg=90.1h, median=26.5h)
-- In Development (avg=488832.3h, median=22.9h)
-- In Review (avg=2055957.1h, median=137.5h)
-- External Review (avg=151.2h, median=66.8h)
-- Ready for QA (avg=55.1h, median=4.4h)
-- QA (avg=170.1h, median=68.8h)
-- Ready for release (avg=2723434.1h, median=462.4h)
+- Ready for Dev (avg=90.3h, median=26.5h)
+- In Development (avg=239450.3h, median=22.2h)
+- In Review (avg=2343015.1h, median=118.0h)
+- External Review (avg=143.4h, median=66.8h)
+- Ready for QA (avg=1145737.7h, median=4.6h)
+- QA (avg=653304.1h, median=68.0h)
+- Ready for release (avg=7400311.7h, median=481.0h)
 
 ---
 
@@ -56,20 +56,18 @@ inProgress columns to classify (active or waiting):
 ### 1. Lead time clock start
 Lead time = customer/request perspective (from intake to done).
 Choose ONE of:
-- "created_date" — clock starts when the work item was created in ADO
-- "board_entry_date" — clock starts when the item first appeared on the board (any column)
+- `{"type": "date_field", "value": "created_date"}` — clock starts when the work item was created in ADO
+- `{"type": "column", "value": "<incoming column name>"}` — clock starts when the item first appeared on the board
 
 ### 2. Cycle time clock start
 Cycle time = team processing perspective (from active work start to done).
 Choose ONE of:
-- "board_entry_date" — clock starts when the item first appeared on the board (any column)
-- "first_inprogress_entry" — clock starts when the item first entered an inProgress column
+- `{"type": "column", "value": "<incoming column name>"}` — clock starts when the item first appeared on the board
+- `{"type": "column", "value": "<first inProgress column name>"}` — clock starts when the item first entered an inProgress column
 
 ### 3. Shared clock end (applies to both lead time and cycle time)
-Choose ONE of:
-- "outgoing_column" — clock stops when the item enters the board's outgoing column (e.g. Closed)
-- "closed_state" — clock stops when the ADO state field becomes "Closed"
-- "resolved_state" — clock stops when the ADO state field becomes "Resolved" (warning: maps to pre-QA columns for many work item types on this board — likely too early)
+Must be a column. The outgoing column is the standard choice.
+- `{"type": "column", "value": "<outgoing column name>"}` — clock stops when the item first entered that column
 
 ### 4. Historical column mapping
 Some items have history spanning columns that no longer exist on the board.
@@ -96,20 +94,27 @@ If no signal found, return an empty array [].
 
 ---
 
-## Required output format
+## Required output
 
-Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble.
+1. Write the configuration directly to `output/data/config.json` using the create/edit file tool.
+   Do NOT include `_note` or `_reasoning` fields in the saved file.
 
+2. After saving the file, present a brief Markdown summary to the user with:
+   - Each decision and its chosen value in a table
+   - A short rationale for any non-obvious choices
+   - Any assumptions or items the user may want to reconsider
+
+The JSON structure to write to `output/data/config.json`:
+
+```json
 {
-  "_note": "Reviewed and confirmed by user. Edit freely before saving as config.json.",
-  "_reasoning": "<optional: the AI's explanation for each choice — remove before saving as config.json>",
   "lead_time": {
-    "clock_start": "<created_date | board_entry_date>",
-    "clock_end": "<outgoing_column | closed_state | resolved_state>"
+    "clock_start": {"type": "<column | date_field>", "value": "<column name or field name>"},
+    "clock_end": {"type": "column", "value": "<column name>"}
   },
   "cycle_time": {
-    "clock_start": "<board_entry_date | first_inprogress_entry>",
-    "clock_end": "<outgoing_column | closed_state | resolved_state>"
+    "clock_start": {"type": "column", "value": "<column name>"},
+    "clock_end": {"type": "column", "value": "<column name>"}
   },
   "historical_column_mapping": {
     "<old column name>": "<current column name, or null to exclude>"
@@ -124,3 +129,4 @@ Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble
     ]
   }
 }
+```

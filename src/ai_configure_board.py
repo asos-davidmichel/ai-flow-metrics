@@ -214,20 +214,18 @@ _DECISIONS = """\
 ### 1. Lead time clock start
 Lead time = customer/request perspective (from intake to done).
 Choose ONE of:
-- "created_date" — clock starts when the work item was created in ADO
-- "board_entry_date" — clock starts when the item first appeared on the board (any column)
+- `{"type": "date_field", "value": "created_date"}` — clock starts when the work item was created in ADO
+- `{"type": "column", "value": "<incoming column name>"}` — clock starts when the item first appeared on the board
 
 ### 2. Cycle time clock start
 Cycle time = team processing perspective (from active work start to done).
 Choose ONE of:
-- "board_entry_date" — clock starts when the item first appeared on the board (any column)
-- "first_inprogress_entry" — clock starts when the item first entered an inProgress column
+- `{"type": "column", "value": "<incoming column name>"}` — clock starts when the item first appeared on the board
+- `{"type": "column", "value": "<first inProgress column name>"}` — clock starts when the item first entered an inProgress column
 
 ### 3. Shared clock end (applies to both lead time and cycle time)
-Choose ONE of:
-- "outgoing_column" — clock stops when the item enters the board's outgoing column (e.g. Closed)
-- "closed_state" — clock stops when the ADO state field becomes "Closed"
-- "resolved_state" — clock stops when the ADO state field becomes "Resolved" (warning: maps to pre-QA columns for many work item types on this board — likely too early)
+Must be a column. The outgoing column is the standard choice.
+- `{"type": "column", "value": "<outgoing column name>"}` — clock stops when the item first entered that column
 
 ### 4. Historical column mapping
 Some items have history spanning columns that no longer exist on the board.
@@ -259,15 +257,13 @@ If no signal found, return an empty array [].
 Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble.
 
 {
-  "_note": "Reviewed and confirmed by user. Edit freely before saving as config.json.",
-  "_reasoning": "<optional: the AI's explanation for each choice — remove before saving as config.json>",
   "lead_time": {
-    "clock_start": "<created_date | board_entry_date>",
-    "clock_end": "<outgoing_column | closed_state | resolved_state>"
+    "clock_start": {"type": "<column | date_field>", "value": "<column name or field name>"},
+    "clock_end": {"type": "column", "value": "<column name>"}
   },
   "cycle_time": {
-    "clock_start": "<board_entry_date | first_inprogress_entry>",
-    "clock_end": "<outgoing_column | closed_state | resolved_state>"
+    "clock_start": {"type": "column", "value": "<column name>"},
+    "clock_end": {"type": "column", "value": "<column name>"}
   },
   "historical_column_mapping": {
     "<old column name>": "<current column name, or null to exclude>"
