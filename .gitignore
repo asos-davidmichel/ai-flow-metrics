@@ -2,25 +2,8 @@
 __pycache__/
 *.py[cod]
 
-# Generated data — fetched from Azure DevOps, may contain sensitive work item content
-output/data/context.json
-output/data/work_items.json
-output/data/work_item_history.json
-output/data/data_quality_report.json
-output/data/excluded_items.json
-output/data/work_item_rework.json
+# All generated output — fetched data, metrics, dashboard, AI prompts
+output/
 
-# Generated AI prompts — regenerated each run, discard after use
-output/data/config_draft.json
-output/data/ai_configure_board_prompt.txt
-output/data/ai_interpret_metrics_prompt.txt
-output/data/interpret_metrics_prompt.txt
-output/data/ai_interpret_metrics.prompt.md
+# AI prompt files generated into prompts/ folder (copilot mode)
 prompts/ai_configure_board.prompt.md
-
-# Generated metrics and dashboard outputs — contain work item content
-output/metrics/
-output/dashboard.html
-
-# Confirmed interpretation choices — team-specific, not tracked
-output/data/config.json
