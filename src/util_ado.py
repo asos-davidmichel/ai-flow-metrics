@@ -5,6 +5,7 @@ No terminal input (input/print) here — only pure data functions.
 
 import base64
 import re
+from urllib.parse import unquote
 
 import requests
 
@@ -30,9 +31,9 @@ def parse_board_url(url):
         )
     return (
         match.group("org"),
-        match.group("project"),
-        match.group("team"),
-        match.group("board_hint") or "",
+        unquote(match.group("project")),
+        unquote(match.group("team")),
+        unquote(match.group("board_hint") or ""),
     )
 
 
