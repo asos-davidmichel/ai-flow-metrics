@@ -49,40 +49,37 @@ python src/create_dashboard.py
 `run.py` orchestrates the full pipeline. You can also run each step individually.
 
 ```mermaid
-flowchart LR
+flowchart TD
+  ADO[("☁ Azure DevOps\n(board URL + PAT)")]:::external
 
-  subgraph main["⬇ Main pipeline"]
-    direction TB
-    ADO[("☁ Azure DevOps\nboard URL + PAT")]:::external
-    fetch["1 · fetch_data.py\n─────────────────────\n📄 context.json\n📄 work_items.json\n📄 work_item_history.json"]:::script
-    check["2 · check_data.py\n─────────────────────\n📄 data_quality_report.json\n📄 excluded_items.json\n📄 work_item_rework.json"]:::script
-    aiconf["3 · ai_configure_board.py\n─────────────────────\n📄 config_draft.json"]:::script
-    aiconfprompt{{"🤖✎ Run AI prompt\n→ review config_draft.json\n→ save as config.json"}}:::humanai
-    calccol["4 · calc_columns.py\n─────────────────────\n📄 time_in_columns.json"]:::script
-    calcct["5 · calc_cycle_time.py\n─────────────────────\n📄 cycle_time.json"]:::script
-    calclt["6 · calc_lead_time.py\n─────────────────────\n📄 lead_time.json"]:::script
-    dash["7 · create_dashboard.py\n─────────────────────\n📄 dashboard.html"]:::script
-    out(["🌐 dashboard.html\n(basic)"]):::output
+  subgraph main["Main pipeline — steps 1–7"]
+    fetch["1 · fetch_data.py\n📄 context.json · work_items.json · work_item_history.json"]:::script
+    check["2 · check_data.py\n📄 data_quality_report.json · excluded_items.json · work_item_rework.json"]:::script
+    aiconf["3 · ai_configure_board.py\n📄 config_draft.json"]:::script
+    aiconfprompt{{"🤖✎ Review config_draft.json\n→ edit if needed → save as config.json"}}:::humanai
+    calccol["4 · calc_columns.py  →  📄 time_in_columns.json"]:::script
+    calcct["5 · calc_cycle_time.py  →  📄 cycle_time.json"]:::script
+    calclt["6 · calc_lead_time.py  →  📄 lead_time.json"]:::script
+    dash["7 · create_dashboard.py  →  📄 dashboard.html"]:::script
+    out(["🌐 dashboard.html (basic)"]):::output
 
-    ADO -->|"reads via REST API"| fetch
-    fetch --> check --> aiconf --> aiconfprompt
-    aiconfprompt --> calccol --> calcct --> calclt --> dash --> out
+    fetch --> check --> aiconf --> aiconfprompt --> calccol --> calcct --> calclt --> dash --> out
   end
 
-  subgraph opt["⬇ Optional — AI chart insights"]
-    direction TB
-    aimetrics["8 · ai_interpret_metrics.py\n─────────────────────\n📄 prompt file"]:::script
+  subgraph opt["Optional — AI chart insights (step 8 + re-run 7)"]
+    aimetrics["8 · ai_interpret_metrics.py"]:::script
     savemetrics{{"🤖✎ Run AI prompt\n→ save response as insights.json"}}:::humanai
-    autoinsights["OpenAI API\n─────────────────────\n📄 insights.json"]:::autoai
+    autoinsights["OpenAI API\nauto-writes insights.json"]:::autoai
     insights[/"insights.json"/]:::file
-    redash["7 again · create_dashboard.py\n─────────────────────\n📄 dashboard.html"]:::script
-    out2(["🌐 dashboard.html\n(with AI insights)"]):::output
+    redash["re-run 7 · create_dashboard.py  →  📄 dashboard.html"]:::script
+    out2(["🌐 dashboard.html (with AI insights)"]):::output
 
     aimetrics -->|"--mode copilot / prompt"| savemetrics --> insights
     aimetrics -->|"--mode openai"| autoinsights --> insights
     insights --> redash --> out2
   end
 
+  ADO -->|"reads via REST API"| fetch
   out -->|"then optionally"| aimetrics
 
   classDef script  fill:#667eea,color:#fff,stroke:#4c51bf
