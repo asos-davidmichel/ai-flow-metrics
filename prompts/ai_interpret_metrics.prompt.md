@@ -40,7 +40,8 @@ Return a single valid JSON object with the following keys. No markdown fences. N
 
 An object with one key per chart. Supported keys:
 cycle_time, lead_time, throughput, time_in_columns, flow_efficiency,
-work_start_efficiency, wip, blockers, net_flow, arrival_departure
+work_start_efficiency, wip, wip_over_time, blockers, stale_work,
+net_flow, arrival_departure, bugs, cfd
 
 For each chart, provide:
 - "insight": 2-3 sentences interpreting the pattern and its implications for the team
@@ -63,11 +64,19 @@ work_start_efficiency — What does the wait before development starts imply abo
 
 wip — Is WIP likely causing multitasking overhead? Which columns hold the most inventory? What would reducing WIP do to cycle time via Little's Law?
 
+wip_over_time — Is daily WIP trending up or down? What does the age distribution of in-progress items reveal about how long work has been sitting? What does the trend imply about whether WIP is being managed or accumulating passively?
+
 blockers — What is the systemic cost of blocking? Are blockers concentrated in specific columns? What does the pattern suggest about how the team manages dependencies?
+
+stale_work — What does the volume of stale items reveal about backlog hygiene? Are stale items concentrated in specific states or columns? What risk does untouched work pose to planning accuracy?
 
 net_flow — Is the current pattern sustainable? What does it imply about capacity vs. demand? What is the delivery risk trend?
 
 arrival_departure — Which columns are accumulating work? Is the pattern likely temporary or structural? Where should improvement effort focus?
+
+bugs — Is the bug count growing, stable, or shrinking? What does the ratio of bug WIP to bug completions reveal? Are bugs being resolved continuously or in batches?
+
+cfd — What does the shape of the cumulative flow bands reveal about flow smoothness? Is work accumulating between any two columns (widening bands)? Does the CFD confirm or contradict the bottleneck identified in time_in_columns?
 
 ---
 

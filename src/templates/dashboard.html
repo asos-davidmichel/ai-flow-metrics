@@ -3948,18 +3948,44 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     card.appendChild(makeChartInsightBox(insight));
   }
 
+  function makeSameAsBox(primaryLabel) {
+    const box = document.createElement('div');
+    box.className = 'insight-box';
+    box.style.background = '#f7fafc';
+    box.style.borderLeftColor = '#a0aec0';
+    box.innerHTML = '<div class="ib-section" style="color:#718096;">'
+      + '\u2191 Same insight as <strong>' + escapeHtml(primaryLabel) + '</strong> chart in this tab.'
+      + '</div>';
+    return box;
+  }
+
+  function injectSameAs(canvasId, primaryLabel) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const card = canvas.closest('.card');
+    if (!card || card.querySelector('.insight-box')) return;
+    card.appendChild(makeSameAsBox(primaryLabel));
+  }
+
   [
-    ['throughputChart',       'throughput'],
-    ['ctScatterChart',        'cycle_time'],
-    ['ltScatterChart',        'lead_time'],
-    ['timeInColumnsChart',    'time_in_columns'],
-    ['flowEfficiencyChart',   'flow_efficiency'],
-    ['startEfficiencyChart',  'work_start_efficiency'],
-    ['agingWipChart',         'wip'],
-    ['currentBlockedChart',   'blockers'],
-    ['netFlowChart',          'net_flow'],
-    ['adRatioChart',          'arrival_departure'],
-  ].forEach(([id, key]) => injectIntoCard(id, key));
+    { key: 'throughput',            primary: 'throughputChart',      secondary: [],                                                                              primaryLabel: 'Throughput' },
+    { key: 'cycle_time',            primary: 'ctScatterChart',       secondary: ['ctRollingChart'],                                                              primaryLabel: 'Cycle time — scatter' },
+    { key: 'lead_time',             primary: 'ltScatterChart',       secondary: ['ltRollingChart'],                                                              primaryLabel: 'Lead time — scatter' },
+    { key: 'time_in_columns',       primary: 'timeInColumnsChart',   secondary: [],                                                                              primaryLabel: 'Time in columns' },
+    { key: 'flow_efficiency',       primary: 'flowEfficiencyChart',  secondary: [],                                                                              primaryLabel: 'Flow efficiency' },
+    { key: 'work_start_efficiency', primary: 'startEfficiencyChart', secondary: [],                                                                              primaryLabel: 'Work start efficiency' },
+    { key: 'wip',                   primary: 'agingWipChart',        secondary: ['wipAgeScatterChart'],                                                          primaryLabel: 'Aging Work In Progress' },
+    { key: 'wip_over_time',         primary: 'dailyWipChart',        secondary: ['wipAgeStackedChart'],                                                          primaryLabel: 'Daily WIP over time' },
+    { key: 'blockers',              primary: 'currentBlockedChart',  secondary: ['blockerTimelineChart', 'blockedByColumnChart', 'daysLostBlockedChart'],        primaryLabel: 'Current Blocked Items' },
+    { key: 'stale_work',            primary: 'staleWorkChart',       secondary: [],                                                                              primaryLabel: 'Stale Work' },
+    { key: 'net_flow',              primary: 'netFlowChart',         secondary: [],                                                                              primaryLabel: 'Net Flow' },
+    { key: 'arrival_departure',     primary: 'adRatioChart',         secondary: [],                                                                              primaryLabel: 'Arrival / Departure ratio' },
+    { key: 'bugs',                  primary: 'bugOpenChart',         secondary: ['bugIntakeChart', 'bugPctNewChart', 'bugCreatedVsClosedChart', 'bugColumnChart'], primaryLabel: 'Bugs in system' },
+    { key: 'cfd',                   primary: 'cfdChart',             secondary: [],                                                                              primaryLabel: 'Cumulative Flow' },
+  ].forEach(({ key, primary, secondary, primaryLabel }) => {
+    injectIntoCard(primary, key);
+    secondary.forEach(id => injectSameAs(id, primaryLabel));
+  });
 
   // ── Overview insights panel ──────────────────────────────────────
   const el = document.getElementById('overviewInsights');
