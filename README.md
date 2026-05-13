@@ -61,46 +61,66 @@ python src/create_dashboard.py
 
 Steps 4–6 require `output/data/config.json` to exist.
 
-### Options
+### `run.py` options
 
-```
---window 6m       Analysis window: 1m, 3m, 6m, 1y (default: 6m)
---clean           Delete all generated output files before running
---short-dwell-minutes N   Threshold (minutes) for flagging suspiciously short column visits
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--window 6m` | `6m` | Analysis window for metrics. Accepts `1m`, `3m`, `6m`, `1y`. |
+| `--clean` | off | Delete all generated output files before running. |
+| `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
+| `--interpret-mode MODE` | `copilot` | AI mode for board configuration step — see [AI modes](#ai-modes) below. |
+
+**Example:**
+```bash
+python run.py https://dev.azure.com/org/project/_boards/... --window 3m --clean
 ```
 
 ---
 
 ## AI interpretation
 
-Two scripts generate AI prompts for interpretation. Both support the same `--mode` flag:
+Two scripts generate AI prompts. Both support a `--mode` flag.
 
-| Mode | Output |
-|------|--------|
-| `copilot` (default) | Writes a `.prompt.md` and opens it in VS Code |
-| `prompt` | Writes a `.txt` file to paste into any AI assistant |
-| `openai` | Calls the OpenAI API directly (requires `OPENAI_API_KEY`) |
+### AI modes
 
-**Config interpretation** — proposes column classification, flow efficiency rules, and blocker signals:
+| Mode | What happens |
+|------|--------------|
+| `copilot` *(default)* | Writes a `.prompt.md` file and opens it in VS Code Copilot chat. |
+| `prompt` | Writes a `.txt` file you can paste into any AI assistant (ChatGPT, Claude, etc.). |
+| `openai` | Calls the OpenAI API directly and writes the response to `insights.json`. Requires `OPENAI_API_KEY`. |
+
+### Board configuration
+
+Proposes column classification, flow efficiency rules, and blocker tag signals. Run this before setting up `config.json`.
+
 ```bash
-python src/ai_configure_board.py --mode prompt
+python src/ai_configure_board.py                     # opens in VS Code Copilot (default)
+python src/ai_configure_board.py --mode prompt       # writes a .txt file to paste elsewhere
+python src/ai_configure_board.py --mode openai       # calls OpenAI API directly
 ```
 
-**Metrics interpretation** — generates chart-by-chart insights and a leadership narrative:
+### Metrics interpretation
+
+Generates chart-by-chart insights and a leadership narrative that are embedded in the dashboard.
+
 ```bash
-python src/ai_interpret_metrics.py --mode prompt
-python src/ai_interpret_metrics.py --dump-summary   # inspect anonymised metrics JSON
+python src/ai_interpret_metrics.py                   # opens in VS Code Copilot (default)
+python src/ai_interpret_metrics.py --mode prompt     # writes a .txt file to paste elsewhere
+python src/ai_interpret_metrics.py --mode openai     # calls OpenAI API directly
+python src/ai_interpret_metrics.py --dump-summary    # print the anonymised metrics JSON sent to the AI
 ```
+
+After running in `copilot` or `prompt` mode, save the AI response to `output/data/insights.json` — the dashboard picks it up automatically on the next `python src/create_dashboard.py`.
+
+After running in `openai` mode, `insights.json` is written automatically.
 
 <img src="docs/screenshot_insight.png" width="450" alt="Chart insight box">
 
-> *Each chart has a collapsible AI insight box with evidence and a watch-out signal*
+> *Each chart has a collapsible insight box with evidence and a watch-out signal*
 
 ![AI analysis overview](docs/screenshot_analysis.png)
 
 > *Overview tab: AI-generated diagnostic findings, outlier patterns, investigation questions, and recommendations*
-
-After running in `openai` mode, save the response to `output/data/insights.json` — the dashboard will pick it up automatically on the next `python src/dashboard.py`.
 
 ---
 
