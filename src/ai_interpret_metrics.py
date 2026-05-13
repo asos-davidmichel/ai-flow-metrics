@@ -1008,7 +1008,7 @@ def write_plain_prompt(summary):
     print()
     print("Next steps:")
     print("  1. Paste the contents of the file into any AI assistant.")
-    print("  2. Copy the JSON response into output/data/insights.json.")
+    print("  2. Save the JSON response as output/data/insights.json.")
     print("  3. Run python src/dashboard.py to inject insights into the dashboard.")
 
 
@@ -1017,9 +1017,14 @@ def write_copilot_prompt(summary):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
 ---
-mode: ask
+mode: agent
 description: "Flow metrics — generate chart insights and leadership overview"
 ---
+
+When you have produced the JSON object, save it to `output/data/insights.json`
+using the create_file or replace_string_in_file tool. Do not display the raw JSON
+in chat — just confirm the file has been written and summarise the key findings
+in 3-5 bullet points.
 
 """
     content = header + build_prompt_text(summary)
@@ -1033,7 +1038,7 @@ description: "Flow metrics — generate chart insights and leadership overview"
     print()
     print("Next steps:")
     print("  1. Click 'Run in Chat' and select your model.")
-    print("  2. Copy the JSON response into output/data/insights.json.")
+    print("  2. The agent will save output/data/insights.json automatically.")
     print("  3. Run python src/dashboard.py to inject insights into the dashboard.")
 
 

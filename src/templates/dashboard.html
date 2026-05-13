@@ -236,6 +236,131 @@
       margin-bottom: 24px;
     }
     .card-row .card { margin-bottom: 0; }
+
+    /* ── AI Chart Insight Boxes ─────────────────────────────────── */
+    .insight-box {
+      margin-top: 18px;
+      padding: 13px 16px;
+      background: #f0f4ff;
+      border-left: 4px solid #667eea;
+      border-radius: 0 8px 8px 0;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #4a5568;
+    }
+    .ib-section { margin-bottom: 7px; }
+    .ib-section:last-child { margin-bottom: 0; }
+    .ib-label { font-weight: 700; color: #2d3748; margin-right: 4px; }
+    .ib-evidence { margin: 5px 0 0 18px; padding: 0; }
+    .ib-evidence li { color: #4a5568; margin-bottom: 2px; list-style: disc; font-size: 12px; }
+    .ib-watch { color: #c05621; }
+
+    /* ── Overview AI Insights Layout ────────────────────────────── */
+    .insights-grid {
+      display: grid;
+      grid-template-columns: 3fr 2fr;
+      gap: 24px;
+      margin-top: 24px;
+    }
+    .insight-panel {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.07);
+      padding: 22px 24px;
+    }
+    .insight-panel-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #4a5568;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #edf2f7;
+    }
+    .exec-headline {
+      font-size: 17px;
+      font-weight: 700;
+      color: #2d3748;
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+    .exec-narrative {
+      font-size: 14px;
+      color: #4a5568;
+      line-height: 1.75;
+      margin-bottom: 16px;
+    }
+    .exec-meta { display: flex; flex-direction: column; gap: 9px; }
+    .exec-meta-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
+    .exec-meta-label { font-weight: 700; color: #718096; min-width: 96px; flex-shrink: 0; }
+    .exec-meta-value { color: #4a5568; flex: 1; }
+    details.insight-item {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    details.insight-item:last-child { margin-bottom: 0; }
+    details.insight-item > summary {
+      padding: 11px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #2d3748;
+      background: #f7fafc;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+      line-height: 1.45;
+    }
+    details.insight-item > summary::-webkit-details-marker { display: none; }
+    details.insight-item > summary::after {
+      content: '\203A';
+      font-size: 20px;
+      color: #a0aec0;
+      margin-left: auto;
+      display: inline-block;
+      transform: rotate(0deg);
+      transition: transform 0.2s;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    details.insight-item[open] > summary::after { transform: rotate(90deg); }
+    details.insight-item[open] > summary { background: #ebf4ff; color: #2b6cb0; }
+    .insight-item-body {
+      padding: 14px 16px;
+      font-size: 13px;
+      line-height: 1.65;
+      color: #4a5568;
+      border-top: 1px solid #e2e8f0;
+    }
+    .insight-item-body ul { padding-left: 18px; margin: 5px 0 10px; }
+    .insight-item-body ul li { margin-bottom: 3px; }
+    .insight-body-label {
+      font-weight: 700;
+      color: #2d3748;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 12px;
+      margin-bottom: 4px;
+    }
+    .insight-body-label:first-child { margin-top: 0; }
+    .insight-num-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      min-width: 22px;
+      border-radius: 50%;
+      background: #667eea;
+      color: white;
+      font-weight: 700;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
@@ -264,6 +389,7 @@
   <!-- ── Overview tab ─────────────────────────────────────────────── -->
   <div id="tab-overview" class="tab-panel active">
     <div class="kpi-grid" id="kpiGrid"></div>
+    <div id="overviewInsights"></div>
   </div>
   <div id="tab-delivery" class="tab-panel">
 
@@ -3786,6 +3912,157 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     sharedTooltip.reset();
   });
 });
+
+// ── AI Insights ──────────────────────────────────────────────────────
+(function renderInsights() {
+  const ins = dashboard.insights;
+  if (!ins) return;
+  const ci = ins.chart_insights || {};
+
+  function makeChartInsightBox(insight) {
+    const box = document.createElement('div');
+    box.className = 'insight-box';
+    let html = '<div class="ib-section"><span class="ib-label">\uD83D\uDCA1 Insight</span> '
+      + escapeHtml(insight.insight) + '</div>';
+    if (insight.evidence && insight.evidence.length) {
+      html += '<div class="ib-section"><span class="ib-label">\uD83D\uDCCA Evidence</span>'
+        + '<ul class="ib-evidence">'
+        + insight.evidence.map(e => '<li>' + escapeHtml(e) + '</li>').join('')
+        + '</ul></div>';
+    }
+    if (insight.watch_out) {
+      html += '<div class="ib-section ib-watch"><span class="ib-label">\uD83D\uDC40 Watch out</span> '
+        + escapeHtml(insight.watch_out) + '</div>';
+    }
+    box.innerHTML = html;
+    return box;
+  }
+
+  function injectIntoCard(canvasId, key) {
+    const insight = ci[key];
+    if (!insight) return;
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const card = canvas.closest('.card');
+    if (!card || card.querySelector('.insight-box')) return;
+    card.appendChild(makeChartInsightBox(insight));
+  }
+
+  [
+    ['throughputChart',       'throughput'],
+    ['ctScatterChart',        'cycle_time'],
+    ['ltScatterChart',        'lead_time'],
+    ['timeInColumnsChart',    'time_in_columns'],
+    ['flowEfficiencyChart',   'flow_efficiency'],
+    ['startEfficiencyChart',  'work_start_efficiency'],
+    ['agingWipChart',         'wip'],
+    ['currentBlockedChart',   'blockers'],
+    ['netFlowChart',          'net_flow'],
+    ['adRatioChart',          'arrival_departure'],
+  ].forEach(([id, key]) => injectIntoCard(id, key));
+
+  // ── Overview insights panel ──────────────────────────────────────
+  const el = document.getElementById('overviewInsights');
+  if (!el) return;
+
+  const exec     = ins.executive_summary   || {};
+  const findings = ins.diagnostic_findings || [];
+  const outliers = ins.outlier_patterns    || [];
+  const next     = ins.investigate_next    || [];
+  const recs     = ins.recommendations     || [];
+
+  function confPill(c) {
+    const cls = c === 'high' ? 'pill-positive' : c === 'low' ? 'pill-negative' : '';
+    return '<span class="kpi-pill ' + cls + '" style="padding:1px 8px;font-size:11px;">'
+      + escapeHtml(c || '?') + '</span>';
+  }
+  function buildAccordion(summaryHtml, bodyHtml) {
+    return '<details class="insight-item"><summary>' + summaryHtml + '</summary>'
+      + '<div class="insight-item-body">' + bodyHtml + '</div></details>';
+  }
+  function bLabel(t) { return '<div class="insight-body-label">' + t + '</div>'; }
+  function bPara(t)  { return '<p style="margin:4px 0 10px;">' + escapeHtml(t || '') + '</p>'; }
+  function bList(a)  {
+    return '<ul>' + (a || []).map(e => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul>';
+  }
+
+  const execHtml =
+    '<div class="insight-panel" style="margin-bottom:20px;">'
+    + '<div class="insight-panel-title">\uD83D\uDCCB Executive Summary</div>'
+    + '<div class="exec-headline">' + escapeHtml(exec.headline || '') + '</div>'
+    + '<div class="exec-narrative">' + escapeHtml(exec.narrative || '') + '</div>'
+    + '<div class="exec-meta">'
+    + '<div class="exec-meta-row"><span class="exec-meta-label">\uD83E\uDE7A Diagnosis</span><span class="exec-meta-value">' + escapeHtml(exec.primary_diagnosis || '') + '</span></div>'
+    + '<div class="exec-meta-row"><span class="exec-meta-label">\uD83C\uDFAF Confidence</span><span class="exec-meta-value">' + confPill(exec.confidence) + '</span></div>'
+    + '<div class="exec-meta-row"><span class="exec-meta-label">\u26A0\uFE0F Caveat</span><span class="exec-meta-value">' + escapeHtml(exec.main_caveat || '') + '</span></div>'
+    + '</div></div>';
+
+  let findingsHtml = '';
+  if (findings.length) {
+    findingsHtml = '<div class="insight-panel" style="margin-bottom:20px;">'
+      + '<div class="insight-panel-title">\uD83D\uDD0D Diagnostic Findings</div>';
+    findings.forEach(f => {
+      findingsHtml += buildAccordion(
+        escapeHtml(f.finding || '') + '&nbsp;' + confPill(f.confidence),
+        bLabel('\uD83D\uDCCA Evidence') + bList(f.evidence)
+        + bLabel('\uD83D\uDCAD Interpretation') + bPara(f.interpretation)
+        + bLabel('\uD83E\uDD14 Plausible explanations') + bList(f.plausible_explanations)
+        + bLabel('\uD83D\uDD2C What would confirm this') + bPara(f.what_would_confirm_this)
+      );
+    });
+    findingsHtml += '</div>';
+  }
+
+  let outliersHtml = '';
+  if (outliers.length) {
+    outliersHtml = '<div class="insight-panel">' + '<div class="insight-panel-title">\uD83D\uDEA9 Outlier Patterns</div>';
+    outliers.forEach(o => {
+      outliersHtml += buildAccordion(
+        escapeHtml(o.pattern || ''),
+        bLabel('\uD83D\uDCCA Evidence') + bList(o.evidence)
+        + bLabel('\uD83D\uDCAD Possible meaning') + bPara(o.possible_meaning)
+        + bLabel('\u25B6\uFE0F Recommended follow-up') + bPara(o.recommended_follow_up)
+      );
+    });
+    outliersHtml += '</div>';
+  }
+
+  let nextHtml = '';
+  if (next.length) {
+    nextHtml = '<div class="insight-panel" style="margin-bottom:20px;">'
+      + '<div class="insight-panel-title">\uD83D\uDD2C Investigate Next</div>';
+    next.forEach((n, i) => {
+      nextHtml += buildAccordion(
+        '<span class="insight-num-badge">' + (i + 1) + '</span>' + escapeHtml(n.question || ''),
+        bLabel('\u2753 Why it matters') + bPara(n.why_it_matters)
+        + bLabel('\uD83D\uDCC2 Data / conversation needed') + bPara(n.data_or_conversation_needed)
+        + bLabel('\uD83C\uDFAF Decision it would inform') + bPara(n.decision_it_would_inform)
+      );
+    });
+    nextHtml += '</div>';
+  }
+
+  let recsHtml = '';
+  if (recs.length) {
+    recsHtml = '<div class="insight-panel">'
+      + '<div class="insight-panel-title">\uD83D\uDCA1 Recommendations</div>';
+    recs.forEach((r, i) => {
+      recsHtml += buildAccordion(
+        '<span class="insight-num-badge" style="background:#48bb78">' + (i + 1) + '</span>' + escapeHtml(r.action || ''),
+        bLabel('\u2753 Why') + bPara(r.why)
+        + bLabel('\u25B6\uFE0F First step') + bPara(r.first_step)
+        + bLabel('\uD83D\uDCCA Metric to watch') + bPara(r.metric_to_watch)
+        + bLabel('\uD83D\uDCC8 Expected effect') + bPara(r.expected_effect)
+      );
+    });
+    recsHtml += '</div>';
+  }
+
+  el.innerHTML = '<div class="insights-grid">'
+    + '<div>' + execHtml + findingsHtml + outliersHtml + '</div>'
+    + '<div>' + nextHtml + recsHtml + '</div>'
+    + '</div>';
+})();
 </script>
 </body>
 </html>

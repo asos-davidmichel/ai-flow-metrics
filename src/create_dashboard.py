@@ -15,14 +15,15 @@ import json
 import sys
 from pathlib import Path
 
-TIC_PATH     = Path("output/metrics/time_in_columns.json")
-CT_PATH      = Path("output/metrics/cycle_time.json")
-LT_PATH      = Path("output/metrics/lead_time.json")
-CTX_PATH     = Path("output/data/context.json")
-CFG_PATH     = Path("output/data/config.json")
-WI_PATH      = Path("output/data/work_items.json")
+TIC_PATH      = Path("output/metrics/time_in_columns.json")
+CT_PATH       = Path("output/metrics/cycle_time.json")
+LT_PATH       = Path("output/metrics/lead_time.json")
+CTX_PATH      = Path("output/data/context.json")
+CFG_PATH      = Path("output/data/config.json")
+WI_PATH       = Path("output/data/work_items.json")
+INSIGHTS_PATH = Path("output/data/insights.json")
 TEMPLATE_PATH = Path("src/templates/dashboard.html")
-OUTPUT_PATH  = Path("output/dashboard.html")
+OUTPUT_PATH   = Path("output/dashboard.html")
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
         "context":    json.loads(CTX_PATH.read_text(encoding="utf-8")) if CTX_PATH.exists() else None,
         "config":     json.loads(CFG_PATH.read_text(encoding="utf-8")) if CFG_PATH.exists() else None,
         "work_items": json.loads(WI_PATH.read_text(encoding="utf-8")) if WI_PATH.exists() else None,
+        "insights":   json.loads(INSIGHTS_PATH.read_text(encoding="utf-8")) if INSIGHTS_PATH.exists() else None,
         "work_item_history": [
             {"id": h["id"], "column_history": h["column_history"], "tag_history": h.get("tag_history", [])}
             for h in json.loads(Path("output/data/work_item_history.json").read_text(encoding="utf-8"))
