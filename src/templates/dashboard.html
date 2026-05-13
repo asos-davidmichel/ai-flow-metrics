@@ -142,18 +142,18 @@
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      gap: 20px;
+      gap: 16px;
       margin-bottom: 24px;
     }
     .kpi-card {
       background: white;
       border-radius: 12px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.07);
-      padding: 22px 24px 22px 20px;
+      padding: 14px 16px 14px 14px;
       border-left: 4px solid #cbd5e0;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 4px;
     }
     .kpi-card.trend-positive { border-left-color: #48bb78; }
     .kpi-card.trend-negative { border-left-color: #fc8181; }
@@ -166,17 +166,17 @@
       color: #a0aec0;
     }
     .kpi-value {
-      font-size: 36px;
+      font-size: 28px;
       font-weight: 700;
       color: #2d3748;
       line-height: 1;
-      min-height: 44px;
+      min-height: 34px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
     .kpi-arrow {
-      font-size: 40px;
+      font-size: 32px;
       font-weight: 700;
       line-height: 1;
     }
@@ -240,14 +240,47 @@
     /* ── AI Chart Insight Boxes ─────────────────────────────────── */
     .insight-box {
       margin-top: 18px;
-      padding: 13px 16px;
       background: #f0f4ff;
       border-left: 4px solid #667eea;
       border-radius: 0 8px 8px 0;
       font-size: 13px;
       line-height: 1.6;
       color: #4a5568;
+      overflow: hidden;
     }
+    .insight-box > summary.ib-summary {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 600;
+      color: #3c4a6e;
+      list-style: none;
+      user-select: none;
+    }
+    .insight-box > summary.ib-summary::-webkit-details-marker { display: none; }
+    .insight-box > summary.ib-summary::after {
+      content: '\203A';
+      font-size: 18px;
+      color: #667eea;
+      margin-left: auto;
+      flex-shrink: 0;
+      transform: rotate(0deg);
+      transition: transform 0.2s;
+    }
+    .insight-box[open] > summary.ib-summary::after { transform: rotate(90deg); }
+    .ib-preview {
+      font-weight: 400;
+      color: #718096;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 60ch;
+    }
+    .insight-box[open] .ib-preview { display: none; }
+    .ib-body { padding: 0 14px 12px; }
     .ib-section { margin-bottom: 7px; }
     .ib-section:last-child { margin-bottom: 0; }
     .ib-label { font-weight: 700; color: #2d3748; margin-right: 4px; }
@@ -3924,21 +3957,25 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   const ci = ins.chart_insights || {};
 
   function makeChartInsightBox(insight) {
-    const box = document.createElement('div');
+    const box = document.createElement('details');
     box.className = 'insight-box';
-    let html = '<div class="ib-section"><span class="ib-label">\uD83D\uDCA1 Insight</span> '
-      + escapeHtml(insight.insight) + '</div>';
+    // Short preview: first sentence of the insight
+    const preview = (insight.insight || '').split(/(?<=\.\s)/)[0].trim();
+    box.innerHTML = '<summary class="ib-summary">\uD83D\uDCA1 <strong>Insight</strong>'
+      + '<span class="ib-preview">' + escapeHtml(preview) + '</span></summary>'
+      + '<div class="ib-body">';
+    let body = '<div class="ib-section">' + escapeHtml(insight.insight) + '</div>';
     if (insight.evidence && insight.evidence.length) {
-      html += '<div class="ib-section"><span class="ib-label">\uD83D\uDCCA Evidence</span>'
+      body += '<div class="ib-section"><span class="ib-label">\uD83D\uDCCA Evidence</span>'
         + '<ul class="ib-evidence">'
         + insight.evidence.map(e => '<li>' + escapeHtml(e) + '</li>').join('')
         + '</ul></div>';
     }
     if (insight.watch_out) {
-      html += '<div class="ib-section ib-watch"><span class="ib-label">\uD83D\uDC40 Watch out</span> '
+      body += '<div class="ib-section ib-watch"><span class="ib-label">\uD83D\uDC40 Watch out</span> '
         + escapeHtml(insight.watch_out) + '</div>';
     }
-    box.innerHTML = html;
+    box.innerHTML += body + '</div>';
     return box;
   }
 
@@ -3953,13 +3990,13 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   }
 
   function makeSameAsBox(primaryLabel) {
-    const box = document.createElement('div');
+    const box = document.createElement('details');
     box.className = 'insight-box';
     box.style.background = '#f7fafc';
     box.style.borderLeftColor = '#a0aec0';
-    box.innerHTML = '<div class="ib-section" style="color:#718096;">'
+    box.innerHTML = '<summary class="ib-summary" style="color:#718096;">'
       + '\u2191 Same insight as <strong>' + escapeHtml(primaryLabel) + '</strong> chart in this tab.'
-      + '</div>';
+      + '</summary>';
     return box;
   }
 
@@ -4097,8 +4134,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     recsHtml += '</div>';
   }
 
-  el.innerHTML = '<div class="insights-grid">'
-    + '<div>' + execHtml + findingsHtml + outliersHtml + '</div>'
+  el.innerHTML = execHtml
+    + '<div class="insights-grid">'
+    + '<div>' + findingsHtml + outliersHtml + '</div>'
     + '<div>' + nextHtml + recsHtml + '</div>'
     + '</div>';
 })();
