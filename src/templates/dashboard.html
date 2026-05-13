@@ -1134,9 +1134,9 @@ function updateChart() {
             data: ctDataByType[type],
             backgroundColor: style.color + 'bb',
             borderColor: style.color,
-            borderWidth: 1.5,
-            pointRadius: 6,
-            pointHoverRadius: 9,
+            borderWidth: 1,
+            pointRadius: 5,
+            pointHoverRadius: 8,
           };
         }),
         ...refLineDatasets(ctItems),
@@ -1212,9 +1212,9 @@ function updateChart() {
           data: initRolling.means,
           borderColor: '#667eea',
           backgroundColor: '#667eea',
-          borderWidth: 3,
+          borderWidth: 2,
           pointRadius: 4,
-          pointHoverRadius: 6,
+          pointHoverRadius: 7,
           fill: false,
           tension: 0.3,
           spanGaps: false,
@@ -1223,7 +1223,7 @@ function updateChart() {
           label: 'Trend',
           data: initRolling.trend,
           borderColor: 'rgba(200,60,20,0.7)',
-          borderWidth: 3,
+          borderWidth: 2,
           borderDash: [6, 4],
           pointRadius: 0,
           fill: false,
@@ -1390,9 +1390,9 @@ function updateChart() {
             data: ltDataByType[type],
             backgroundColor: style.color + 'bb',
             borderColor: style.color,
-            borderWidth: 1.5,
-            pointRadius: 6,
-            pointHoverRadius: 9,
+            borderWidth: 1,
+            pointRadius: 5,
+            pointHoverRadius: 8,
           };
         }),
         ...ltRefLineDatasets(ltItems),
@@ -1451,8 +1451,8 @@ function updateChart() {
     type: 'line',
     data: {
       datasets: [
-        { label: 'Weekly average', data: ltInitRolling.means, borderColor: '#667eea', backgroundColor: '#667eea', borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
-        { label: 'Trend',          data: ltInitRolling.trend, borderColor: 'rgba(200,60,20,0.7)', borderWidth: 3, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
+        { label: 'Weekly average', data: ltInitRolling.means, borderColor: '#667eea', backgroundColor: '#667eea', borderWidth: 2, pointRadius: 4, pointHoverRadius: 7, fill: false, tension: 0.3, spanGaps: false },
+        { label: 'Trend',          data: ltInitRolling.trend, borderColor: 'rgba(200,60,20,0.7)', borderWidth: 2, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
       ],
     },
     options: {
@@ -1561,8 +1561,8 @@ function updateChart() {
     type: 'line',
     data: {
       datasets: [
-        { label: 'Items / week', data: tpCounts, borderColor: '#48bb78', backgroundColor: '#48bb78', borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.3, spanGaps: false },
-        { label: 'Trend',       data: tpTrend,  borderColor: 'rgba(200,60,20,0.7)', borderWidth: 3, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
+        { label: 'Items / week', data: tpCounts, borderColor: '#48bb78', backgroundColor: '#48bb78', borderWidth: 2, pointRadius: 4, pointHoverRadius: 7, fill: false, tension: 0.3, spanGaps: false },
+        { label: 'Trend',       data: tpTrend,  borderColor: 'rgba(200,60,20,0.7)', borderWidth: 2, borderDash: [6,4], pointRadius: 0, fill: false, tension: 0, spanGaps: false },
       ],
     },
     options: {
@@ -1915,7 +1915,7 @@ function updateChart() {
           label: 'Open bugs',
           data: openBugData,
           borderColor: bugColor, backgroundColor: bugColor + '12', fill: true,
-          tension: 0.3, pointRadius: 4, spanGaps: false,
+          borderWidth: 2, tension: 0.3, pointRadius: 4, pointHoverRadius: 7, spanGaps: false,
         },
         {
           label: 'Trend',
@@ -2012,13 +2012,13 @@ function updateChart() {
           label: '% of new work',
           data: bugPctNewData,
           borderColor: '#e8853d', backgroundColor: '#e8853d22', fill: true,
-          tension: 0.3, pointRadius: 4, spanGaps: true,
+          borderWidth: 2, tension: 0.3, pointRadius: 4, pointHoverRadius: 7, spanGaps: true,
         },
         {
           label: '% of WIP',
           data: bugPctWipData,
           borderColor: '#667eea', backgroundColor: 'transparent', fill: false,
-          borderDash: [5, 4], tension: 0.3, pointRadius: 4, spanGaps: true,
+          borderWidth: 2, borderDash: [6, 4], tension: 0.3, pointRadius: 4, pointHoverRadius: 7, spanGaps: true,
         },
       ],
     },
@@ -2308,14 +2308,14 @@ function updateChart() {
       label: 'Arrival rate',
       data: arrivalResult.line,
       borderColor: '#1a202c', backgroundColor: 'transparent',
-      borderWidth: 2.5, borderDash: [8, 5], pointRadius: 0,
+      borderWidth: 2, borderDash: [6, 4], pointRadius: 0,
       tension: 0, fill: false, _trend: true,
     },
     {
       label: 'Departure rate',
       data: departureResult.line,
       borderColor: '#718096', backgroundColor: 'transparent',
-      borderWidth: 2.5, borderDash: [8, 5], pointRadius: 0,
+      borderWidth: 2, borderDash: [6, 4], pointRadius: 0,
       tension: 0, fill: false, _trend: true,
     },
   ];
@@ -2620,15 +2620,12 @@ function updateChart() {
     const idx = context.tooltip.dataPoints[0]?.dataIndex;
     const item = wipItems[idx];
     if (!item) return;
-    const ageCls = item.color === '#fc8181' ? 'color:#9b2c2c' : item.color === '#f6ad55' ? 'color:#c05621' : 'color:#276749';
-    const linkHtml = item.url
-      ? `<a class="tt-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">#${item.id}</a>`
-      : `#${item.id}`;
+    const url = item.url || '';
     sharedTooltip.show(
-      `<div class="tt-total" style="font-weight:600;">${ttIcon(item.style)} ${escapeHtml(item.type)} ${linkHtml}</div>` +
-      `<div class="tt-total">${escapeHtml(item.title.length > 60 ? item.title.slice(0,60)+'\u2026' : item.title)}</div>` +
-      `<div class="tt-total">Column: ${escapeHtml(item.column)}</div>` +
-      `<div class="tt-total" style="${ageCls};font-weight:700;">Age: ${item.ageDays} days</div>` +
+      `<div class="tt-title">${escapeHtml(item.column)}</div>` +
+      '<div class="tt-items">' +
+      ttItemRow(item.style, url, item.id, item.title, item.ageDays) +
+      '</div>' +
       TT_HINT,
       context
     );
@@ -2797,15 +2794,12 @@ function updateChart() {
     const raw = dp.raw;
     if (raw.id) {
       const style = typeStyles[raw.type] || {};
-      const ageCls = raw.y >= 30 ? 'color:#9b2c2c' : raw.y >= 14 ? 'color:#c05621' : 'color:#276749';
-      const linkHtml = adoBase
-        ? `<a class="tt-link" href="${escapeHtml(adoBase + '/' + raw.id)}" target="_blank" rel="noopener">#${raw.id}</a>`
-        : `#${raw.id}`;
+      const url = adoBase ? adoBase + '/' + raw.id : '';
       sharedTooltip.show(
-        `<div class="tt-total" style="font-weight:600;">${ttIcon(style)} ${escapeHtml(raw.type)} ${linkHtml}</div>` +
-        `<div class="tt-total">${escapeHtml(raw.title.length > 60 ? raw.title.slice(0,60)+'\u2026' : raw.title)}</div>` +
-        `<div class="tt-total">Column: ${escapeHtml(raw.col)}</div>` +
-        `<div class="tt-total" style="${ageCls};font-weight:700;">Age: ${raw.y} days</div>` +
+        `<div class="tt-title">${escapeHtml(raw.col)}</div>` +
+        '<div class="tt-items">' +
+        ttItemRow(style, url, raw.id, raw.title, raw.y) +
+        '</div>' +
         TT_HINT, context
       );
     } else {
@@ -2832,7 +2826,7 @@ function updateChart() {
       data: visible.filter(d => d.col === col).map(d => ({ x: xi, y: d.age, id: d.id, title: d.title, type: d.type, col })),
       backgroundColor: colColor[col] + 'bb',
       borderColor: colColor[col],
-      borderWidth: 1.5, pointRadius: 7, pointHoverRadius: 9, order: 4,
+      borderWidth: 1.5, pointRadius: 5, pointHoverRadius: 8, order: 4,
     }));
 
     const statDefs = [
