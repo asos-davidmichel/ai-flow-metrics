@@ -168,6 +168,7 @@ def main():
         "org": org,
         "project": project,
         "team": team,
+        "board_url": url,
         "board": {
             "id": selected["id"],
             "name": selected["name"],

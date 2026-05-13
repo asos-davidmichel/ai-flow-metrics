@@ -712,9 +712,14 @@ function escapeHtml(s) {
       + `<span style="opacity:0.7;font-weight:500;">${label}:</span>`
       + `<span style="font-weight:700;">${escapeHtml(String(value))}</span></span>`;
   }
-  if (ctx) {
+    if (ctx) {
     if (ctx.team)         document.getElementById('hTeam').innerHTML  = metaChip('Team', ctx.team);
-    if (ctx.board?.name)  document.getElementById('hBoard').innerHTML = metaChip('Board', ctx.board.name);
+    if (ctx.board?.name) {
+      const boardHtml = ctx.board_url
+        ? `<span style="opacity:0.7;font-weight:500;">Board:</span> <a href="${escapeHtml(ctx.board_url)}" target="_blank" rel="noopener" style="font-weight:700;color:inherit;text-decoration:underline;text-underline-offset:3px;">${escapeHtml(ctx.board.name)}</a>`
+        : `<span style="opacity:0.7;font-weight:500;">Board:</span> <span style="font-weight:700;">${escapeHtml(ctx.board.name)}</span>`;
+      document.getElementById('hBoard').innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;">${boardHtml}</span>`;
+    }
   }
   if (ct?.window) {
     const fmt = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
