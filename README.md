@@ -92,7 +92,7 @@ python src/ai_interpret_metrics.py --mode prompt
 python src/ai_interpret_metrics.py --dump-summary   # inspect anonymised metrics JSON
 ```
 
-![Chart insight box](docs/screenshot_insight.png)
+<img src="docs/screenshot_insight.png" width="450" alt="Chart insight box">
 
 > *Each chart has a collapsible AI insight box with evidence and a watch-out signal*
 
