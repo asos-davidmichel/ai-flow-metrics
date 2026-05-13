@@ -55,7 +55,7 @@ flowchart TD
     fetch["1 · fetch_data.py\nFetch board context & work items"]:::script
     check["2 · check_data.py\nData quality checks"]:::script
     aiconf["3 · ai_configure_board.py\nBuild board config prompt"]:::script
-    aiconfprompt{{"✎ Run prompt → review config_draft.json\n→ edit if needed → save as config.json"}}:::manual
+    aiconfprompt{{"🤖✎ Run AI prompt → review config_draft.json\n→ edit if needed → save as config.json"}}:::humanai
     calccol["4 · calc_columns.py\nTime in columns"]:::script
     calcct["5 · calc_cycle_time.py\nCycle time & throughput"]:::script
     calclt["6 · calc_lead_time.py\nLead time"]:::script
@@ -63,8 +63,8 @@ flowchart TD
     out(["🌐 dashboard.html"]):::output
 
     aimetrics["ai_interpret_metrics.py\nBuild metrics interpretation prompt"]:::script
-    savemetrics{{"✎ Run prompt → save AI response\nas insights.json"}}:::manual
-    autoinsights["OpenAI API\nauto-writes insights.json"]:::ai
+    savemetrics{{"🤖✎ Run AI prompt → save response\nas insights.json"}}:::humanai
+    autoinsights["OpenAI API\nauto-writes insights.json"]:::autoai
     insights[("insights.json")]:::file
 
     ADO -->|"reads via REST API"| fetch
@@ -78,11 +78,14 @@ flowchart TD
     dash --> out
 
     classDef script  fill:#667eea,color:#fff,stroke:#4c51bf
-    classDef ai      fill:#48bb78,color:#fff,stroke:#276749
-    classDef manual  fill:#f6ad55,color:#7b341e,stroke:#dd6b20
+    classDef humanai fill:#9f7aea,color:#fff,stroke:#6b46c1
+    classDef autoai  fill:#48bb78,color:#fff,stroke:#276749
     classDef external fill:#e2e8f0,color:#2d3748,stroke:#a0aec0
     classDef file    fill:#f7fafc,color:#4a5568,stroke:#cbd5e0
     classDef output  fill:#fefcbf,color:#744210,stroke:#d69e2e
+```
+
+> 🟦 Automated script &nbsp;·&nbsp; 🟣 Human-in-the-loop with AI &nbsp;·&nbsp; 🟩 Fully automated AI &nbsp;·&nbsp; ⬜ External system
 ```
 
 > 🟦 Python script &nbsp;·&nbsp; 🟩 AI-driven &nbsp;·&nbsp; 🟧 Manual step &nbsp;·&nbsp; ⬜ External system
