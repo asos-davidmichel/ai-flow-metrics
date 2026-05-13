@@ -1240,7 +1240,7 @@ def write_copilot_prompt(summary):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
 ---
-mode: agent
+agent: agent
 description: "Flow metrics — generate chart insights and leadership overview"
 ---
 
