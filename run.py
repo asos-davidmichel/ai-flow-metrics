@@ -36,7 +36,11 @@ GENERATED_FILES = [
     Path("output/data/excluded_items.json"),
     Path("output/data/config.json"),
     Path("output/data/config_draft.json"),
+    Path("output/data/insights.json"),
+    Path("output/data/interpret_metrics_prompt.txt"),
+    Path("output/data/ai_interpret_metrics.prompt.md"),
     Path("output/metrics/cycle_time.json"),
+    Path("output/metrics/lead_time.json"),
     Path("output/metrics/time_in_columns.json"),
     Path("output/dashboard.html"),
 ]
