@@ -48,6 +48,29 @@ python src/create_dashboard.py
 
 `run.py` orchestrates the full pipeline. You can also run each step individually.
 
+```mermaid
+flowchart TD
+    A([▶ run.py]) --> B
+
+    B["1 · fetch_data.py\nFetch board context & work items from ADO"]
+    B --> C["2 · check_data.py\nData quality checks"]
+    C --> D["3 · ai_configure_board.py\nPropose config_draft.json via AI"]
+    D --> E{{"⏸ Review config_draft.json\n→ save as config.json"}}
+    E --> F["4 · calc_columns.py\nTime in columns"]
+    F --> G["5 · calc_cycle_time.py\nCycle time & throughput"]
+    G --> H["6 · calc_lead_time.py\nLead time"]
+    H --> I["7 · create_dashboard.py\nRender output/dashboard.html"]
+
+    I --> J(["🌐 Open dashboard.html"])
+
+    subgraph AI ["AI interpretation (optional)"]
+        direction LR
+        K["ai_interpret_metrics.py\n--mode copilot / prompt / openai"]
+        K --> L[("output/data/insights.json")]
+        L --> I
+    end
+```
+
 | Step | Script | What it does |
 |------|--------|--------------|
 | 1 | `src/fetch_data.py` | Fetches board context, work items, and full column + tag history from ADO |
