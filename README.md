@@ -54,21 +54,26 @@ flowchart TD
 
     fetch["1 · fetch_data.py\nFetch board context & work items"]:::script
     check["2 · check_data.py\nData quality checks"]:::script
-    aiconf["3 · ai_configure_board.py\nPropose board config via AI"]:::ai
-    review{{"✎  Review config_draft.json\n→ edit if needed → save as config.json"}}:::manual
+    aiconf["3 · ai_configure_board.py\nBuild board config prompt"]:::script
+    aiconfprompt{{"✎ Run prompt → review config_draft.json\n→ edit if needed → save as config.json"}}:::manual
     calccol["4 · calc_columns.py\nTime in columns"]:::script
     calcct["5 · calc_cycle_time.py\nCycle time & throughput"]:::script
     calclt["6 · calc_lead_time.py\nLead time"]:::script
     dash["7 · create_dashboard.py\nRender dashboard"]:::script
     out(["🌐 dashboard.html"]):::output
 
-    aimetrics["ai_interpret_metrics.py\nGenerate chart insights"]:::ai
+    aimetrics["ai_interpret_metrics.py\nBuild metrics interpretation prompt"]:::script
+    savemetrics{{"✎ Run prompt → save AI response\nas insights.json"}}:::manual
+    autoinsights["OpenAI API\nauto-writes insights.json"]:::ai
     insights[("insights.json")]:::file
 
     ADO -->|"reads via REST API"| fetch
-    fetch --> check --> aiconf --> review
-    review --> calccol --> calcct --> calclt --> dash
-    aimetrics -->|"--mode copilot / prompt / openai"| insights
+    fetch --> check --> aiconf --> aiconfprompt
+    aiconfprompt --> calccol --> calcct --> calclt --> dash
+    aimetrics -->|"--mode copilot / prompt"| savemetrics
+    aimetrics -->|"--mode openai"| autoinsights
+    savemetrics --> insights
+    autoinsights --> insights
     insights -.->|"optional enrichment"| dash
     dash --> out
 
