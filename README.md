@@ -4,6 +4,8 @@ A Python + Chart.js tool that fetches work item data from **Azure DevOps**, calc
 
 ![Dashboard screenshot](docs/screenshot.png)
 
+> *Flow tab showing CFD, Arrival/Departure ratio, Net Flow, and Time in Columns*
+
 ## What it produces
 
 - **Cycle time** — histogram, P85, trend, and breakdown by work item type
@@ -89,6 +91,14 @@ python src/ai_configure_board.py --mode prompt
 python src/ai_interpret_metrics.py --mode prompt
 python src/ai_interpret_metrics.py --dump-summary   # inspect anonymised metrics JSON
 ```
+
+![Chart insight box](docs/screenshot_insight.png)
+
+> *Each chart has a collapsible AI insight box with evidence and a watch-out signal*
+
+![AI analysis overview](docs/screenshot_analysis.png)
+
+> *Overview tab: AI-generated diagnostic findings, outlier patterns, investigation questions, and recommendations*
 
 After running in `openai` mode, save the response to `output/data/insights.json` — the dashboard will pick it up automatically on the next `python src/dashboard.py`.
 
