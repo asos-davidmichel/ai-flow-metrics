@@ -14,6 +14,7 @@ output/data/work_item_rework.json
 output/data/config_draft.json
 output/data/ai_configure_board_prompt.txt
 output/data/ai_interpret_metrics_prompt.txt
+output/data/interpret_metrics_prompt.txt
 output/data/ai_interpret_metrics.prompt.md
 prompts/ai_configure_board.prompt.md
 
