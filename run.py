@@ -2,23 +2,28 @@
 Full pipeline runner.
 
 Usage:
-  python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai] [--window 6m] [--clean]
+  python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai]
+                            [--insights-mode copilot|prompt|openai|skip] [--window 6m] [--clean]
   python run.py --clean   (clean output files only, no board URL required)
 
 Runs:
   1. fetch_data.py         — fetch board context and work items from Azure DevOps
   2. check_data.py         — run data quality checks on the saved JSON files
-  3. ai_configure_board.py — generate AI interpretation prompt → output/data/config_draft.json
+  3. ai_configure_board.py — generate AI interpretation prompt → output/data/config.json
 
-After step 3: review config_draft.json, edit if needed, save as output/data/config.json.
+After step 3: paste the AI's JSON response directly into output/data/config.json.
 
 If output/data/config.json exists, also runs:
-  4. calc_columns.py       — calculate time-in-columns metric → output/metrics/time_in_columns.json
-  5. calc_cycle_time.py    — calculate cycle time and throughput → output/metrics/cycle_time.json
-  6. calc_lead_time.py     — calculate lead time → output/metrics/lead_time.json
-  7. create_dashboard.py   — generate dashboard → output/dashboard.html
+  4. calc_columns.py         — calculate time-in-columns metric → output/metrics/time_in_columns.json
+  5. calc_cycle_time.py      — calculate cycle time and throughput → output/metrics/cycle_time.json
+  6. calc_lead_time.py       — calculate lead time → output/metrics/lead_time.json
+  7. create_dashboard.py     — generate dashboard → output/dashboard.html
+  8. ai_interpret_metrics.py — generate AI chart insights → output/data/insights.json
+                               (skipped when --insights-mode skip)
+  9. create_dashboard.py     — re-generate dashboard with insights embedded
 
 Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
+--insights-mode: copilot (default), prompt, openai, skip
 
 --clean  Delete all previously generated output files before running.
 """
@@ -36,7 +41,6 @@ GENERATED_FILES = [
     Path("output/data/data_quality_report.json"),
     Path("output/data/excluded_items.json"),
     Path("output/data/config.json"),
-    Path("output/data/config_draft.json"),
     Path("output/data/insights.json"),
     Path("output/data/interpret_metrics_prompt.txt"),
     Path("output/data/ai_interpret_metrics.prompt.md"),
@@ -120,6 +124,19 @@ def main():
             print("Error: --window requires a value (e.g. 1m, 3m, 6m, 1y).", file=sys.stderr)
             sys.exit(1)
 
+    # --insights-mode controls step 8 (ai_interpret_metrics); default copilot, skip to omit
+    insights_mode = "copilot"
+    if "--insights-mode" in sys.argv:
+        idx = sys.argv.index("--insights-mode")
+        try:
+            insights_mode = sys.argv[idx + 1]
+            if insights_mode not in ("copilot", "prompt", "openai", "skip"):
+                print("Error: --insights-mode must be copilot, prompt, openai, or skip.", file=sys.stderr)
+                sys.exit(1)
+        except IndexError:
+            print("Error: --insights-mode requires a value (copilot, prompt, openai, skip).", file=sys.stderr)
+            sys.exit(1)
+
     config_path = Path("output/data/config.json")
     config_exists = config_path.exists()
 
@@ -128,6 +145,7 @@ def main():
     print("-" * 40)
     print(f"  Board URL       : {board_url}")
     print(f"  Interpret mode  : {interpret_mode}")
+    print(f"  Insights mode   : {insights_mode}")
     print(f"  Metrics window  : {window}")
     if check_args:
         print(f"  Short dwell     : {check_args[1]} minutes")
@@ -162,7 +180,7 @@ def main():
     print("  output/data/work_item_rework.json")
 
     # For modes that require human-in-the-loop (copilot / prompt), always pause so
-    # the user can run the prompt, review config_draft.json, and save config.json
+    # the user can run the prompt and save the AI's JSON response as config.json
     # before the pipeline continues to metrics.
     if interpret_mode in ("copilot", "prompt"):
         print()
@@ -171,8 +189,7 @@ def main():
             print("  1. Run the prompt that just opened in VS Code Copilot chat.")
         else:
             print("  1. Paste output/data/ai_configure_board_prompt.txt into your AI assistant.")
-        print("  2. Review output/data/config_draft.json and edit if needed.")
-        print("  3. Save it as output/data/config.json to confirm your choices.")
+        print("  2. Save the JSON response as output/data/config.json.")
         print()
         try:
             input("Press Enter when config.json is ready to continue to metrics and dashboard...")
@@ -190,22 +207,59 @@ def main():
     print()
     run(
         [sys.executable, "src/calc_columns.py", "--window", window],
-        f"Step 4 / 7 — Calculate time-in-columns (window: {window})",
+        f"Step 4 / 9 — Calculate time-in-columns (window: {window})",
     )
     run(
         [sys.executable, "src/calc_cycle_time.py", "--window", window],
-        f"Step 5 / 7 — Calculate cycle time (window: {window})",
+        f"Step 5 / 9 — Calculate cycle time (window: {window})",
     )
     run(
         [sys.executable, "src/calc_lead_time.py", "--window", window],
-        f"Step 6 / 7 — Calculate lead time (window: {window})",
+        f"Step 6 / 9 — Calculate lead time (window: {window})",
     )
     run(
         [sys.executable, "src/create_dashboard.py"],
-        "Step 7 / 7 — Generate dashboard",
+        "Step 7 / 9 — Generate dashboard",
     )
+
+    if insights_mode == "skip":
+        dashboard_path = Path("output/dashboard.html").resolve()
+        print()
+        print(f"Dashboard ready: {dashboard_path}")
+        import webbrowser
+        webbrowser.open(dashboard_path.as_uri())
+        return
+
+    run(
+        [sys.executable, "src/ai_interpret_metrics.py", "--mode", insights_mode],
+        f"Step 8 / 9 — Generate AI chart insights ({insights_mode})",
+    )
+
+    if insights_mode in ("copilot", "prompt"):
+        print()
+        print("Next steps:")
+        if insights_mode == "copilot":
+            print("  1. Run the prompt that just opened in VS Code Copilot chat.")
+        else:
+            print("  1. Paste output/data/ai_interpret_metrics_prompt.txt into your AI assistant.")
+        print("  2. The agent will save output/data/insights.json automatically.")
+        print()
+        try:
+            input("Press Enter when insights.json is ready to re-generate the dashboard...")
+        except KeyboardInterrupt:
+            print("\nAborted.")
+            sys.exit(0)
+
+    run(
+        [sys.executable, "src/create_dashboard.py", "--force"],
+        "Step 9 / 9 — Re-generate dashboard with insights",
+    )
+
+    dashboard_path = Path("output/dashboard.html").resolve()
     print()
-    print("Dashboard ready: output/dashboard.html")
+    print(f"Dashboard ready: {dashboard_path}")
+    import webbrowser
+    webbrowser.open(dashboard_path.as_uri())
 
 
 if __name__ == "__main__":

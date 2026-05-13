@@ -1,6 +1,6 @@
 ---
 mode: ask
-description: "Flow metrics — interpret board structure and propose config_draft.json"
+description: "Flow metrics — interpret board structure and write config.json"
 ---
 
 You are helping configure a flow metrics tool for an Azure DevOps Kanban board.
@@ -24,9 +24,9 @@ Org: asos | Project: Customer | Team: Analytics and Experimentation
 | Ready for Dev | inProgress | 5 | n=169, avg=90.3h, median=26.5h |
 | In Development | inProgress | 5 | n=292, avg=239450.3h, median=22.2h |
 | In Review | inProgress | 5 | n=179, avg=2343015.1h, median=118.0h |
-| External Review | inProgress | 5 | n=78, avg=143.4h, median=66.8h |
+| External Review | inProgress | 5 | n=79, avg=141.6h, median=64.8h |
 | Ready for QA | inProgress | 3 | n=61, avg=1145737.7h, median=4.6h |
-| QA | inProgress | 3 | n=107, avg=653304.1h, median=68.0h |
+| QA | inProgress | 3 | n=108, avg=647255.2h, median=68.0h |
 | Ready for release | inProgress | 5 | n=85, avg=7400311.7h, median=481.0h |
 | Closed | outgoing | 0 | n=11, avg=12.3h, median=0.0h |
 
@@ -44,9 +44,9 @@ inProgress columns to classify (active or waiting):
 - Ready for Dev (avg=90.3h, median=26.5h)
 - In Development (avg=239450.3h, median=22.2h)
 - In Review (avg=2343015.1h, median=118.0h)
-- External Review (avg=143.4h, median=66.8h)
+- External Review (avg=141.6h, median=64.8h)
 - Ready for QA (avg=1145737.7h, median=4.6h)
-- QA (avg=653304.1h, median=68.0h)
+- QA (avg=647255.2h, median=68.0h)
 - Ready for release (avg=7400311.7h, median=481.0h)
 
 ---
@@ -94,19 +94,10 @@ If no signal found, return an empty array [].
 
 ---
 
-## Required output
+## Required output format
 
-1. Write the configuration directly to `output/data/config.json` using the create/edit file tool.
-   Do NOT include `_note` or `_reasoning` fields in the saved file.
+Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble.
 
-2. After saving the file, present a brief Markdown summary to the user with:
-   - Each decision and its chosen value in a table
-   - A short rationale for any non-obvious choices
-   - Any assumptions or items the user may want to reconsider
-
-The JSON structure to write to `output/data/config.json`:
-
-```json
 {
   "lead_time": {
     "clock_start": {"type": "<column | date_field>", "value": "<column name or field name>"},
@@ -129,4 +120,3 @@ The JSON structure to write to `output/data/config.json`:
     ]
   }
 }
-```

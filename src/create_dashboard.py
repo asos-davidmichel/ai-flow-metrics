@@ -27,6 +27,11 @@ OUTPUT_PATH   = Path("output/dashboard.html")
 
 
 def main():
+    force = "--force" in sys.argv
+    if OUTPUT_PATH.exists() and not force:
+        print(f"Skipping: {OUTPUT_PATH} already exists. Delete it or use --force to regenerate.")
+        sys.exit(0)
+
     for path in (TIC_PATH, TEMPLATE_PATH):
         if not path.exists():
             print(f"Error: {path} not found.", file=sys.stderr)

@@ -1337,6 +1337,10 @@ def main():
     )
     args = parser.parse_args()
 
+    if not args.dump_summary and INSIGHTS_PATH.exists():
+        print(f"Skipping: {INSIGHTS_PATH} already exists. Delete it to regenerate.")
+        sys.exit(0)
+
     summary = build_summary()
 
     if args.dump_summary:

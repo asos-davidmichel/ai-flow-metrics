@@ -85,6 +85,10 @@ def main():
     )
     args = parser.parse_args()
 
+    if OUTPUT_PATH.exists():
+        print(f"Skipping: {OUTPUT_PATH} already exists. Delete it to regenerate.")
+        sys.exit(0)
+
     now = datetime.now(timezone.utc)
     window_start = now - parse_window(args.window)
     window_end = now

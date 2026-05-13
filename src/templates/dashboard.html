@@ -291,7 +291,7 @@
     /* ── Overview AI Insights Layout ────────────────────────────── */
     .insights-grid {
       display: grid;
-      grid-template-columns: 3fr 2fr;
+      grid-template-columns: 1fr 1fr;
       gap: 24px;
       margin-top: 24px;
     }
@@ -4055,6 +4055,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     return '<details class="insight-item"><summary>' + summaryHtml + '</summary>'
       + '<div class="insight-item-body">' + bodyHtml + '</div></details>';
   }
+  function renderBold(t) {
+    return escapeHtml(t || '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  }
   function bLabel(t) { return '<div class="insight-body-label">' + t + '</div>'; }
   function bPara(t)  { return '<p style="margin:4px 0 10px;">' + escapeHtml(t || '') + '</p>'; }
   function bList(a)  {
@@ -4074,11 +4077,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
   let findingsHtml = '';
   if (findings.length) {
-    findingsHtml = '<div class="insight-panel" style="margin-bottom:20px;">'
+    findingsHtml = '<div class="insight-panel">'
       + '<div class="insight-panel-title">\uD83D\uDD0D Diagnostic Findings</div>';
     findings.forEach(f => {
       findingsHtml += buildAccordion(
-        escapeHtml(f.finding || '') + '&nbsp;' + confPill(f.confidence),
+        '<span>' + renderBold(f.finding || '') + '</span>' + confPill(f.confidence),
         bLabel('\uD83D\uDCCA Evidence') + bList(f.evidence)
         + bLabel('\uD83D\uDCAD Interpretation') + bPara(f.interpretation)
         + bLabel('\uD83E\uDD14 Plausible explanations') + bList(f.plausible_explanations)
@@ -4104,7 +4107,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
   let nextHtml = '';
   if (next.length) {
-    nextHtml = '<div class="insight-panel" style="margin-bottom:20px;">'
+    nextHtml = '<div class="insight-panel">'
       + '<div class="insight-panel-title">\uD83D\uDD2C Investigate Next</div>';
     next.forEach((n, i) => {
       nextHtml += buildAccordion(
@@ -4135,8 +4138,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
   el.innerHTML = execHtml
     + '<div class="insights-grid">'
-    + '<div>' + findingsHtml + outliersHtml + '</div>'
-    + '<div>' + nextHtml + recsHtml + '</div>'
+    + findingsHtml
+    + outliersHtml
+    + nextHtml
+    + recsHtml
     + '</div>';
 })();
 </script>

@@ -308,6 +308,10 @@ def compute_rework(history, context):
 
 
 def main():
+    if Path("output/data/data_quality_report.json").exists():
+        print("Skipping: output/data/data_quality_report.json already exists. Delete it to regenerate.")
+        sys.exit(0)
+
     threshold = DEFAULT_SHORT_DWELL_MINUTES
     if "--short-dwell-minutes" in sys.argv:
         idx = sys.argv.index("--short-dwell-minutes")

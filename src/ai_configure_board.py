@@ -1,5 +1,5 @@
 """
-AI interpretation pass 1 — proposes config_draft.json from board structure and history.
+AI interpretation pass 1 — proposes config.json from board structure and history.
 
 Analyses:
   - Unknown historical column names (vs current board)
@@ -15,10 +15,10 @@ Reads:
 Writes (depending on --mode):
   prompts/ai_configure_board.prompt.md      (--mode copilot)  open in VS Code chat, pick your model
   output/data/ai_configure_board_prompt.txt (--mode prompt)   paste into any AI assistant
-  output/data/config_draft.json           (--mode openai)   direct API call (not yet implemented)
+  output/data/config.json                   (--mode openai)   direct API call (not yet implemented)
 
-After any mode: review output/data/config_draft.json and save as output/data/config.json
-to confirm your interpretation choices. The metrics script requires config.json.
+After copilot/prompt mode: paste the AI's JSON response directly into output/data/config.json.
+The metrics script requires config.json.
 
 Usage:
   python src/ai_configure_board.py
@@ -43,7 +43,7 @@ PROMPTS_DIR = Path("prompts")
 CONTEXT_PATH = DATA_DIR / "context.json"
 HISTORY_PATH = DATA_DIR / "work_item_history.json"
 QUALITY_PATH = DATA_DIR / "data_quality_report.json"
-CONFIG_DRAFT_PATH = DATA_DIR / "config_draft.json"
+CONFIG_PATH = DATA_DIR / "config.json"
 PROMPT_TXT_PATH = DATA_DIR / "ai_configure_board_prompt.txt"
 PROMPT_MD_PATH = PROMPTS_DIR / "ai_configure_board.prompt.md"
 
@@ -352,7 +352,7 @@ def build_copilot_prompt(findings):
     header = """\
 ---
 mode: ask
-description: "Flow metrics — interpret board structure and propose config_draft.json"
+description: "Flow metrics — interpret board structure and write config.json"
 ---
 
 """
@@ -392,8 +392,7 @@ def write_copilot_prompt(findings):
     print()
     print("Next steps:")
     print("  1. In VS Code chat, click 'Run in Chat' and select your model.")
-    print("  2. Copy the JSON response into output/data/config_draft.json.")
-    print("  3. Review and edit config_draft.json, then save as output/data/config.json.")
+    print("  2. Save the JSON response as output/data/config.json.")
 
 
 # ---------------------------------------------------------------------------
@@ -410,8 +409,7 @@ def write_plain_prompt(findings):
     print("Next steps:")
     print("  1. Open output/data/ai_configure_board_prompt.txt.")
     print("  2. Paste the contents into any AI assistant.")
-    print("  3. Copy the JSON response into output/data/config_draft.json.")
-    print("  4. Review and edit config_draft.json, then save as output/data/config.json.")
+    print("  3. Save the JSON response as output/data/config.json.")
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +419,7 @@ def write_plain_prompt(findings):
 
 def call_openai(findings):
     """
-    Call OpenAI Chat Completions API to produce config_draft.json directly.
+    Call OpenAI Chat Completions API to produce config.json directly.
 
     Required environment variables:
       OPENAI_API_KEY — your OpenAI API key
@@ -433,7 +431,7 @@ def call_openai(findings):
          Headers: {"Authorization": "Bearer <key>", "Content-Type": "application/json"}
          Body: {"model": model, "messages": [{"role": "user", "content": prompt}]}
       3. Parse JSON from response["choices"][0]["message"]["content"].
-      4. Write parsed dict to CONFIG_DRAFT_PATH.
+      4. Write parsed dict to CONFIG_PATH.
     """
     import os
     if not os.environ.get("OPENAI_API_KEY"):
@@ -462,6 +460,10 @@ def main():
         help="How to deliver the prompt (default: copilot)",
     )
     args = parser.parse_args()
+
+    if CONFIG_PATH.exists():
+        print(f"Skipping: {CONFIG_PATH} already exists. Delete it to regenerate.")
+        sys.exit(0)
 
     context = load(CONTEXT_PATH)
     history = load(HISTORY_PATH)

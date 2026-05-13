@@ -58,6 +58,15 @@ def prompt_board_selection(candidates, context_label=""):
 
 
 def main():
+    _data_outputs = [
+        Path("output/data/context.json"),
+        Path("output/data/work_items.json"),
+        Path("output/data/work_item_history.json"),
+    ]
+    if all(p.exists() for p in _data_outputs):
+        print("Skipping: output data already exists. Delete output/data to re-fetch.")
+        sys.exit(0)
+
     if len(sys.argv) != 2:
         print("Usage: python src/main.py <board-url>", file=sys.stderr)
         sys.exit(1)
