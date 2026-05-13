@@ -12,8 +12,9 @@ Reads:
   output/data/work_item_history.json
 
 Writes (depending on --mode):
-  prompts/ai_interpret_metrics.prompt.md      (--mode copilot)
-  output/data/ai_interpret_metrics_prompt.txt (--mode prompt)
+  prompts/ai_interpret_metrics.prompt.md      static template (tracked in git)
+  output/data/ai_interpret_metrics.prompt.md  (--mode copilot)  open in VS Code chat, pick your model
+  output/data/ai_interpret_metrics_prompt.txt (--mode prompt)   paste into any AI assistant
   output/data/insights.json               (--mode openai)
 
 Usage:
@@ -46,7 +47,7 @@ CFG_PATH     = DATA_DIR / "config.json"
 WI_PATH      = DATA_DIR / "work_items.json"
 WIH_PATH     = DATA_DIR / "work_item_history.json"
 
-PROMPT_MD_PATH  = PROMPTS_DIR / "ai_interpret_metrics.prompt.md"
+PROMPT_MD_PATH  = DATA_DIR / "ai_interpret_metrics.prompt.md"
 PROMPT_TXT_PATH = DATA_DIR / "ai_interpret_metrics_prompt.txt"
 INSIGHTS_PATH   = DATA_DIR / "insights.json"
 
@@ -573,13 +574,10 @@ def build_summary():
 # Prompt building
 # ---------------------------------------------------------------------------
 
-SYSTEM_ROLE = """\
-You are an expert in software delivery flow metrics (Kanban, Lean). \
-You interpret quantitative flow data and produce clear, jargon-free insights \
-for both practitioners and leadership. \
-You do not describe charts. You identify patterns and their implications.
-"""
+PROMPT_TEMPLATE_PATH = Path(__file__).parent.parent / "prompts" / "ai_interpret_metrics.prompt.md"
 
+# Legacy in-code constants kept only so call_openai can still reference CHART_PROMPTS keys.
+# All prompt text is now in prompts/ai_interpret_metrics.prompt.md.
 CHART_PROMPTS = {
     "cycle_time": {
         "title": "Cycle Time",
@@ -721,59 +719,8 @@ Do NOT repeat the metrics back. Focus entirely on what to do and why.
 
 
 def build_prompt_text(summary):
-    lines = []
-    lines.append(SYSTEM_ROLE)
-    lines.append("")
-    lines.append("=" * 70)
-    lines.append("FLOW METRICS SUMMARY (anonymised)")
-    lines.append("=" * 70)
-    lines.append("")
-    lines.append(json.dumps(summary, indent=2))
-    lines.append("")
-    lines.append("=" * 70)
-    lines.append("CHART INSIGHTS REQUIRED")
-    lines.append("=" * 70)
-    lines.append("")
-    lines.append(
-        "For each chart listed below, write the insight as instructed. "
-        "Use the relevant section of the summary above. "
-        "Format your response as a JSON object keyed by chart name, "
-        "each value being the insight string.\n"
-    )
-    lines.append("Charts and instructions:")
-    lines.append("")
-
-    key_map = {
-        "cycle_time":            "cycle_time",
-        "lead_time":             "lead_time",
-        "throughput":            "throughput",
-        "time_in_columns":       "time_in_columns",
-        "flow_efficiency":       "flow_efficiency",
-        "work_start_efficiency": "work_start_efficiency",
-        "wip":                   "wip",
-        "blockers":              "blockers",
-        "net_flow":              "net_flow",
-        "arrival_departure":     "arrival_departure",
-    }
-    for key, cfg in CHART_PROMPTS.items():
-        lines.append(f"### {cfg['title']} (key: \"{key}\")")
-        lines.append(cfg["instruction"].strip())
-        lines.append("")
-
-    lines.append("=" * 70)
-    lines.append("HOLISTIC OVERVIEW")
-    lines.append("=" * 70)
-    lines.append("")
-    lines.append(OVERVIEW_PROMPT.strip())
-    lines.append("")
-    lines.append(
-        'Add the overview as two keys in your JSON response: '
-        '"overview_narrative" and "overview_actions" (array of strings).'
-    )
-    lines.append("")
-    lines.append("Return ONLY a valid JSON object. No markdown fences, no explanation.")
-
-    return "\n".join(lines)
+    template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
+    return template.replace("{{SUMMARY_JSON}}", json.dumps(summary, indent=2))
 
 
 # ---------------------------------------------------------------------------
@@ -794,7 +741,7 @@ def write_plain_prompt(summary):
 
 def write_copilot_prompt(summary):
     import subprocess
-    PROMPTS_DIR.mkdir(exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
 ---
 mode: ask
