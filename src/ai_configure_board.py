@@ -13,18 +13,18 @@ Reads:
   output/data/data_quality_report.json
 
 Writes (depending on --mode):
-  prompts/interpret_config.prompt.md      (--mode copilot)  open in VS Code chat, pick your model
-  output/data/interpret_config_prompt.txt (--mode prompt)   paste into any AI assistant
+  prompts/ai_configure_board.prompt.md      (--mode copilot)  open in VS Code chat, pick your model
+  output/data/ai_configure_board_prompt.txt (--mode prompt)   paste into any AI assistant
   output/data/config_draft.json           (--mode openai)   direct API call (not yet implemented)
 
 After any mode: review output/data/config_draft.json and save as output/data/config.json
 to confirm your interpretation choices. The metrics script requires config.json.
 
 Usage:
-  python src/interpret_config.py
-  python src/interpret_config.py --mode copilot
-  python src/interpret_config.py --mode prompt
-  python src/interpret_config.py --mode openai
+  python src/ai_configure_board.py
+  python src/ai_configure_board.py --mode copilot
+  python src/ai_configure_board.py --mode prompt
+  python src/ai_configure_board.py --mode openai
 """
 
 import json
@@ -44,8 +44,8 @@ CONTEXT_PATH = DATA_DIR / "context.json"
 HISTORY_PATH = DATA_DIR / "work_item_history.json"
 QUALITY_PATH = DATA_DIR / "data_quality_report.json"
 CONFIG_DRAFT_PATH = DATA_DIR / "config_draft.json"
-PROMPT_TXT_PATH = DATA_DIR / "interpret_config_prompt.txt"
-PROMPT_MD_PATH = PROMPTS_DIR / "interpret_config.prompt.md"
+PROMPT_TXT_PATH = DATA_DIR / "ai_configure_board_prompt.txt"
+PROMPT_MD_PATH = PROMPTS_DIR / "ai_configure_board.prompt.md"
 
 VIRTUAL_COLUMNS = {"Backlog"}
 BLOCKED_KEYWORDS = ("block", "impede", "impediment", "on hold", "hold")
@@ -369,7 +369,7 @@ Before it can compute metrics, four configuration decisions must be made.
 Board structure and card rules: #file:output/data/context.json
 Data quality findings: #file:output/data/data_quality_report.json
 
-The script `src/interpret_config.py` also performed an automated analysis.
+The script `src/ai_configure_board.py` also performed an automated analysis.
 Its findings are embedded below.
 
 """
@@ -412,7 +412,7 @@ def write_plain_prompt(findings):
     print(f"Written: {PROMPT_TXT_PATH}")
     print()
     print("Next steps:")
-    print("  1. Open output/data/interpret_config_prompt.txt.")
+    print("  1. Open output/data/ai_configure_board_prompt.txt.")
     print("  2. Paste the contents into any AI assistant.")
     print("  3. Copy the JSON response into output/data/config_draft.json.")
     print("  4. Review and edit config_draft.json, then save as output/data/config.json.")

@@ -8,7 +8,7 @@ Reads:  output/metrics/time_in_columns.json
 Writes: output/dashboard.html
 
 Usage:
-  python src/dashboard.py
+  python src/create_dashboard.py
 """
 
 import json

@@ -4,7 +4,7 @@ import re
 import sys
 from pathlib import Path
 
-from ado_client import (
+from util_ado import (
     ADOError,
     discover_board,
     fetch_work_item_history,

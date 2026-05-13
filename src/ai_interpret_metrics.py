@@ -12,15 +12,15 @@ Reads:
   output/data/work_item_history.json
 
 Writes (depending on --mode):
-  prompts/interpret_metrics.prompt.md      (--mode copilot)
-  output/data/interpret_metrics_prompt.txt (--mode prompt)
+  prompts/ai_interpret_metrics.prompt.md      (--mode copilot)
+  output/data/ai_interpret_metrics_prompt.txt (--mode prompt)
   output/data/insights.json               (--mode openai)
 
 Usage:
-  python src/interpret_metrics.py
-  python src/interpret_metrics.py --mode copilot
-  python src/interpret_metrics.py --mode prompt
-  python src/interpret_metrics.py --mode openai
+  python src/ai_interpret_metrics.py
+  python src/ai_interpret_metrics.py --mode copilot
+  python src/ai_interpret_metrics.py --mode prompt
+  python src/ai_interpret_metrics.py --mode openai
 """
 
 import json
@@ -46,8 +46,8 @@ CFG_PATH     = DATA_DIR / "config.json"
 WI_PATH      = DATA_DIR / "work_items.json"
 WIH_PATH     = DATA_DIR / "work_item_history.json"
 
-PROMPT_MD_PATH  = PROMPTS_DIR / "interpret_metrics.prompt.md"
-PROMPT_TXT_PATH = DATA_DIR / "interpret_metrics_prompt.txt"
+PROMPT_MD_PATH  = PROMPTS_DIR / "ai_interpret_metrics.prompt.md"
+PROMPT_TXT_PATH = DATA_DIR / "ai_interpret_metrics_prompt.txt"
 INSIGHTS_PATH   = DATA_DIR / "insights.json"
 
 # ---------------------------------------------------------------------------

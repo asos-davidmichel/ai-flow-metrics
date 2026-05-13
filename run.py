@@ -5,15 +5,17 @@ Usage:
   python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai] [--window 6m] [--clean]
 
 Runs:
-  1. main.py           — fetch board context and work items from Azure DevOps
-  2. check.py          — run data quality checks on the saved JSON files
-  3. interpret_config.py — generate AI interpretation prompt → output/data/config_draft.json
+  1. fetch_data.py         — fetch board context and work items from Azure DevOps
+  2. check_data.py         — run data quality checks on the saved JSON files
+  3. ai_configure_board.py — generate AI interpretation prompt → output/data/config_draft.json
 
 After step 3: review config_draft.json, edit if needed, save as output/data/config.json.
 
 If output/data/config.json exists, also runs:
-  4. metrics.py        — calculate time-in-columns metric → output/metrics/time_in_columns.json
-  5. dashboard.py      — generate dashboard → output/dashboard.html
+  4. calc_columns.py       — calculate time-in-columns metric → output/metrics/time_in_columns.json
+  5. calc_cycle_time.py    — calculate cycle time and throughput → output/metrics/cycle_time.json
+  6. calc_lead_time.py     — calculate lead time → output/metrics/lead_time.json
+  7. create_dashboard.py   — generate dashboard → output/dashboard.html
 
 Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 
@@ -85,7 +87,7 @@ def main():
             print("Error: --short-dwell-minutes requires an integer value.", file=sys.stderr)
             sys.exit(1)
 
-    # Forward --interpret-mode to interpret_config.py if provided (default: copilot)
+    # Forward --interpret-mode to ai_configure_board.py if provided (default: copilot)
     interpret_mode = "copilot"
     if "--interpret-mode" in sys.argv:
         idx = sys.argv.index("--interpret-mode")
@@ -106,15 +108,15 @@ def main():
             sys.exit(1)
 
     run(
-        [sys.executable, "src/main.py", board_url],
+        [sys.executable, "src/fetch_data.py", board_url],
         "Step 1 / 3 — Fetch from Azure DevOps",
     )
     run(
-        [sys.executable, "src/check.py"] + check_args,
+        [sys.executable, "src/check_data.py"] + check_args,
         "Step 2 / 3 — Data quality checks",
     )
     run(
-        [sys.executable, "src/interpret_config.py", "--mode", interpret_mode],
+        [sys.executable, "src/ai_configure_board.py", "--mode", interpret_mode],
         "Step 3 / 3 — Generate AI interpretation prompt",
     )
 
@@ -135,7 +137,7 @@ def main():
         if interpret_mode == "copilot":
             print("  1. Run the prompt that just opened in VS Code Copilot chat.")
         else:
-            print("  1. Paste output/data/interpret_config_prompt.txt into your AI assistant.")
+            print("  1. Paste output/data/ai_configure_board_prompt.txt into your AI assistant.")
         print("  2. Review output/data/config_draft.json and edit if needed.")
         print("  3. Save it as output/data/config.json to confirm your choices.")
         print()
@@ -154,16 +156,20 @@ def main():
 
     print()
     run(
-        [sys.executable, "src/metrics.py", "--window", window],
-        f"Step 4 / 6 — Calculate time-in-columns (window: {window})",
+        [sys.executable, "src/calc_columns.py", "--window", window],
+        f"Step 4 / 7 — Calculate time-in-columns (window: {window})",
     )
     run(
-        [sys.executable, "src/cycle_time.py", "--window", window],
-        f"Step 5 / 6 — Calculate cycle time (window: {window})",
+        [sys.executable, "src/calc_cycle_time.py", "--window", window],
+        f"Step 5 / 7 — Calculate cycle time (window: {window})",
     )
     run(
-        [sys.executable, "src/dashboard.py"],
-        "Step 6 / 6 — Generate dashboard",
+        [sys.executable, "src/calc_lead_time.py", "--window", window],
+        f"Step 6 / 7 — Calculate lead time (window: {window})",
+    )
+    run(
+        [sys.executable, "src/create_dashboard.py"],
+        "Step 7 / 7 — Generate dashboard",
     )
     print()
     print("Dashboard ready: output/dashboard.html")
