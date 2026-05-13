@@ -570,6 +570,9 @@ def summarise_ageing_wip(wi, wih, ctx):
                 entered = _parse_dt(seg.get("entered"))
                 if entered:
                     days_in_col = _round((now - entered).total_seconds() / 86400, 1)
+                    # Guard: a future 'entered' timestamp produces a negative value — treat as unknown
+                    if days_in_col is not None and days_in_col < 0:
+                        days_in_col = None
                 break
 
         # Days since last update from changed_date
@@ -599,12 +602,38 @@ def summarise_ageing_wip(wi, wih, ctx):
         return None
 
     ages = sorted(i["age_days"] for i in items_out if i["age_days"] is not None)
+
+    # Age band distribution
+    age_bands = {
+        "0_to_7_days":   sum(1 for a in ages if a <= 7),
+        "8_to_14_days":  sum(1 for a in ages if 8 <= a <= 14),
+        "15_to_30_days": sum(1 for a in ages if 15 <= a <= 30),
+        "over_30_days":  sum(1 for a in ages if a > 30),
+    }
+
+    # Per-column age percentiles (for wip_age_by_column chart)
+    by_col_ages = defaultdict(list)
+    for item in items_out:
+        if item["age_days"] is not None:
+            by_col_ages[item["current_column"]].append(item["age_days"])
+    per_column_age = {}
+    for col, col_ages in sorted(by_col_ages.items()):
+        col_ages_sorted = sorted(col_ages)
+        per_column_age[col] = {
+            "n":          len(col_ages_sorted),
+            "median_days": _round(col_ages_sorted[len(col_ages_sorted) // 2]),
+            "p85_days":   _round(col_ages_sorted[int(len(col_ages_sorted) * 0.85)]),
+            "max_days":   _round(max(col_ages_sorted)),
+        }
+
     return {
-        "total_wip":       len(items_out),
-        "median_age_days": _round(ages[len(ages) // 2]) if ages else None,
+        "total_wip":        len(items_out),
+        "median_age_days":  _round(ages[len(ages) // 2]) if ages else None,
         "average_age_days": _round(sum(ages) / len(ages), 1) if ages else None,
-        "p85_age_days":    _round(ages[int(len(ages) * 0.85)]) if ages else None,
-        "current_items":   sorted(items_out, key=lambda x: -(x.get("age_days") or 0)),
+        "p85_age_days":     _round(ages[int(len(ages) * 0.85)]) if ages else None,
+        "age_bands":        age_bands,
+        "per_column_age":   per_column_age,
+        "current_items":    sorted(items_out, key=lambda x: -(x.get("age_days") or 0)),
     }
 
 
@@ -751,12 +780,25 @@ def summarise_bugs(wi, ctx, ct):
                 if dt:
                     bug_by_week[_week_start(dt)] += 1
 
+    # Weekly bug creations from created_date on all_bugs within the analysis window
+    bug_created_by_week = defaultdict(int)
+    if ct:
+        window = ct.get("window", {})
+        w_start_dt = _parse_dt(window.get("start"))
+        w_end_dt   = _parse_dt(window.get("end"))
+        if w_start_dt and w_end_dt:
+            for item in all_bugs:
+                created = _parse_dt(item.get("created_date"))
+                if created and w_start_dt <= created <= w_end_dt:
+                    bug_created_by_week[_week_start(created)] += 1
+
     return {
-        "open_bug_count":                 len(open_bugs),
-        "total_bug_count":                len(all_bugs),
-        "bug_share_of_wip_pct":           bug_pct_wip,
+        "open_bug_count":                  len(open_bugs),
+        "total_bug_count":                 len(all_bugs),
+        "bug_share_of_wip_pct":            bug_pct_wip,
         "open_bug_distribution_by_column": dict(by_col),
-        "bug_completions_by_week":        dict(sorted(bug_by_week.items())),
+        "bug_completions_by_week":         dict(sorted(bug_by_week.items())),
+        "bug_creations_by_week":           dict(sorted(bug_created_by_week.items())),
     }
 
 
@@ -812,6 +854,185 @@ def summarise_throughput_weekly(ct, wih, ctx):
 # Assemble all summaries
 # ---------------------------------------------------------------------------
 
+def summarise_blocker_timeline(wi, wih, ctx, ct):
+    """Weekly count of items that were blocked or on-hold during each week of the analysis window.
+
+    Mirrors the JS logic in blockerTimelineChart: an item is counted in a week
+    if its blocking interval overlaps any part of that week.
+    """
+    if not wi or not wih or not ctx or not ct:
+        return None
+
+    BLOCKED_TAGS = ["blocked", "blocked by bag", "blocked by plp"]
+    HOLD_TAGS    = ["hold"]
+
+    window    = ct.get("window", {})
+    win_start = _parse_dt(window.get("start"))
+    win_end   = _parse_dt(window.get("end"))
+    if not win_start or not win_end:
+        return None
+
+    ws_ms    = win_start.timestamp() * 1000
+    we_ms    = win_end.timestamp() * 1000
+    week_ms  = 7 * 24 * 3600 * 1000
+    out_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
+
+    # Build weeks list (Monday-aligned)
+    weeks_ms = []
+    w = ws_ms
+    while w < we_ms:
+        weeks_ms.append(w)
+        w += week_ms
+
+    # Tag history index
+    tag_hist_map = {}
+    for h in wih:
+        tag_hist_map[h["id"]] = [
+            e for e in h.get("tag_history", []) if e.get("field") == "System.Tags"
+        ]
+
+    def _ptags(s):
+        return [t.strip().lower() for t in (s or "").split(";") if t.strip()]
+
+    def _has_b(s): return any(t in BLOCKED_TAGS for t in _ptags(s))
+    def _has_h(s): return any(t in HOLD_TAGS    for t in _ptags(s))
+
+    blocked_per_week = defaultdict(int)
+    hold_per_week    = defaultdict(int)
+
+    for item in wi:
+        if item.get("column") in out_cols:
+            continue
+
+        item_id    = item["id"]
+        tags_lower = {t.lower() for t in (item.get("tags") or [])}
+        is_b       = bool(tags_lower & set(BLOCKED_TAGS))
+        is_h       = bool(tags_lower & set(HOLD_TAGS))
+
+        history  = sorted(tag_hist_map.get(item_id, []), key=lambda e: e.get("changed_at", ""))
+        b_start  = h_start = None
+        b_ivs, h_ivs = [], []
+
+        for ev in history:
+            ev_dt = _parse_dt(ev.get("changed_at"))
+            if not ev_dt:
+                continue
+            ms    = ev_dt.timestamp() * 1000
+            had_b, now_b = _has_b(ev.get("old_value")), _has_b(ev.get("new_value"))
+            had_h, now_h = _has_h(ev.get("old_value")), _has_h(ev.get("new_value"))
+            if not had_b and now_b:             b_start = ms
+            if had_b and not now_b and b_start: b_ivs.append((b_start, ms)); b_start = None
+            if not had_h and now_h:             h_start = ms
+            if had_h and not now_h and h_start: h_ivs.append((h_start, ms)); h_start = None
+
+        if b_start and is_b: b_ivs.append((b_start, we_ms))
+        if h_start and is_h: h_ivs.append((h_start, we_ms))
+
+        # Clip to window
+        def _clip(s, e):
+            cs = max(s, ws_ms)
+            ce = min(e, we_ms)
+            return (cs, ce) if ce > cs else None
+
+        b_ivs = [r for r in (_clip(*iv) for iv in b_ivs) if r]
+        h_ivs = [r for r in (_clip(*iv) for iv in h_ivs) if r]
+
+        if not b_ivs and not h_ivs:
+            continue
+
+        for wk_ms in weeks_ms:
+            wk_end_ms = wk_ms + week_ms
+            wk_str    = datetime.utcfromtimestamp(wk_ms / 1000).strftime("%Y-%m-%d")
+            if any(s < wk_end_ms and e > wk_ms for s, e in b_ivs):
+                blocked_per_week[wk_str] += 1
+            if any(s < wk_end_ms and e > wk_ms for s, e in h_ivs):
+                hold_per_week[wk_str] += 1
+
+    all_weeks = sorted(set(list(blocked_per_week.keys()) + list(hold_per_week.keys())))
+    if not all_weeks:
+        return None
+
+    blocked_vals = [blocked_per_week.get(w, 0) for w in all_weeks]
+    hold_vals    = [hold_per_week.get(w, 0)    for w in all_weeks]
+    total_vals   = [b + h for b, h in zip(blocked_vals, hold_vals)]
+
+    b_slope = _linreg_slope(list(enumerate(blocked_vals)))
+    t_slope = _linreg_slope(list(enumerate(total_vals)))
+
+    return {
+        "blocked_per_week":              {w: blocked_per_week.get(w, 0) for w in all_weeks},
+        "on_hold_per_week":              {w: hold_per_week.get(w, 0)    for w in all_weeks},
+        "peak_blocked_in_one_week":      max(blocked_vals, default=0),
+        "peak_on_hold_in_one_week":      max(hold_vals, default=0),
+        "weeks_with_any_blocked":        sum(1 for v in blocked_vals if v > 0),
+        "blocked_trend_slope_per_week":  _round(b_slope, 2) if b_slope is not None else None,
+        "total_blocked_trend_direction": (
+            "increasing" if t_slope and t_slope > 0.1
+            else "decreasing" if t_slope and t_slope < -0.1
+            else "stable"
+        ),
+    }
+
+
+def summarise_wip_over_time(wih, ctx, ct):
+    """Weekly WIP snapshot count for trend analysis (feeds wip_over_time chart insight)."""
+    if not wih or not ctx or not ct:
+        return None
+
+    window    = ct.get("window", {})
+    win_start = _parse_dt(window.get("start"))
+    win_end   = _parse_dt(window.get("end"))
+    if not win_start or not win_end:
+        return None
+
+    in_prog_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"}
+    ws_ms   = win_start.timestamp() * 1000
+    we_ms   = win_end.timestamp() * 1000
+    week_ms = 7 * 24 * 3600 * 1000
+
+    weeks_ms = []
+    w = ws_ms
+    while w <= we_ms:
+        weeks_ms.append(w)
+        w += week_ms
+
+    weekly_wip = []
+    for wk_ms in weeks_ms:
+        wk_str    = datetime.utcfromtimestamp(wk_ms / 1000).strftime("%Y-%m-%d")
+        wip_count = 0
+        for h in wih:
+            for seg in h.get("column_history", []):
+                if seg.get("value") not in in_prog_cols:
+                    continue
+                entered  = _parse_dt(seg.get("entered"))
+                left     = _parse_dt(seg.get("left"))
+                ent_ms   = entered.timestamp() * 1000 if entered else 0
+                left_ms  = left.timestamp() * 1000 if left else float("inf")
+                if ent_ms <= wk_ms < left_ms:
+                    wip_count += 1
+                    break  # item counted once per snapshot
+        weekly_wip.append({"week_start": wk_str, "wip": wip_count})
+
+    if not weekly_wip:
+        return None
+
+    wip_values = [entry["wip"] for entry in weekly_wip]
+    slope      = _linreg_slope(list(enumerate(wip_values)))
+
+    return {
+        "weekly_snapshots":      weekly_wip,
+        "mean_wip":              _round(sum(wip_values) / len(wip_values), 1),
+        "min_wip":               min(wip_values),
+        "max_wip":               max(wip_values),
+        "trend_slope_per_week":  _round(slope, 2) if slope is not None else None,
+        "trend_direction":       (
+            "increasing" if slope and slope > 0.1
+            else "decreasing" if slope and slope < -0.1
+            else "stable"
+        ),
+    }
+
+
 def build_summary():
     ct  = load(CT_PATH,  required=False)
     lt  = load(LT_PATH,  required=False)
@@ -833,9 +1054,11 @@ def build_summary():
         "flow_efficiency":       summarise_flow_efficiency(tic, cfg),
         "work_start_efficiency": summarise_work_start_efficiency(ct, lt),
         "wip":                   summarise_wip(wi, ctx, ct),
+        "wip_over_time":         summarise_wip_over_time(wih, ctx, ct),
         "ageing_wip":            summarise_ageing_wip(wi, wih, ctx),
         "stale_work":            summarise_stale_work(wi, ctx),
         "blockers":              summarise_blockers(wi, wih, ctx, ct),
+        "blocker_timeline":      summarise_blocker_timeline(wi, wih, ctx, ct),
         "current_blocked_items": summarise_blocked_items_detail(wi, wih, ctx, ct),
         "bugs":                  summarise_bugs(wi, ctx, ct),
         "net_flow":              summarise_net_flow(ct, ctx),

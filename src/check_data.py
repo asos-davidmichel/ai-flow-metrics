@@ -155,6 +155,34 @@ def check_short_dwell_spans(history, threshold_minutes):
     }
 
 
+def check_future_column_timestamps(history):
+    """Flag items where any column_history 'entered' timestamp is in the future.
+
+    A future 'entered' timestamp causes a negative days_in_current_column value,
+    which corrupts WIP age metrics and can pollute AI analysis summaries.
+    Root cause is typically a null or malformed timestamp stored by ADO.
+    """
+    now = datetime.now(timezone.utc)
+    flagged = []
+    for h in history:
+        future_spans = []
+        for span in h.get("column_history", []):
+            entered = parse_dt(span.get("entered"))
+            if entered and entered > now:
+                future_spans.append({
+                    "column": span.get("value"),
+                    "entered": span.get("entered"),
+                })
+        if future_spans:
+            flagged.append({"id": h["id"], "future_spans": future_spans})
+    return {
+        "count": len(flagged),
+        "items": flagged,
+        "note": "Items with future 'entered' timestamps produce negative days_in_current_column. "
+                "Fix the source timestamp in ADO or exclude the affected column span.",
+    }
+
+
 def check_unassigned_in_progress(work_items, context):
     in_progress_cols = {
         c["name"] for c in context.get("columns", []) if c.get("column_type") == "inProgress"
@@ -299,6 +327,7 @@ def main():
     empty_col = check_empty_column_history(history)
     mismatch = check_snapshot_history_mismatch(work_items, history)
     unknown_lanes = check_unknown_swimlanes(work_items, context)
+    future_timestamps = check_future_column_timestamps(history)
 
     # Build exclusion list: items with data problems that would corrupt analysis
     excluded = {}
@@ -328,6 +357,7 @@ def main():
             "unknown_states_in_history": check_unknown_states_in_history(history, context),
             "historical_unknown_columns": check_unknown_historical_columns(history, context),
             "short_dwell_spans": short_dwells,
+            "future_column_timestamps": future_timestamps,
             "unassigned_in_progress": check_unassigned_in_progress(work_items, context),
             "broken_parent_references": refs["broken_parents"],
             "broken_child_references": refs["broken_children"],
@@ -346,7 +376,8 @@ def main():
         ("Unknown states in history *",   checks["unknown_states_in_history"]["count"]),
         ("Historical unknown columns *",  checks["historical_unknown_columns"]["count"]),
         (f"Short dwell spans (<{threshold}m)", checks["short_dwell_spans"]["count"]),
-        ("Unassigned in-progress items",  checks["unassigned_in_progress"]["count"]),
+        ("Future column entry timestamps !",  checks["future_column_timestamps"]["count"]),
+        ("Unassigned in-progress items",      checks["unassigned_in_progress"]["count"]),
         ("Broken parent references",      checks["broken_parent_references"]["count"]),
         ("Broken child references",       checks["broken_child_references"]["count"]),
         ("Broken dependency references",  checks["broken_dependency_references"]["count"]),

@@ -405,49 +405,53 @@
       </div>
     </div>
 
-    <!-- Cycle time: scatter + rolling side by side -->
+    <!-- Cycle time: scatter + rolling in one card -->
     <div id="cycleTimeSection" style="display:none;">
-      <div class="card-row">
-        <div class="card">
-          <div class="card-header">
-            <div><h2>Cycle time &mdash; scatter</h2></div>
-            <div id="ctToggles" class="type-toggles"></div>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;">
+          <div>
+            <div class="card-header">
+              <div><h2>Cycle time &mdash; scatter</h2></div>
+              <div id="ctToggles" class="type-toggles"></div>
+            </div>
+            <div class="chart-wrap" style="height:340px;">
+              <canvas id="ctScatterChart"></canvas>
+            </div>
           </div>
-          <div class="chart-wrap" style="height:340px;">
-            <canvas id="ctScatterChart"></canvas>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header">
-            <h2>Cycle time &mdash; weekly average &amp; trend</h2>
-            <div id="ctTogglesRolling" class="type-toggles"></div>
-          </div>
-          <div class="chart-wrap" style="height:340px;">
-            <canvas id="ctRollingChart"></canvas>
+          <div>
+            <div class="card-header">
+              <h2>Cycle time &mdash; weekly average &amp; trend</h2>
+              <div id="ctTogglesRolling" class="type-toggles"></div>
+            </div>
+            <div class="chart-wrap" style="height:340px;">
+              <canvas id="ctRollingChart"></canvas>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Lead time: scatter + rolling side by side -->
+    <!-- Lead time: scatter + rolling in one card -->
     <div id="leadTimeSection" style="display:none;">
-      <div class="card-row">
-        <div class="card">
-          <div class="card-header">
-            <div><h2>Lead time &mdash; scatter</h2></div>
-            <div id="ltToggles" class="type-toggles"></div>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;">
+          <div>
+            <div class="card-header">
+              <div><h2>Lead time &mdash; scatter</h2></div>
+              <div id="ltToggles" class="type-toggles"></div>
+            </div>
+            <div class="chart-wrap" style="height:340px;">
+              <canvas id="ltScatterChart"></canvas>
+            </div>
           </div>
-          <div class="chart-wrap" style="height:340px;">
-            <canvas id="ltScatterChart"></canvas>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header">
-            <h2>Lead time &mdash; weekly average &amp; trend</h2>
-            <div id="ltTogglesRolling" class="type-toggles"></div>
-          </div>
-          <div class="chart-wrap" style="height:340px;">
-            <canvas id="ltRollingChart"></canvas>
+          <div>
+            <div class="card-header">
+              <h2>Lead time &mdash; weekly average &amp; trend</h2>
+              <div id="ltTogglesRolling" class="type-toggles"></div>
+            </div>
+            <div class="chart-wrap" style="height:340px;">
+              <canvas id="ltRollingChart"></canvas>
+            </div>
           </div>
         </div>
       </div>
@@ -3969,18 +3973,27 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
   [
     { key: 'throughput',            primary: 'throughputChart',      secondary: [],                                                                              primaryLabel: 'Throughput' },
-    { key: 'cycle_time',            primary: 'ctScatterChart',       secondary: ['ctRollingChart'],                                                              primaryLabel: 'Cycle time — scatter' },
-    { key: 'lead_time',             primary: 'ltScatterChart',       secondary: ['ltRollingChart'],                                                              primaryLabel: 'Lead time — scatter' },
+    { key: 'cycle_time',            primary: 'ctScatterChart',       secondary: [],               primaryLabel: 'Cycle time' },
+    { key: 'lead_time',             primary: 'ltScatterChart',       secondary: [],               primaryLabel: 'Lead time' },
     { key: 'time_in_columns',       primary: 'timeInColumnsChart',   secondary: [],                                                                              primaryLabel: 'Time in columns' },
     { key: 'flow_efficiency',       primary: 'flowEfficiencyChart',  secondary: [],                                                                              primaryLabel: 'Flow efficiency' },
     { key: 'work_start_efficiency', primary: 'startEfficiencyChart', secondary: [],                                                                              primaryLabel: 'Work start efficiency' },
-    { key: 'wip',                   primary: 'agingWipChart',        secondary: ['wipAgeScatterChart'],                                                          primaryLabel: 'Aging Work In Progress' },
-    { key: 'wip_over_time',         primary: 'dailyWipChart',        secondary: ['wipAgeStackedChart'],                                                          primaryLabel: 'Daily WIP over time' },
-    { key: 'blockers',              primary: 'currentBlockedChart',  secondary: ['blockerTimelineChart', 'blockedByColumnChart', 'daysLostBlockedChart'],        primaryLabel: 'Current Blocked Items' },
+    { key: 'wip',                   primary: 'agingWipChart',        secondary: [],               primaryLabel: 'Aging Work In Progress' },
+    { key: 'wip_over_time',         primary: 'dailyWipChart',        secondary: [],               primaryLabel: 'Daily WIP over time' },
+    { key: 'wip_age_distribution',   primary: 'wipAgeStackedChart',   secondary: [],               primaryLabel: 'Daily WIP × Work Item Age' },
+    { key: 'wip_age_by_column',     primary: 'wipAgeScatterChart',   secondary: [],               primaryLabel: 'WIP age by column' },
+    { key: 'blockers',              primary: 'currentBlockedChart',  secondary: [],                                                                              primaryLabel: 'Current Blocked Items' },
+    { key: 'blocker_timeline',      primary: 'blockerTimelineChart', secondary: [],                                                                              primaryLabel: 'Blocker timeline' },
+    { key: 'blockers_by_column',    primary: 'blockedByColumnChart', secondary: [],                                                                              primaryLabel: 'Blocked items by column' },
+    { key: 'days_lost_to_blockers', primary: 'daysLostBlockedChart', secondary: [],                                              primaryLabel: 'Days Lost to Being Blocked' },
     { key: 'stale_work',            primary: 'staleWorkChart',       secondary: [],                                                                              primaryLabel: 'Stale Work' },
     { key: 'net_flow',              primary: 'netFlowChart',         secondary: [],                                                                              primaryLabel: 'Net Flow' },
     { key: 'arrival_departure',     primary: 'adRatioChart',         secondary: [],                                                                              primaryLabel: 'Arrival / Departure ratio' },
-    { key: 'bugs',                  primary: 'bugOpenChart',         secondary: ['bugIntakeChart', 'bugPctNewChart', 'bugCreatedVsClosedChart', 'bugColumnChart'], primaryLabel: 'Bugs in system' },
+    { key: 'bugs',                  primary: 'bugOpenChart',         secondary: [],                                                                              primaryLabel: 'Bugs in system' },
+    { key: 'bug_intake',            primary: 'bugIntakeChart',       secondary: [],                                                                              primaryLabel: 'Bug intake' },
+    { key: 'bug_pct',               primary: 'bugPctNewChart',       secondary: [],                                                                              primaryLabel: 'Bug %' },
+    { key: 'bug_net_flow',          primary: 'bugCreatedVsClosedChart', secondary: [],                                                                            primaryLabel: 'Bug net flow' },
+    { key: 'bug_distribution',      primary: 'bugColumnChart',       secondary: [],                                                                              primaryLabel: 'Bug distribution by column' },
     { key: 'cfd',                   primary: 'cfdChart',             secondary: [],                                                                              primaryLabel: 'Cumulative Flow' },
   ].forEach(({ key, primary, secondary, primaryLabel }) => {
     injectIntoCard(primary, key);

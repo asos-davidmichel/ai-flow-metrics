@@ -40,8 +40,10 @@ Return a single valid JSON object with the following keys. No markdown fences. N
 
 An object with one key per chart. Supported keys:
 cycle_time, lead_time, throughput, time_in_columns, flow_efficiency,
-work_start_efficiency, wip, wip_over_time, blockers, stale_work,
-net_flow, arrival_departure, bugs, cfd
+work_start_efficiency, wip, wip_over_time, wip_age_distribution,
+wip_age_by_column, blockers, blockers_by_column, blocker_timeline,
+days_lost_to_blockers, stale_work, net_flow, arrival_departure,
+bugs, bug_intake, bug_pct, bug_net_flow, bug_distribution, cfd
 
 For each chart, provide:
 - "insight": 2-3 sentences interpreting the pattern and its implications for the team
@@ -64,9 +66,19 @@ work_start_efficiency — What does the wait before development starts imply abo
 
 wip — Is WIP likely causing multitasking overhead? Which columns hold the most inventory? What would reducing WIP do to cycle time via Little's Law?
 
-wip_over_time — Is daily WIP trending up or down? What does the age distribution of in-progress items reveal about how long work has been sitting? What does the trend imply about whether WIP is being managed or accumulating passively?
+wip_over_time — Is daily WIP trending up or down? What does the trend imply about whether WIP is being managed or accumulating passively?
+
+wip_age_distribution — What does the age breakdown of in-progress items reveal? Is the proportion of old items (>14 days, >30 days) growing or stable? What does a dominant "Age >14 days" band mean for the team's ability to finish what it starts?
+
+wip_age_by_column — Which columns hold the oldest active items? Is age concentrated downstream (review, QA, release) or spread across all stages? What does the spread between median and P85 per column reveal about where ageing is a systemic problem vs. an outlier problem?
 
 blockers — What is the systemic cost of blocking? Are blockers concentrated in specific columns? What does the pattern suggest about how the team manages dependencies?
+
+blockers_by_column — Which columns have the most blocked items? What does the concentration of blocked items in pre-development stages (New, Ready for Dev) vs. downstream stages (In Review, QA) reveal about whether blocking is a demand-side or delivery-side problem? Use blockers.blocked_by_column.
+
+blocker_timeline — Is the number of blocked or on-hold items per week increasing, decreasing, or stable? Were there periods where blocking spiked? What does the trend in weekly blocked counts reveal about whether blocking is becoming more or less structural over time? Use blocker_timeline.blocked_per_week and on_hold_per_week, and blocker_timeline.total_blocked_trend_direction.
+
+days_lost_to_blockers — For items that are blocked, what proportion of their total in-progress time has been spent blocked? Are there items where blocked time exceeds unblocked time? What does the ratio of days blocked vs days not blocked reveal about whether blocking is an incidental delay or a structural condition?
 
 stale_work — What does the volume of stale items reveal about backlog hygiene? Are stale items concentrated in specific states or columns? What risk does untouched work pose to planning accuracy?
 
@@ -75,6 +87,14 @@ net_flow — Is the current pattern sustainable? What does it imply about capaci
 arrival_departure — Which columns are accumulating work? Is the pattern likely temporary or structural? Where should improvement effort focus?
 
 bugs — Is the bug count growing, stable, or shrinking? What does the ratio of bug WIP to bug completions reveal? Are bugs being resolved continuously or in batches?
+
+bug_intake — Is the rate at which new bugs are being created increasing, decreasing, or stable? Are there spike weeks that correlate with delivery events? What does the total bugs created vs. completed imply about whether the team is building up a quality debt? Use bugs.bug_creations_by_week.
+
+bug_pct — What does the share of bugs in WIP and in new work reveal about quality trends? Is the bug proportion of WIP growing over time? What does a high % of WIP being bugs mean for feature delivery capacity?
+
+bug_net_flow — Is the team resolving more bugs than it creates each week, or falling behind? What does persistent negative net flow on bugs imply about the team's quality debt trajectory? Are there weeks where bug creation spikes that correlate with delivery events?
+
+bug_distribution — Which columns hold the most open bugs? What does the concentration of bugs in New (untriaged) vs in-progress columns reveal about how bugs are being managed? What is the risk if bugs accumulate in review or QA?
 
 cfd — What does the shape of the cumulative flow bands reveal about flow smoothness? Is work accumulating between any two columns (widening bands)? Does the CFD confirm or contradict the bottleneck identified in time_in_columns?
 
