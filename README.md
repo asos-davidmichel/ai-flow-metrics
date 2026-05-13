@@ -50,26 +50,37 @@ python src/create_dashboard.py
 
 ```mermaid
 flowchart TD
-    A([▶ run.py]) --> B
+    ADO[("☁ Azure DevOps\nboard URL + PAT")]:::external
 
-    B["1 · fetch_data.py\nFetch board context & work items from ADO"]
-    B --> C["2 · check_data.py\nData quality checks"]
-    C --> D["3 · ai_configure_board.py\nPropose config_draft.json via AI"]
-    D --> E{{"⏸ Review config_draft.json\n→ save as config.json"}}
-    E --> F["4 · calc_columns.py\nTime in columns"]
-    F --> G["5 · calc_cycle_time.py\nCycle time & throughput"]
-    G --> H["6 · calc_lead_time.py\nLead time"]
-    H --> I["7 · create_dashboard.py\nRender output/dashboard.html"]
+    fetch["1 · fetch_data.py\nFetch board context & work items"]:::script
+    check["2 · check_data.py\nData quality checks"]:::script
+    aiconf["3 · ai_configure_board.py\nPropose board config via AI"]:::ai
+    review{{"✎  Review config_draft.json\n→ edit if needed → save as config.json"}}:::manual
+    calccol["4 · calc_columns.py\nTime in columns"]:::script
+    calcct["5 · calc_cycle_time.py\nCycle time & throughput"]:::script
+    calclt["6 · calc_lead_time.py\nLead time"]:::script
+    dash["7 · create_dashboard.py\nRender dashboard"]:::script
+    out(["🌐 dashboard.html"]):::output
 
-    I --> J(["🌐 Open dashboard.html"])
+    aimetrics["ai_interpret_metrics.py\nGenerate chart insights"]:::ai
+    insights[("insights.json")]:::file
 
-    subgraph AI ["AI interpretation (optional)"]
-        direction LR
-        K["ai_interpret_metrics.py\n--mode copilot / prompt / openai"]
-        K --> L[("output/data/insights.json")]
-        L --> I
-    end
+    ADO -->|"reads via REST API"| fetch
+    fetch --> check --> aiconf --> review
+    review --> calccol --> calcct --> calclt --> dash
+    aimetrics -->|"--mode copilot / prompt / openai"| insights
+    insights -.->|"optional enrichment"| dash
+    dash --> out
+
+    classDef script  fill:#667eea,color:#fff,stroke:#4c51bf
+    classDef ai      fill:#48bb78,color:#fff,stroke:#276749
+    classDef manual  fill:#f6ad55,color:#7b341e,stroke:#dd6b20
+    classDef external fill:#e2e8f0,color:#2d3748,stroke:#a0aec0
+    classDef file    fill:#f7fafc,color:#4a5568,stroke:#cbd5e0
+    classDef output  fill:#fefcbf,color:#744210,stroke:#d69e2e
 ```
+
+> 🟦 Python script &nbsp;·&nbsp; 🟩 AI-driven &nbsp;·&nbsp; 🟧 Manual step &nbsp;·&nbsp; ⬜ External system
 
 | Step | Script | What it does |
 |------|--------|--------------|
