@@ -541,6 +541,273 @@ def summarise_ad_ratio(ct, ctx, wih):
     }
 
 
+def summarise_ageing_wip(wi, wih, ctx):
+    """Current in-progress items with age, time in current column, and blocked status."""
+    if not wi or not ctx:
+        return None
+
+    now          = datetime.now(timezone.utc)
+    in_prog_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"}
+    BLOCKED_TAGS = {"blocked", "blocked by bag", "blocked by plp"}
+    HOLD_TAGS    = {"hold"}
+    wih_map      = {h["id"]: h for h in (wih or [])}
+
+    items_out = []
+    for item in wi:
+        if item.get("column") not in in_prog_cols:
+            continue
+        item_id = item["id"]
+        h = wih_map.get(item_id, {})
+
+        # Age: days since board_entry_date, falling back to created_date
+        board_entry = _parse_dt(h.get("board_entry_date") or item.get("created_date"))
+        age_days    = _round((now - board_entry).total_seconds() / 86400, 1) if board_entry else None
+
+        # Days in current column: latest column_history entry with left=None for this column
+        days_in_col = None
+        for seg in reversed(h.get("column_history", [])):
+            if seg.get("value") == item.get("column") and seg.get("left") is None:
+                entered = _parse_dt(seg.get("entered"))
+                if entered:
+                    days_in_col = _round((now - entered).total_seconds() / 86400, 1)
+                break
+
+        # Days since last update from changed_date
+        changed           = _parse_dt(item.get("changed_date"))
+        days_since_update = _round((now - changed).total_seconds() / 86400, 1) if changed else None
+
+        # Blocked status from current tags
+        tags_lower = {t.lower() for t in (item.get("tags") or [])}
+        if tags_lower & BLOCKED_TAGS:
+            blocked_status = "Blocked"
+        elif tags_lower & HOLD_TAGS:
+            blocked_status = "On Hold"
+        else:
+            blocked_status = None
+
+        items_out.append({
+            "id":                    item_id,
+            "type":                  item.get("type"),
+            "current_column":        item.get("column"),
+            "age_days":              age_days,
+            "days_in_current_column": days_in_col,
+            "days_since_last_update": days_since_update,
+            "blocked_status":        blocked_status,
+        })
+
+    if not items_out:
+        return None
+
+    ages = sorted(i["age_days"] for i in items_out if i["age_days"] is not None)
+    return {
+        "total_wip":       len(items_out),
+        "median_age_days": _round(ages[len(ages) // 2]) if ages else None,
+        "average_age_days": _round(sum(ages) / len(ages), 1) if ages else None,
+        "p85_age_days":    _round(ages[int(len(ages) * 0.85)]) if ages else None,
+        "current_items":   sorted(items_out, key=lambda x: -(x.get("age_days") or 0)),
+    }
+
+
+def summarise_stale_work(wi, ctx, threshold_days=30):
+    """Items not in done columns with no update for threshold_days or more."""
+    if not wi or not ctx:
+        return None
+
+    now      = datetime.now(timezone.utc)
+    out_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
+
+    stale = []
+    for item in wi:
+        if item.get("column") in out_cols:
+            continue
+        changed = _parse_dt(item.get("changed_date"))
+        if not changed:
+            continue
+        days_since = (now - changed).total_seconds() / 86400
+        if days_since >= threshold_days:
+            stale.append({
+                "id":                    item["id"],
+                "type":                  item.get("type"),
+                "current_column":        item.get("column"),
+                "days_since_last_update": _round(days_since, 1),
+                "state":                 item.get("state"),
+            })
+
+    if not stale:
+        return None
+
+    stale.sort(key=lambda x: -(x["days_since_last_update"] or 0))
+    return {
+        "threshold_days": threshold_days,
+        "count":          len(stale),
+        "items":          stale,
+    }
+
+
+def summarise_blocked_items_detail(wi, wih, ctx, ct):
+    """Currently blocked/on-hold items with computed days-blocked and last-update age."""
+    if not wi or not ctx:
+        return None
+
+    BLOCKED_TAGS = ["blocked", "blocked by bag", "blocked by plp"]
+    HOLD_TAGS    = ["hold"]
+
+    now      = datetime.now(timezone.utc)
+    out_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
+
+    tag_hist_map = {}
+    if wih:
+        for h in wih:
+            tag_hist_map[h["id"]] = [
+                e for e in h.get("tag_history", []) if e.get("field") == "System.Tags"
+            ]
+
+    win_end  = _parse_dt(ct.get("window", {}).get("end")) if ct else None
+    ref_date = win_end or now
+    ref_ms   = ref_date.timestamp() * 1000
+
+    def _ptags(s):
+        return [t.strip().lower() for t in (s or "").split(";") if t.strip()]
+
+    def _has_b(s): return any(t in BLOCKED_TAGS for t in _ptags(s))
+    def _has_h(s): return any(t in HOLD_TAGS    for t in _ptags(s))
+
+    result = []
+    for item in wi:
+        if item.get("column") in out_cols:
+            continue
+        tags_lower = {t.lower() for t in (item.get("tags") or [])}
+        is_blocked = bool(tags_lower & set(BLOCKED_TAGS))
+        is_on_hold = bool(tags_lower & set(HOLD_TAGS))
+        if not is_blocked and not is_on_hold:
+            continue
+
+        # Compute total blocked / on-hold time from tag history
+        history  = sorted(tag_hist_map.get(item["id"], []), key=lambda e: e.get("changed_at", ""))
+        b_start  = h_start = None
+        total_ms = 0
+        for ev in history:
+            ev_dt = _parse_dt(ev.get("changed_at"))
+            if not ev_dt:
+                continue
+            ms     = ev_dt.timestamp() * 1000
+            had_b, now_b = _has_b(ev.get("old_value")), _has_b(ev.get("new_value"))
+            had_h, now_h = _has_h(ev.get("old_value")), _has_h(ev.get("new_value"))
+            if not had_b and now_b:              b_start = ms
+            if had_b and not now_b and b_start:  total_ms += ms - b_start; b_start = None
+            if not had_h and now_h:              h_start = ms
+            if had_h and not now_h and h_start:  total_ms += ms - h_start; h_start = None
+
+        if b_start and is_blocked:  total_ms += ref_ms - b_start
+        if h_start and is_on_hold:  total_ms += ref_ms - h_start
+
+        days_blocked = _round(total_ms / 86400000, 1) if total_ms > 0 else None
+        changed      = _parse_dt(item.get("changed_date"))
+        days_since_update = _round((now - changed).total_seconds() / 86400, 1) if changed else None
+
+        result.append({
+            "id":                    item["id"],
+            "type":                  item.get("type"),
+            "current_column":        item.get("column"),
+            "blocked_status":        "Blocked" if is_blocked else "On Hold",
+            "days_blocked":          days_blocked,
+            "days_since_last_update": days_since_update,
+        })
+
+    if not result:
+        return None
+
+    result.sort(key=lambda x: -(x.get("days_blocked") or 0))
+    return result
+
+
+def summarise_bugs(wi, ctx, ct):
+    """Bug-specific metrics: open count, WIP share, weekly completions."""
+    if not wi or not ctx:
+        return None
+
+    in_prog_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"}
+    out_cols     = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
+
+    all_bugs = [i for i in wi if i.get("type") == "Bug"]
+    if not all_bugs:
+        return None
+
+    open_bugs = [i for i in all_bugs if i.get("column") not in out_cols]
+    by_col    = defaultdict(int)
+    for b in open_bugs:
+        by_col[b.get("column", "Unknown")] += 1
+
+    total_wip    = [i for i in wi if i.get("column") in in_prog_cols]
+    wip_bug_count = sum(1 for i in total_wip if i.get("type") == "Bug")
+    bug_pct_wip  = _round(wip_bug_count / len(total_wip) * 100) if total_wip else None
+
+    # Weekly bug completions from throughput_items (includes items without clock_start)
+    bug_by_week = defaultdict(int)
+    if ct:
+        for item in ct.get("throughput_items", ct.get("items", [])):
+            if item.get("type") == "Bug":
+                dt = _parse_dt(item.get("completed_at"))
+                if dt:
+                    bug_by_week[_week_start(dt)] += 1
+
+    return {
+        "open_bug_count":                 len(open_bugs),
+        "total_bug_count":                len(all_bugs),
+        "bug_share_of_wip_pct":           bug_pct_wip,
+        "open_bug_distribution_by_column": dict(by_col),
+        "bug_completions_by_week":        dict(sorted(bug_by_week.items())),
+    }
+
+
+def summarise_throughput_weekly(ct, wih, ctx):
+    """Weekly breakdown of completions, starts (first in-progress entry), and net flow."""
+    if not ct:
+        return None
+
+    window  = ct.get("window", {})
+    w_start = _parse_dt(window.get("start"))
+    w_end   = _parse_dt(window.get("end"))
+    if not w_start or not w_end:
+        return None
+
+    ws_ms = w_start.timestamp() * 1000
+    we_ms = w_end.timestamp() * 1000
+
+    # Completions per week (all items that completed in the window)
+    completions_by_week = defaultdict(int)
+    for item in ct.get("throughput_items", ct.get("items", [])):
+        dt = _parse_dt(item.get("completed_at"))
+        if dt and ws_ms <= dt.timestamp() * 1000 <= we_ms:
+            completions_by_week[_week_start(dt)] += 1
+
+    # Starts per week: entries into the first in-progress column within the window
+    starts_by_week = defaultdict(int)
+    if wih and ctx:
+        first_in_prog = next(
+            (c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"),
+            None,
+        )
+        if first_in_prog:
+            for h in wih:
+                for seg in h.get("column_history", []):
+                    if seg.get("value") == first_in_prog:
+                        entered = _parse_dt(seg.get("entered"))
+                        if entered and ws_ms <= entered.timestamp() * 1000 <= we_ms:
+                            starts_by_week[_week_start(entered)] += 1
+
+    all_weeks = sorted(set(list(completions_by_week.keys()) + list(starts_by_week.keys())))
+    return [
+        {
+            "week_start": w,
+            "completed":  completions_by_week.get(w, 0),
+            "started":    starts_by_week.get(w, 0),
+            "net_flow":   completions_by_week.get(w, 0) - starts_by_week.get(w, 0),
+        }
+        for w in all_weeks
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Assemble all summaries
 # ---------------------------------------------------------------------------
@@ -555,16 +822,22 @@ def build_summary():
     wih = load(WIH_PATH, required=False)
 
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "analysis_window": ct.get("window") if ct else None,
+        "generated_at":          datetime.now(timezone.utc).isoformat(),
+        "analysis_window":       ct.get("window") if ct else None,
+        "board_context":         {"team": ctx.get("team"), "project": ctx.get("project")} if ctx else None,
         "cycle_time":            summarise_cycle_time(ct),
         "lead_time":             summarise_lead_time(lt),
         "throughput":            summarise_throughput(ct),
+        "throughput_weekly":     summarise_throughput_weekly(ct, wih, ctx),
         "time_in_columns":       summarise_time_in_columns(tic),
         "flow_efficiency":       summarise_flow_efficiency(tic, cfg),
         "work_start_efficiency": summarise_work_start_efficiency(ct, lt),
         "wip":                   summarise_wip(wi, ctx, ct),
+        "ageing_wip":            summarise_ageing_wip(wi, wih, ctx),
+        "stale_work":            summarise_stale_work(wi, ctx),
         "blockers":              summarise_blockers(wi, wih, ctx, ct),
+        "current_blocked_items": summarise_blocked_items_detail(wi, wih, ctx, ct),
+        "bugs":                  summarise_bugs(wi, ctx, ct),
         "net_flow":              summarise_net_flow(ct, ctx),
         "arrival_departure":     summarise_ad_ratio(ct, ctx, wih),
     }
