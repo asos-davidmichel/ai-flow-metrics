@@ -86,9 +86,6 @@ flowchart TD
 ```
 
 > 🟦 Automated script &nbsp;·&nbsp; 🟣 Human-in-the-loop with AI &nbsp;·&nbsp; 🟩 Fully automated AI &nbsp;·&nbsp; ⬜ External system
-```
-
-> 🟦 Python script &nbsp;·&nbsp; 🟩 AI-driven &nbsp;·&nbsp; 🟧 Manual step &nbsp;·&nbsp; ⬜ External system
 
 | Step | Script | What it does |
 |------|--------|--------------|
