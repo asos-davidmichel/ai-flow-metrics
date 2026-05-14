@@ -2383,17 +2383,21 @@ function updateChart() {
   }));
 
   // Compute linear trend line over a cumulative series (indexed 0..n-1)
-  // Returns { line, slope } where slope is items/week
+  // Returns { line, slope } where slope is items/week.
+  // Index 0 is the artificial "zero at window start" point — excluded from regression
+  // so the slope reflects the real in-window rate, not the 0→first-week jump.
   function linTrendLine(values) {
-    const pts = values.map((y, x) => ({ x, y }));
+    const relevant = values.slice(1); // skip forced-zero at index 0
+    if (relevant.length < 2) return { line: values.map(() => null), slope: 0 };
+    const pts = relevant.map((y, i) => ({ x: i + 1, y }));
     const n = pts.length;
-    const meanX = (n - 1) / 2;
+    const meanX = pts.reduce((s, p) => s + p.x, 0) / n;
     const meanY = pts.reduce((s, p) => s + p.y, 0) / n;
     const num = pts.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
     const den = pts.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
     const slope = den ? num / den : 0; // items per week-bucket
     const intercept = meanY - slope * meanX;
-    return { line: pts.map(p => Math.max(0, Math.round((slope * p.x + intercept) * 10) / 10)), slope };
+    return { line: [null, ...pts.map(p => Math.max(0, Math.round((slope * p.x + intercept) * 10) / 10))], slope };
   }
 
   // Started = first inProgress column (not incoming backlog). Closed = last column.
