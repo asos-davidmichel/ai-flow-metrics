@@ -4597,7 +4597,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
                   : col.column_type === 'outgoing' ? 'col-outgoing' : 'col-inprogress';
         const icon = col.column_type === 'incoming' ? '📥'
                    : col.column_type === 'outgoing' ? '✅' : '';
-        const wip  = col.wip_limit ? `<span class="col-wip-badge">${col.wip_limit}</span>` : '';
+        const wip  = col.wip_limit ? `<span class="col-wip-badge">WIP limit: ${col.wip_limit}</span>` : '';
         html += `<div class="pipeline-col ${cls}"><span class="col-name">${icon ? icon + ' ' : ''}${escapeHtml(col.name)}</span>${wip}</div>`;
         if (i < ctx.columns.length - 1) html += '<span class="pipeline-arrow">→</span>';
       });
@@ -4606,7 +4606,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
     // Work item types
     if (ctx.work_item_types?.length) {
-      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">';
+      html += '<div style="margin-top:16px;">';
+      html += '<div class="cfg-block-title" style="margin-bottom:8px;">📦 Work Item Types</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
       ctx.work_item_types.forEach(t => {
         const s = ctx.work_item_type_styles?.[t] || {};
         const icon = s.icon_url
@@ -4614,7 +4616,37 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
           : '';
         html += `<span class="info-type-pill" style="border-color:${escapeHtml(s.color||'#667eea')};color:${escapeHtml(s.color||'#667eea')}">${icon}${icon?' ':''}${escapeHtml(t)}</span>`;
       });
-      html += '</div>';
+      html += '</div></div>';
+    }
+
+    // Swimlanes
+    if (ctx.swimlanes?.length) {
+      html += '<div style="margin-top:16px;">';
+      html += '<div class="cfg-block-title" style="margin-bottom:8px;">🏊 Swimlanes</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+      ctx.swimlanes.forEach(sl => {
+        const swatch = sl.color
+          ? `<span style="width:12px;height:12px;border-radius:2px;background:${escapeHtml(sl.color)};border:1px solid rgba(0,0,0,.2);display:inline-block;vertical-align:middle;margin-right:5px;flex-shrink:0;"></span>`
+          : '';
+        html += `<span style="display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500;background:#edf2f7;color:#4a5568;border:1px solid #e2e8f0;">${swatch}${escapeHtml(sl.name)}</span>`;
+      });
+      html += '</div></div>';
+    }
+
+    // Card styles
+    if (ctx.card_rules?.fill?.length) {
+      html += '<div style="margin-top:16px;">';
+      html += '<div class="cfg-block-title" style="margin-bottom:8px;">🎨 Card Styles</div>';
+      html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+      ctx.card_rules.fill.forEach(rule => {
+        const bg = rule.background_color || '#edf2f7';
+        html += `<div style="display:flex;align-items:center;gap:10px;font-size:13px;">`;
+        html += `<span style="width:16px;height:16px;border-radius:3px;background:${escapeHtml(bg)};border:1px solid rgba(0,0,0,.15);flex-shrink:0;"></span>`;
+        html += `<span style="font-weight:600;min-width:100px;">${escapeHtml(rule.name)}</span>`;
+        html += `<span style="color:#718096;font-family:monospace;font-size:12px;">${escapeHtml(rule.filter || '')}</span>`;
+        html += `</div>`;
+      });
+      html += '</div></div>';
     }
 
     html += '</div>';
