@@ -1306,11 +1306,6 @@ def write_plain_prompt(summary):
     content = build_prompt_text(summary)
     PROMPT_TXT_PATH.write_text(content, encoding="utf-8")
     print(f"Written: {PROMPT_TXT_PATH}")
-    print()
-    print("Next steps:")
-    print("  1. Paste the contents of the file into any AI assistant.")
-    print("  2. Save the JSON response as output/data/insights.json.")
-    print("  3. Run python src/dashboard.py to inject insights into the dashboard.")
 
 
 def write_copilot_prompt(summary):
@@ -1336,11 +1331,6 @@ in 3-5 bullet points.
         print("Opened in VS Code — click 'Run in Chat' and select your model.")
     except FileNotFoundError:
         print(f"Open manually: {PROMPT_MD_PATH}")
-    print()
-    print("Next steps:")
-    print("  1. Click 'Run in Chat' and select your model.")
-    print("  2. The agent will save output/data/insights.json automatically.")
-    print("  3. Run python src/dashboard.py to inject insights into the dashboard.")
 
 
 def call_openai(summary):
