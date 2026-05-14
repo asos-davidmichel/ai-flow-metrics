@@ -2350,6 +2350,17 @@ function updateChart() {
     );
   });
 
+  // Enforce monotonicity: an earlier stage must always have >= count than any later stage.
+  // Per-stage baseline subtraction can violate this (e.g. bulk migrations inflate later stages).
+  // Fix by propagating the maximum backwards from the last stage to the first.
+  for (let i = allCols.length - 2; i >= 0; i--) {
+    const col = allCols[i], nextCol = allCols[i + 1];
+    for (let wi = 0; wi < cumAtOrBeyond[col].length; wi++) {
+      if (cumAtOrBeyond[col][wi] < cumAtOrBeyond[nextCol][wi])
+        cumAtOrBeyond[col][wi] = cumAtOrBeyond[nextCol][wi];
+    }
+  }
+
   // Palette: one colour per column, consistent across chart + legend
   const palette = ['#667eea','#e53e3e','#ed8936','#48bb78','#38b2ac','#9f7aea','#f6ad55','#fc8181','#68d391','#76e4f7'];
   const colColors = {};
