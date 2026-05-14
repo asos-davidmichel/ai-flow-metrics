@@ -189,6 +189,7 @@ def main():
                 "name": c["name"],
                 "column_type": c.get("columnType"),
                 "wip_limit": c.get("itemLimit") or 0,
+                "is_split": bool(c.get("isSplit", False)),
             }
             for c in columns
         ],

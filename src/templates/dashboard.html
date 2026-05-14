@@ -4598,7 +4598,17 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         const icon = col.column_type === 'incoming' ? '📥'
                    : col.column_type === 'outgoing' ? '✅' : '';
         const wip  = col.wip_limit ? `<span class="col-wip-badge">WIP limit: ${col.wip_limit}</span>` : '';
-        html += `<div class="pipeline-col ${cls}"><span class="col-name">${icon ? icon + ' ' : ''}${escapeHtml(col.name)}</span>${wip}</div>`;
+        if (col.is_split) {
+          html += `<div class="pipeline-col ${cls}" style="padding:0;overflow:hidden;">`;
+          html += `<div style="display:flex;height:100%;">`;
+          html += `<div style="flex:1;padding:8px 10px;border-right:1px dashed rgba(0,0,0,.15);display:flex;flex-direction:column;align-items:center;gap:4px;"><span class="col-name" style="font-size:11px;opacity:.7;">Doing</span></div>`;
+          html += `<div style="flex:1;padding:8px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;"><span class="col-name" style="font-size:11px;opacity:.7;">Done</span></div>`;
+          html += `</div>`;
+          html += `<div style="text-align:center;padding:4px 8px;border-top:1px solid rgba(0,0,0,.08);font-size:12px;font-weight:600;">${icon ? icon + ' ' : ''}${escapeHtml(col.name)}${wip ? ' ' + wip : ''}</div>`;
+          html += `</div>`;
+        } else {
+          html += `<div class="pipeline-col ${cls}"><span class="col-name">${icon ? icon + ' ' : ''}${escapeHtml(col.name)}</span>${wip}</div>`;
+        }
         if (i < ctx.columns.length - 1) html += '<span class="pipeline-arrow">→</span>';
       });
       html += '</div>';
