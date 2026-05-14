@@ -36,13 +36,15 @@ OUTPUT_PATH = METRICS_DIR / "time_in_columns.json"
 
 
 def parse_window(window_str):
-    """Parse a window string like '3m', '6m', '1y' into a timedelta."""
+    """Parse a window string like '2w', '3m', '6m', '1y' into a timedelta."""
     s = window_str.strip().lower()
+    if s.endswith("w"):
+        return timedelta(weeks=int(s[:-1]))
     if s.endswith("m"):
         return timedelta(days=int(s[:-1]) * 30)
     if s.endswith("y"):
         return timedelta(days=int(s[:-1]) * 365)
-    raise ValueError(f"Unrecognised window: {window_str!r}. Use e.g. '1m', '3m', '6m', '1y'.")
+    raise ValueError(f"Unrecognised window: {window_str!r}. Use e.g. '2w', '1m', '3m', '6m', '1y'.")
 
 
 def parse_dt(s):
@@ -64,6 +66,14 @@ def main():
         "--window", default="6m",
         help="Rolling analysis window, e.g. 1m, 3m, 6m, 1y (default: 6m)"
     )
+    parser.add_argument(
+        "--from", dest="date_from", default=None, metavar="YYYY-MM-DD",
+        help="Custom start date (overrides --window)"
+    )
+    parser.add_argument(
+        "--to", dest="date_to", default=None, metavar="YYYY-MM-DD",
+        help="Custom end date (default: today, used with --from)"
+    )
     args = parser.parse_args()
 
     if OUTPUT_PATH.exists():
@@ -71,10 +81,29 @@ def main():
         sys.exit(0)
 
     now = datetime.now(timezone.utc)
-    window_start = now - parse_window(args.window)
-    window_end = now
+    if args.date_from:
+        try:
+            window_start = datetime.strptime(args.date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            print(f"Error: --from value {args.date_from!r} is not a valid YYYY-MM-DD date.", file=sys.stderr)
+            sys.exit(1)
+        if args.date_to:
+            try:
+                window_end = datetime.strptime(args.date_to, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59, tzinfo=timezone.utc
+                )
+            except ValueError:
+                print(f"Error: --to value {args.date_to!r} is not a valid YYYY-MM-DD date.", file=sys.stderr)
+                sys.exit(1)
+        else:
+            window_end = now
+        label = f"{window_start.date()} → {window_end.date()}"
+    else:
+        window_start = now - parse_window(args.window)
+        window_end = now
+        label = args.window
 
-    print(f"Window: {window_start.date()} → {window_end.date()} ({args.window})")
+    print(f"Window: {window_start.date()} → {window_end.date()} ({label})")
 
     # --- Load inputs ---
     for path in (CONTEXT_PATH, CONFIG_PATH, HISTORY_PATH, EXCLUDED_PATH, WORK_ITEMS_PATH):

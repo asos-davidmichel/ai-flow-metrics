@@ -4,6 +4,7 @@ Full pipeline runner.
 Usage:
   python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai]
                             [--insights-mode copilot|prompt|openai|skip] [--window 6m] [--clean]
+                            [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   python run.py --clean   (clean output files only, no board URL required)
 
 Runs:
@@ -23,6 +24,7 @@ If output/data/config.json exists, also runs:
   9. create_dashboard.py     — re-generate dashboard with insights embedded
 
 Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
+--from / --to: explicit date range YYYY-MM-DD (overrides --window when --from is given)
 --insights-mode: copilot (default), prompt, openai, skip
 
 --clean  Delete all previously generated output files before running.
@@ -124,6 +126,24 @@ def main():
             print("Error: --window requires a value (e.g. 1m, 3m, 6m, 1y).", file=sys.stderr)
             sys.exit(1)
 
+    # Custom date range: --from / --to (override --window when --from is given)
+    date_from = None
+    date_to = None
+    if "--from" in sys.argv:
+        idx = sys.argv.index("--from")
+        try:
+            date_from = sys.argv[idx + 1]
+        except IndexError:
+            print("Error: --from requires a YYYY-MM-DD value.", file=sys.stderr)
+            sys.exit(1)
+    if "--to" in sys.argv:
+        idx = sys.argv.index("--to")
+        try:
+            date_to = sys.argv[idx + 1]
+        except IndexError:
+            print("Error: --to requires a YYYY-MM-DD value.", file=sys.stderr)
+            sys.exit(1)
+
     # --insights-mode controls step 8 (ai_interpret_metrics); default copilot, skip to omit
     insights_mode = "copilot"
     if "--insights-mode" in sys.argv:
@@ -146,10 +166,22 @@ def main():
     print(f"  Board URL       : {board_url}")
     print(f"  Interpret mode  : {interpret_mode}")
     print(f"  Insights mode   : {insights_mode}")
-    print(f"  Metrics window  : {window}")
+    if date_from:
+        range_label = f"{date_from} → {date_to or 'today'}"
+        print(f"  Metrics window  : {range_label} (--from/--to)")
+    else:
+        print(f"  Metrics window  : {window}")
     if check_args:
         print(f"  Short dwell     : {check_args[1]} minutes")
     print(f"  config.json     : {'found — metrics will run' if config_exists else 'not found — will stop after step 3'}")
+    print()
+    print("Available options (Ctrl+C to abort and rerun with different flags):")
+    print("  --window         2w | 1m | 3m | 6m | 1y         (default: 6m)")
+    print("  --from YYYY-MM-DD [--to YYYY-MM-DD]             (explicit date range, overrides --window)")
+    print("  --insights-mode  copilot | prompt | openai | skip  (default: copilot)")
+    print("  --interpret-mode copilot | prompt | openai    (default: copilot)")
+    print("  --short-dwell-minutes N                       (flag items moved too quickly)")
+    print("  --clean                                       (delete all output files first)")
     print()
 
     try:
@@ -204,18 +236,26 @@ def main():
         print(f"Re-run with --window {window} once config.json exists.")
         return
 
+    # Build window args to forward to calc scripts
+    if date_from:
+        window_args = ["--from", date_from] + (["--to", date_to] if date_to else [])
+        window_label = f"{date_from} → {date_to or 'today'}"
+    else:
+        window_args = ["--window", window]
+        window_label = window
+
     print()
     run(
-        [sys.executable, "src/calc_columns.py", "--window", window],
-        f"Step 4 / 9 — Calculate time-in-columns (window: {window})",
+        [sys.executable, "src/calc_columns.py"] + window_args,
+        f"Step 4 / 9 — Calculate time-in-columns (window: {window_label})",
     )
     run(
-        [sys.executable, "src/calc_cycle_time.py", "--window", window],
-        f"Step 5 / 9 — Calculate cycle time (window: {window})",
+        [sys.executable, "src/calc_cycle_time.py"] + window_args,
+        f"Step 5 / 9 — Calculate cycle time (window: {window_label})",
     )
     run(
-        [sys.executable, "src/calc_lead_time.py", "--window", window],
-        f"Step 6 / 9 — Calculate lead time (window: {window})",
+        [sys.executable, "src/calc_lead_time.py"] + window_args,
+        f"Step 6 / 9 — Calculate lead time (window: {window_label})",
     )
     run(
         [sys.executable, "src/create_dashboard.py"],
