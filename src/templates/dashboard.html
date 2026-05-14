@@ -2367,6 +2367,7 @@ function updateChart() {
     pointRadius: 0,
     tension: 0,
     fill: i === 0 ? 'origin' : '-1',
+    order: 10,
     _col: col,
   }));
 
@@ -2484,14 +2485,14 @@ function updateChart() {
       data: arrivalResult.line,
       borderColor: '#1a202c', backgroundColor: 'transparent',
       borderWidth: 2, borderDash: [6, 4], pointRadius: 0,
-      tension: 0, fill: false, _trend: true,
+      tension: 0, fill: false, order: 1, _trend: true,
     },
     {
       label: 'Departure rate',
       data: departureResult.line,
       borderColor: '#718096', backgroundColor: 'transparent',
       borderWidth: 2, borderDash: [6, 4], pointRadius: 0,
-      tension: 0, fill: false, _trend: true,
+      tension: 0, fill: false, order: 1, _trend: true,
     },
   ];
 
