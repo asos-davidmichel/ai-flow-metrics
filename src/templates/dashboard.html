@@ -2297,7 +2297,13 @@ function updateChart() {
   while (cur <= fin) { cfdWeeks.push(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 7); }
   const cfdLabels    = cfdWeeks.map(w => weekLabel(w));
   const MS_WEEK      = 7 * 24 * 3600 * 1000;
-  const cfdWeekEndMs = cfdWeeks.map(w => new Date(w + 'T00:00:00Z').getTime() + MS_WEEK - 1);
+  // First snapshot is snapped to winStartMs-1 so the leftmost point always renders as 0.
+  // Subsequent snapshots are end-of-week as normal.
+  const cfdWeekEndMs = cfdWeeks.map((w, i) =>
+    i === 0
+      ? winStartMs - 1
+      : new Date(w + 'T00:00:00Z').getTime() + MS_WEEK - 1
+  );
 
   // Correct CFD: for each item track its "furthest stage ever reached" at each point.
   // At snapshot T, count items that have reached at least column C_i.
