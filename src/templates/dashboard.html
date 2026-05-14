@@ -581,11 +581,12 @@
       <div class="card-header"><h2>WIP Level Distribution by Column</h2></div>
       <p style="font-size:13px;color:#718096;margin-bottom:12px;">
         <strong>WIP level</strong> is how many items were in a column on a given day.
-        Each bar shows what percentage of days the column spent at that WIP level — wider bar = more common.
+        Each bar shows what percentage of days the column spent at that WIP level — wider bar = more common.<br>
         <span style="color:#667eea;font-weight:600;">&#9632; Blue</span> = at or under the WIP limit &nbsp;|&nbsp;
-        <span style="color:#e53e3e;font-weight:600;">&#9632; Red</span> = over the WIP limit (a constraint violation).<br>
-        <span style="color:#ed8936;font-weight:600;">— max</span> = WIP limit on the board &nbsp;|&nbsp;
-        <span style="color:#667eea;font-weight:600;">— now</span> = current WIP right now.
+        <span style="color:#e53e3e;font-weight:600;">&#9632; Red</span> = over the WIP limit (a constraint violation) &nbsp;|&nbsp;
+        <span style="color:#ed8936;font-weight:600;">— max</span> = WIP limit &nbsp;|&nbsp;
+        <span style="color:#667eea;font-weight:600;">— now</span> = current WIP &nbsp;|&nbsp;
+        <span style="color:#8890c8;font-weight:600;">&#8767; curve</span> = median WIP level per column.
       </p>
       <div class="chart-wrap" style="height:520px;"><canvas id="wipLevelDistChart"></canvas></div>
     </div>
@@ -2639,12 +2640,63 @@ function updateChart() {
     ...Object.values(currentWipMap)
   );
 
+  // Median WIP per column (from raw daily counts, not the trimmed distribution)
+  const medianMap = {};
+  colNames.forEach(col => {
+    const sorted = Array.from(colDayCounts[col]).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    medianMap[col] = sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  });
+
   // Custom plugin: renders the distribution boxes and reference lines
   const wipDistPlugin = {
     id: 'wipDist',
     afterDraw(chart) {
       const { ctx: c2d, scales: { x, y } } = chart;
       const colCount = colNames.length;
+
+      // ── Median connector line (drawn first, behind everything) ────
+      (() => {
+        const pts = colNames.map((col, i) => ({
+          px: x.getPixelForValue(i),
+          py: y.getPixelForValue(medianMap[col]),
+        }));
+        c2d.save();
+        c2d.strokeStyle = 'rgba(120,130,200,0.35)';
+        c2d.lineWidth   = 2.5;
+        c2d.setLineDash([]);
+        c2d.beginPath();
+        pts.forEach((pt, i) => {
+          if (i === 0) {
+            c2d.moveTo(pt.px, pt.py);
+          } else {
+            // Catmull-Rom → cubic Bézier control points
+            const p0 = pts[Math.max(i - 2, 0)];
+            const p1 = pts[i - 1];
+            const p2 = pt;
+            const p3 = pts[Math.min(i + 1, pts.length - 1)];
+            const cp1x = p1.px + (p2.px - p0.px) / 6;
+            const cp1y = p1.py + (p2.py - p0.py) / 6;
+            const cp2x = p2.px - (p3.px - p1.px) / 6;
+            const cp2y = p2.py - (p3.py - p1.py) / 6;
+            c2d.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.px, p2.py);
+          }
+        });
+        c2d.stroke();
+        // Dots at each median point
+        pts.forEach(pt => {
+          c2d.beginPath();
+          c2d.arc(pt.px, pt.py, 3, 0, Math.PI * 2);
+          c2d.fillStyle   = 'rgba(200,205,240,0.85)';
+          c2d.strokeStyle = 'rgba(100,110,190,0.60)';
+          c2d.lineWidth   = 1;
+          c2d.fill();
+          c2d.stroke();
+        });
+        c2d.restore();
+      })();
 
       colNames.forEach((colName, colIdx) => {
         const dist     = distributions[colName];
