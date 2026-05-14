@@ -2329,11 +2329,18 @@ function updateChart() {
     return res >= 0 ? prog.maxIdxAt[res] : -1;
   }
 
-  // cumAtOrBeyond[col][weekIdx] = # items that have ever reached col or further by that week
+  // Baseline: items already at each column BEFORE the window started (normalise to 0 at window start)
+  const baselineMs = winStartMs - 1;
+  const cfdBaseline = {};
+  allCols.forEach((col, i) => {
+    cfdBaseline[col] = itemProgressions.reduce((n, prog) => n + (maxIdxAtSnap(prog, baselineMs) >= i ? 1 : 0), 0);
+  });
+
+  // cumAtOrBeyond[col][weekIdx] = # items that have newly reached col or further since window start
   const cumAtOrBeyond = {};
   allCols.forEach((col, i) => {
     cumAtOrBeyond[col] = cfdWeekEndMs.map(snapMs =>
-      itemProgressions.reduce((n, prog) => n + (maxIdxAtSnap(prog, snapMs) >= i ? 1 : 0), 0)
+      itemProgressions.reduce((n, prog) => n + (maxIdxAtSnap(prog, snapMs) >= i ? 1 : 0), 0) - cfdBaseline[col]
     );
   });
 
