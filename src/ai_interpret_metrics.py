@@ -1033,6 +1033,83 @@ def summarise_wip_over_time(wih, ctx, ct):
     }
 
 
+def summarise_wip_level_distribution(wih, ctx, ct):
+    """Per-column distribution of daily WIP levels (feeds wip_level_distribution chart insight)."""
+    if not wih or not ctx or not ct:
+        return None
+
+    window    = ct.get("window", {})
+    win_start = _parse_dt(window.get("start"))
+    win_end   = _parse_dt(window.get("end"))
+    if not win_start or not win_end:
+        return None
+
+    in_prog_cols = [c for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"]
+    if not in_prog_cols:
+        return None
+
+    ws_ms  = win_start.timestamp() * 1000
+    we_ms  = win_end.timestamp()  * 1000
+    ms_day = 86_400_000
+    day_count = math.ceil((we_ms - ws_ms) / ms_day) + 1
+
+    # Build per-column daily WIP arrays (noon-snap, matching the chart logic)
+    col_day_counts = {c["name"]: [0] * day_count for c in in_prog_cols}
+    col_names_set  = {c["name"] for c in in_prog_cols}
+
+    for entry in wih:
+        for seg in entry.get("column_history", []):
+            col = seg.get("value")
+            if col not in col_names_set:
+                continue
+            ent = _parse_dt(seg.get("entered"))
+            lft = _parse_dt(seg.get("left"))
+            ent_ms = ent.timestamp() * 1000 if ent else 0
+            lft_ms = lft.timestamp() * 1000 if lft else we_ms + ms_day
+            half_day = 12 * 3600 * 1000
+            start_di = max(0, math.ceil((ent_ms - ws_ms - half_day) / ms_day))
+            end_di   = min(day_count - 1, int((lft_ms - ws_ms - half_day) / ms_day))
+            for di in range(start_di, end_di + 1):
+                col_day_counts[col][di] += 1
+
+    PCT_THRESHOLD = 1.0  # mirror chart's filter
+    result = []
+    for col_cfg in in_prog_cols:
+        col       = col_cfg["name"]
+        wip_limit = col_cfg.get("wip_limit") or 0
+        counts    = col_day_counts[col]
+
+        freq = {}
+        for v in counts:
+            freq[v] = freq.get(v, 0) + 1
+
+        dist = {}
+        for level, cnt in freq.items():
+            pct = (cnt / day_count) * 100
+            if pct >= PCT_THRESHOLD:
+                dist[level] = round(pct, 1)
+
+        if not dist:
+            continue
+
+        modal_level  = max(dist, key=lambda l: dist[l])
+        pct_zero     = dist.get(0, 0.0)
+        pct_at_limit = sum(v for l, v in dist.items() if wip_limit > 0 and l >= wip_limit)
+        pct_over     = sum(v for l, v in dist.items() if wip_limit > 0 and l >  wip_limit)
+
+        result.append({
+            "column":          col,
+            "wip_limit":       wip_limit,
+            "modal_level":     modal_level,
+            "pct_days_empty":  round(pct_zero, 1),
+            "pct_days_at_or_above_limit": round(pct_at_limit, 1) if wip_limit > 0 else None,
+            "pct_days_over_limit":        round(pct_over, 1)     if wip_limit > 0 else None,
+            "level_distribution": dict(sorted((str(l), v) for l, v in dist.items())),
+        })
+
+    return result if result else None
+
+
 def build_summary():
     ct  = load(CT_PATH,  required=False)
     lt  = load(LT_PATH,  required=False)
@@ -1063,6 +1140,7 @@ def build_summary():
         "bugs":                  summarise_bugs(wi, ctx, ct),
         "net_flow":              summarise_net_flow(ct, ctx),
         "arrival_departure":     summarise_ad_ratio(ct, ctx, wih),
+        "wip_level_distribution": summarise_wip_level_distribution(wih, ctx, ct),
     }
 
 
@@ -1337,7 +1415,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if not args.dump_summary and INSIGHTS_PATH.exists():
+    if not args.dump_summary and args.mode == "openai" and INSIGHTS_PATH.exists():
         print(f"Skipping: {INSIGHTS_PATH} already exists. Delete it to regenerate.")
         sys.exit(0)
 

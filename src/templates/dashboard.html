@@ -576,6 +576,20 @@
       </div>
     </div>
 
+    <!-- Row 3: WIP Level Distribution — full width -->
+    <div class="card">
+      <div class="card-header"><h2>WIP Level Distribution by Column</h2></div>
+      <p style="font-size:13px;color:#718096;margin-bottom:12px;">
+        <strong>WIP level</strong> is how many items were in a column on a given day.
+        Each bar shows what percentage of days the column spent at that WIP level — wider bar = more common.
+        <span style="color:#667eea;font-weight:600;">&#9632; Blue</span> = at or under the WIP limit &nbsp;|&nbsp;
+        <span style="color:#e53e3e;font-weight:600;">&#9632; Red</span> = over the WIP limit (a constraint violation).<br>
+        <span style="color:#ed8936;font-weight:600;">— max</span> = WIP limit on the board &nbsp;|&nbsp;
+        <span style="color:#667eea;font-weight:600;">— now</span> = current WIP right now.
+      </p>
+      <div class="chart-wrap" style="height:520px;"><canvas id="wipLevelDistChart"></canvas></div>
+    </div>
+
   </div><!-- /tab-process -->
 
   <!-- ── WIP tab ──────────────────────────────────────────────────── -->
@@ -2561,6 +2575,215 @@ function updateChart() {
 })();
 // ────────────────────────────────────────────────────────────────────
 
+// ── WIP Level Distribution by Column ─────────────────────────────────
+(() => {
+  const canvas = document.getElementById('wipLevelDistChart');
+  if (!canvas) return;
+
+  const wih    = dashboard.work_item_history || [];
+  const ctx    = dashboard.context || {};
+  const ct     = dashboard.cycle_time || {};
+  const wi     = dashboard.work_items || [];
+
+  // Only inProgress columns, in board order
+  const inProgCols = (ctx.columns || []).filter(c => c.column_type === 'inProgress');
+  const colNames   = inProgCols.map(c => c.name);
+  if (!colNames.length) return;
+
+  const wipLimitMap   = Object.fromEntries(inProgCols.map(c => [c.name, c.wip_limit || 0]));
+  const currentWipMap = Object.fromEntries(colNames.map(c => [c, 0]));
+  wi.forEach(item => { if (currentWipMap.hasOwnProperty(item.column)) currentWipMap[item.column]++; });
+
+  // Analysis window
+  const winStartMs = ct.window?.start ? new Date(ct.window.start).getTime()
+                                      : Date.now() - 180 * 86400000;
+  const winEndMs   = ct.window?.end   ? new Date(ct.window.end).getTime() : Date.now();
+  const MS_DAY     = 86400000;
+
+  // Per-column daily WIP counts: colName → Int32Array of length dayCount
+  const dayCount = Math.ceil((winEndMs - winStartMs) / MS_DAY) + 1;
+  const colDayCounts = Object.fromEntries(colNames.map(c => [c, new Int32Array(dayCount)]));
+
+  wih.forEach(entry => {
+    (entry.column_history || []).forEach(seg => {
+      if (!colDayCounts[seg.value]) return;
+      const entMs = new Date(seg.entered).getTime();
+      const lefMs = seg.left ? new Date(seg.left).getTime() : winEndMs + MS_DAY;
+      // noon-snap: day di corresponds to winStartMs + di*MS_DAY + 12h
+      const startDi = Math.max(0, Math.ceil((entMs - winStartMs - 12 * 3600000) / MS_DAY));
+      const endDi   = Math.min(dayCount - 1, Math.floor((lefMs - winStartMs - 12 * 3600000) / MS_DAY));
+      for (let di = startDi; di <= endDi; di++) colDayCounts[seg.value][di]++;
+    });
+  });
+
+  // Build frequency distributions and trim rare outlier levels (<1% of days)
+  // so the Y-axis stays compact and readable.
+  const PCT_THRESHOLD = 1.0; // levels occurring on fewer than 1% of days are hidden
+  const distributions = {};
+  colNames.forEach(col => {
+    const counts = colDayCounts[col];
+    const freq   = {};
+    for (let di = 0; di < dayCount; di++) { const v = counts[di]; freq[v] = (freq[v] || 0) + 1; }
+    const dist = {};
+    Object.entries(freq).forEach(([k, cnt]) => {
+      const pct = (cnt / dayCount) * 100;
+      if (pct >= PCT_THRESHOLD) dist[+k] = pct;
+    });
+    distributions[col] = dist;
+  });
+
+  // Y-axis max: highest displayed level, WIP limits, and current WIP values
+  const displayMaxLevel = Math.max(
+    ...colNames.flatMap(c => Object.keys(distributions[c]).map(Number)),
+    ...Object.values(wipLimitMap).filter(v => v > 0),
+    ...Object.values(currentWipMap)
+  );
+
+  // Custom plugin: renders the distribution boxes and reference lines
+  const wipDistPlugin = {
+    id: 'wipDist',
+    afterDraw(chart) {
+      const { ctx: c2d, scales: { x, y } } = chart;
+      const colCount = colNames.length;
+
+      colNames.forEach((colName, colIdx) => {
+        const dist     = distributions[colName];
+        const wipLimit = wipLimitMap[colName];
+        const nowWip   = currentWipMap[colName];
+        const cx       = x.getPixelForValue(colIdx);
+
+        // Half-width budget for boxes — stay within column cell
+        const colPxWidth = colCount > 1
+          ? Math.abs(x.getPixelForValue(1) - x.getPixelForValue(0))
+          : 80;
+        const maxHalfW = colPxWidth * 0.44;
+
+        const levelPxH = Math.abs(y.getPixelForValue(1) - y.getPixelForValue(0));
+        const boxH     = Math.max(levelPxH - 1, 4); // full level height minus 1px gap so boxes touch
+
+        // ── Draw distribution boxes ──────────────────────────────────
+        Object.entries(dist).forEach(([levelStr, pct]) => {
+          const level = +levelStr;
+          const cy    = y.getPixelForValue(level);
+          // sqrt scaling so low-frequency levels still show a sliver
+          const halfW = maxHalfW * Math.sqrt(pct / 100);
+
+          const isOver = wipLimit > 0 && level > wipLimit;
+          c2d.save();
+          c2d.fillStyle   = isOver ? 'rgba(229,62,62,0.45)'  : 'rgba(102,126,234,0.50)';
+          c2d.strokeStyle = isOver ? 'rgba(197,48,48,0.85)'  : 'rgba(76,95,180,0.80)';
+          c2d.lineWidth   = 1;
+          const bx = cx - halfW, by = cy - boxH / 2, bw = halfW * 2, bh = boxH;
+          const r  = Math.min(3, bw / 2, bh / 2);
+          c2d.beginPath();
+          c2d.moveTo(bx + r, by);
+          c2d.lineTo(bx + bw - r, by);      c2d.quadraticCurveTo(bx + bw, by,      bx + bw, by + r);
+          c2d.lineTo(bx + bw, by + bh - r); c2d.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+          c2d.lineTo(bx + r, by + bh);      c2d.quadraticCurveTo(bx, by + bh,      bx, by + bh - r);
+          c2d.lineTo(bx, by + r);           c2d.quadraticCurveTo(bx, by,           bx + r, by);
+          c2d.closePath();
+          c2d.fill();
+          c2d.stroke();
+
+          // Percentage label — only when box is large enough to fit text
+          if (pct >= 8 && bw >= 28) {
+            c2d.fillStyle    = isOver ? 'rgba(153,27,27,0.95)' : 'rgba(55,65,155,0.95)';
+            c2d.font         = 'bold 11px system-ui,sans-serif';
+            c2d.textAlign    = 'center';
+            c2d.textBaseline = 'middle';
+            c2d.fillText(Math.round(pct) + '%', cx, cy);
+          }
+          c2d.restore();
+        });
+
+        // ── WIP limit line (orange dashed) ───────────────────────────
+        if (wipLimit > 0) {
+          const ly = y.getPixelForValue(wipLimit);
+          c2d.save();
+          c2d.strokeStyle = '#ed8936';
+          c2d.lineWidth   = 1.5;
+          c2d.setLineDash([4, 3]);
+          c2d.beginPath();
+          c2d.moveTo(cx - maxHalfW, ly);
+          c2d.lineTo(cx + maxHalfW, ly);
+          c2d.stroke();
+          c2d.setLineDash([]);
+          c2d.fillStyle    = '#ed8936';
+          c2d.font         = '12px system-ui,sans-serif';
+          c2d.textAlign    = 'right';
+          c2d.textBaseline = 'bottom';
+          c2d.fillText('max: ' + wipLimit, cx + maxHalfW - 2, ly - 2);
+          c2d.restore();
+        }
+
+        // ── Current WIP line (blue dashed) ───────────────────────────
+        const nowY = y.getPixelForValue(nowWip);
+        c2d.save();
+        c2d.strokeStyle = '#667eea';
+        c2d.lineWidth   = 1.5;
+        c2d.setLineDash([4, 3]);
+        c2d.beginPath();
+        c2d.moveTo(cx - maxHalfW, nowY);
+        c2d.lineTo(cx + maxHalfW, nowY);
+        c2d.stroke();
+        c2d.setLineDash([]);
+        c2d.fillStyle    = '#667eea';
+        c2d.font         = '12px system-ui,sans-serif';
+        c2d.textAlign    = 'left';
+        c2d.textBaseline = 'bottom';
+        c2d.fillText('now: ' + nowWip, cx - maxHalfW + 2, nowY - 2);
+        c2d.restore();
+      });
+    },
+  };
+
+  new Chart(canvas, {
+    type: 'scatter',
+    plugins: [wipDistPlugin],
+    data: { datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: -0.5,
+          max: colNames.length - 0.5,
+          afterBuildTicks(scale) {
+            // Force ticks at exactly 0, 1, … N-1 so the callback always gets integers
+            scale.ticks = colNames.map((_, i) => ({ value: i }));
+          },
+          ticks: {
+            callback: (v) => (v >= 0 && v < colNames.length) ? colNames[v] : '',
+            maxRotation: 45,
+            minRotation: 30,
+            font: { size: 13 },
+          },
+          grid: { display: false },
+        },
+        y: {
+          type: 'linear',
+          min: -0.3,
+          max: displayMaxLevel + 0.5,
+          title: { display: true, text: 'WIP', color: '#718096', font: { size: 12 } },
+          ticks: {
+            stepSize: 1,
+            autoSkip: false,
+            callback: (v) => Number.isInteger(v) && v >= 0 ? v : '',
+          },
+          grid: { color: '#e2e8f0' },
+        },
+      },
+    },
+  });
+})();
+// ────────────────────────────────────────────────────────────────────
+
 // ── Aging WIP ────────────────────────────────────────────────────────
 (() => {
   const wi  = dashboard.work_items || [];
@@ -4031,6 +4254,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     { key: 'bug_net_flow',          primary: 'bugCreatedVsClosedChart', secondary: [],                                                                            primaryLabel: 'Bug net flow' },
     { key: 'bug_distribution',      primary: 'bugColumnChart',       secondary: [],                                                                              primaryLabel: 'Bug distribution by column' },
     { key: 'cfd',                   primary: 'cfdChart',             secondary: [],                                                                              primaryLabel: 'Cumulative Flow' },
+    { key: 'wip_level_distribution', primary: 'wipLevelDistChart',   secondary: [],                                                                              primaryLabel: 'WIP Level Distribution' },
   ].forEach(({ key, primary, secondary, primaryLabel }) => {
     injectIntoCard(primary, key);
     secondary.forEach(id => injectSameAs(id, primaryLabel));

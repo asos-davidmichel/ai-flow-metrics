@@ -43,7 +43,8 @@ cycle_time, lead_time, throughput, time_in_columns, flow_efficiency,
 work_start_efficiency, wip, wip_over_time, wip_age_distribution,
 wip_age_by_column, blockers, blockers_by_column, blocker_timeline,
 days_lost_to_blockers, stale_work, net_flow, arrival_departure,
-bugs, bug_intake, bug_pct, bug_net_flow, bug_distribution, cfd
+bugs, bug_intake, bug_pct, bug_net_flow, bug_distribution, cfd,
+wip_level_distribution
 
 For each chart, provide:
 - "insight": 2-3 sentences interpreting the pattern and its implications for the team
@@ -97,6 +98,8 @@ bug_net_flow — Is the team resolving more bugs than it creates each week, or f
 bug_distribution — Which columns hold the most open bugs? What does the concentration of bugs in New (untriaged) vs in-progress columns reveal about how bugs are being managed? What is the risk if bugs accumulate in review or QA?
 
 cfd — What does the shape of the cumulative flow bands reveal about flow smoothness? Is work accumulating between any two columns (widening bands)? Does the CFD confirm or contradict the bottleneck identified in time_in_columns?
+
+wip_level_distribution — Which columns spend the most time at or above their WIP limit? Which columns are most often empty (WIP = 0), suggesting they are not a constraint? Does the distribution suggest WIP limits are well-calibrated or too loose? Are there columns where the mode WIP level is consistently above the limit, indicating a structural violation rather than an occasional one?
 
 ---
 
