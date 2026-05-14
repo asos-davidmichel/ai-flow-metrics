@@ -22,6 +22,8 @@ CTX_PATH      = Path("output/data/context.json")
 CFG_PATH      = Path("output/data/config.json")
 WI_PATH       = Path("output/data/work_items.json")
 INSIGHTS_PATH = Path("output/data/insights.json")
+DQ_PATH       = Path("output/data/data_quality_report.json")
+EXCL_PATH     = Path("output/data/excluded_items.json")
 TEMPLATE_PATH = Path("src/templates/dashboard.html")
 OUTPUT_PATH   = Path("output/dashboard.html")
 
@@ -45,6 +47,8 @@ def main():
         "config":     json.loads(CFG_PATH.read_text(encoding="utf-8")) if CFG_PATH.exists() else None,
         "work_items": json.loads(WI_PATH.read_text(encoding="utf-8")) if WI_PATH.exists() else None,
         "insights":   json.loads(INSIGHTS_PATH.read_text(encoding="utf-8")) if INSIGHTS_PATH.exists() else None,
+        "data_quality_report": json.loads(DQ_PATH.read_text(encoding="utf-8")) if DQ_PATH.exists() else None,
+        "excluded_items": json.loads(EXCL_PATH.read_text(encoding="utf-8")) if EXCL_PATH.exists() else None,
         "work_item_history": [
             {"id": h["id"], "column_history": h["column_history"], "tag_history": h.get("tag_history", [])}
             for h in json.loads(Path("output/data/work_item_history.json").read_text(encoding="utf-8"))

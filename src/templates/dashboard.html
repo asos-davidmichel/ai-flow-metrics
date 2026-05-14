@@ -394,6 +394,144 @@
       font-size: 11px;
       flex-shrink: 0;
     }
+
+    /* ── Info tab ───────────────────────────────────────────────── */
+    .info-section-title {
+      font-size: 15px; font-weight: 700; color: #4a5568;
+      margin-bottom: 16px; padding-bottom: 10px;
+      border-bottom: 2px solid #edf2f7;
+    }
+    .info-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .info-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #edf2f7; color: #4a5568; border-radius: 20px;
+      padding: 4px 12px; font-size: 13px; font-weight: 500;
+    }
+    /* Column pipeline */
+    .info-pipeline {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+      padding: 14px 16px; background: #f7fafc; border-radius: 10px;
+      margin: 14px 0;
+    }
+    .pipeline-col {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    }
+    .col-incoming  { background: #edf2f7; color: #718096; border: 1.5px solid #cbd5e0; }
+    .col-inprogress{ background: #ebf4ff; color: #2b6cb0; border: 1.5px solid #90cdf4; }
+    .col-outgoing  { background: #f0fff4; color: #276749; border: 1.5px solid #9ae6b4; }
+    .col-name { white-space: nowrap; }
+    .col-wip-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #667eea; color: white; border-radius: 10px;
+      padding: 1px 7px; font-size: 11px; font-weight: 700;
+    }
+    .col-incoming  .col-wip-badge { background: #a0aec0; }
+    .col-outgoing  .col-wip-badge { background: #48bb78; }
+    .pipeline-arrow { color: #cbd5e0; font-size: 18px; font-weight: 300; line-height: 1; }
+    .info-type-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; border-radius: 20px; border: 1.5px solid;
+      font-size: 13px; font-weight: 500; background: white;
+    }
+    /* Config grid */
+    .info-config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .cfg-block {
+      background: #f7fafc; border-radius: 8px; padding: 12px 14px;
+    }
+    .cfg-block-title {
+      font-size: 13px; font-weight: 700; color: #4a5568; margin-bottom: 9px;
+    }
+    .cfg-row {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 13px; margin-bottom: 5px; flex-wrap: wrap;
+    }
+    .cfg-row:last-child { margin-bottom: 0; }
+    .cfg-lbl { color: #a0aec0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; min-width: 68px; padding-top: 1px; }
+    .cfg-val { color: #2d3748; font-weight: 500; }
+    .eff-pill {
+      display: inline-flex; align-items: center; gap: 3px;
+      border-radius: 4px; padding: 2px 8px; font-size: 12px;
+      margin-right: 4px; margin-bottom: 4px; border: 1px solid #e2e8f0;
+    }
+    .eff-active  { border-color: #9ae6b4; background: #f0fff4; color: #276749; }
+    .eff-waiting { border-color: #fbd38d; background: #fffaf0; color: #c05621; }
+    /* Data quality */
+    .dq-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .dq-stat-card {
+      display: flex; flex-direction: column; gap: 2px;
+      background: #f7fafc; border-radius: 8px; padding: 10px 16px;
+      border: 1px solid #e2e8f0;
+    }
+    .dq-stat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #a0aec0; }
+    .dq-stat-value { font-size: 22px; font-weight: 700; color: #2d3748; line-height: 1.2; }
+    .dq-checks { display: flex; flex-direction: column; gap: 4px; }
+    .dq-row {
+      border-radius: 8px; border: 1px solid #e2e8f0;
+      font-size: 13px; overflow: hidden;
+    }
+    div.dq-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px;
+    }
+    details.dq-row { display: block; }
+    details.dq-row > summary {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; cursor: pointer; user-select: none;
+      list-style: none;
+    }
+    details.dq-row > summary::-webkit-details-marker { display: none; }
+    details.dq-row > summary::after {
+      content: '\203A'; font-size: 18px; color: #a0aec0;
+      margin-left: auto; flex-shrink: 0; transition: transform 0.2s;
+    }
+    details.dq-row[open] > summary::after { transform: rotate(90deg); }
+    .dq-status { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
+    .dq-label  { color: #4a5568; font-weight: 500; flex: 1; line-height: 1.4; }
+    .dq-label small { display: block; color: #a0aec0; font-size: 11px; font-weight: 400; margin-top: 1px; }
+    .dq-count  {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 42px; padding: 2px 8px; border-radius: 12px;
+      font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+    .dq-ok   { background: #f0fff4; border-color: #c6f6d5; }
+    .dq-warn { background: #fffaf0; border-color: #fbd38d; }
+    .dq-info { background: #ebf8ff; border-color: #bee3f8; }
+    .dq-ok   .dq-count { background: #c6f6d5; color: #276749; }
+    .dq-warn .dq-count { background: #fbd38d; color: #c05621; }
+    .dq-info .dq-count { background: #bee3f8; color: #2b6cb0; }
+    .dq-detail {
+      padding: 10px 14px 12px 46px;
+      border-top: 1px solid #e2e8f0; font-size: 12px; color: #718096; line-height: 1.6;
+    }
+    .dq-note { font-style: italic; margin-top: 4px; }
+    .dq-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .dq-chip {
+      background: white; border: 1px solid #e2e8f0; border-radius: 4px;
+      padding: 2px 7px; font-size: 11px; color: #4a5568; font-family: monospace;
+    }
+    .dq-chip-more {
+      background: #edf2f7; border-radius: 4px; padding: 2px 7px;
+      font-size: 11px; color: #718096; font-style: italic;
+    }
+    /* Excluded items */
+    .excl-table { display: flex; flex-direction: column; gap: 5px; }
+    .excl-row {
+      display: flex; align-items: baseline; gap: 10px;
+      background: #fffaf0; border: 1px solid #fbd38d;
+      border-radius: 6px; padding: 7px 12px; font-size: 13px;
+    }
+    .excl-id { font-weight: 700; color: #c05621; font-family: monospace; flex-shrink: 0; }
+    .excl-reason { color: #744210; font-size: 12px; }
+    .info-empty { color: #a0aec0; font-size: 14px; padding: 8px 0; }
+    /* Two-col layout for config + excluded */
+    .info-side-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+    .info-side-grid .card { margin-bottom: 0; }
+    @media (max-width: 900px) { .info-side-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -417,6 +555,7 @@
     <button class="tab-btn" data-tab="wip">🔄 WIP</button>
     <button class="tab-btn" data-tab="blockers">🚧 Blockers</button>
     <button class="tab-btn" data-tab="efficiency">⚡ Efficiency</button>
+    <button class="tab-btn" data-tab="info">ℹ️ Info</button>
   </div>
 
   <!-- ── Overview tab ─────────────────────────────────────────────── -->
@@ -705,6 +844,9 @@
     </div>
 
   </div><!-- /tab-efficiency -->
+
+  <!-- ── Info tab ─────────────────────────────────────────────────── -->
+  <div id="tab-info" class="tab-panel"></div>
 
 </div>
 <div id="sharedTooltip" class="chart-tooltip"></div>
@@ -4419,6 +4561,234 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     + nextHtml
     + recsHtml
     + '</div>';
+})();
+
+// ── Info tab ─────────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('tab-info');
+  if (!el) return;
+
+  const ctx  = dashboard.context;
+  const cfg  = dashboard.config;
+  const dqr  = dashboard.data_quality_report;
+  const excl = dashboard.excluded_items || [];
+
+  let html = '';
+
+  // ── Section 1: Board Setup ──────────────────────────────────────
+  if (ctx) {
+    html += '<div class="card" style="margin-bottom:24px;">';
+    html += '<div class="info-section-title">🗂️ Board Setup</div>';
+
+    // Metadata chips
+    html += '<div class="info-chips">';
+    if (ctx.org)     html += `<span class="info-chip">🏢 ${escapeHtml(ctx.org)}</span>`;
+    if (ctx.project) html += `<span class="info-chip">📁 ${escapeHtml(ctx.project)}</span>`;
+    if (ctx.team)    html += `<span class="info-chip">👥 ${escapeHtml(ctx.team)}</span>`;
+    if (ctx.board?.name) {
+      const link = ctx.board_url
+        ? `<a href="${escapeHtml(ctx.board_url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-underline-offset:3px;">${escapeHtml(ctx.board.name)}</a>`
+        : escapeHtml(ctx.board.name);
+      html += `<span class="info-chip">📋 ${link}</span>`;
+    }
+    html += '</div>';
+
+    // Pipeline
+    if (ctx.columns?.length) {
+      html += '<div class="info-pipeline">';
+      ctx.columns.forEach((col, i) => {
+        const cls = col.column_type === 'incoming' ? 'col-incoming'
+                  : col.column_type === 'outgoing' ? 'col-outgoing' : 'col-inprogress';
+        const icon = col.column_type === 'incoming' ? '📥'
+                   : col.column_type === 'outgoing' ? '✅' : '';
+        const wip  = col.wip_limit ? `<span class="col-wip-badge">${col.wip_limit}</span>` : '';
+        html += `<div class="pipeline-col ${cls}"><span class="col-name">${icon ? icon + ' ' : ''}${escapeHtml(col.name)}</span>${wip}</div>`;
+        if (i < ctx.columns.length - 1) html += '<span class="pipeline-arrow">→</span>';
+      });
+      html += '</div>';
+    }
+
+    // Work item types
+    if (ctx.work_item_types?.length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">';
+      ctx.work_item_types.forEach(t => {
+        const s = ctx.work_item_type_styles?.[t] || {};
+        const icon = s.icon_url
+          ? `<img src="${escapeHtml(s.icon_url)}" width="14" height="14" style="vertical-align:middle;" onerror="this.style.display='none'">`
+          : '';
+        html += `<span class="info-type-pill" style="border-color:${escapeHtml(s.color||'#667eea')};color:${escapeHtml(s.color||'#667eea')}">${icon}${icon?' ':''}${escapeHtml(t)}</span>`;
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  // ── Section 2: Config + Excluded ───────────────────────────────
+  html += '<div class="info-side-grid">';
+
+  // Metrics Config
+  if (cfg) {
+    html += '<div class="card">';
+    html += '<div class="info-section-title">⚙️ Metrics Configuration</div>';
+    html += '<div class="info-config-grid">';
+
+    const clockDesc = c => {
+      if (!c) return '—';
+      const icon = c.type === 'date_field' ? '📅' : '📍';
+      return `${icon} <strong>${escapeHtml(c.value)}</strong>`;
+    };
+
+    if (cfg.lead_time) {
+      html += '<div class="cfg-block">';
+      html += '<div class="cfg-block-title">⏱️ Lead Time</div>';
+      html += `<div class="cfg-row"><span class="cfg-lbl">Start</span><span class="cfg-val">${clockDesc(cfg.lead_time.clock_start)}</span></div>`;
+      html += `<div class="cfg-row"><span class="cfg-lbl">Stop</span><span class="cfg-val">${clockDesc(cfg.lead_time.clock_end)}</span></div>`;
+      html += '</div>';
+    }
+
+    if (cfg.cycle_time) {
+      html += '<div class="cfg-block">';
+      html += '<div class="cfg-block-title">🔄 Cycle Time</div>';
+      html += `<div class="cfg-row"><span class="cfg-lbl">Start</span><span class="cfg-val">${clockDesc(cfg.cycle_time.clock_start)}</span></div>`;
+      html += `<div class="cfg-row"><span class="cfg-lbl">Stop</span><span class="cfg-val">${clockDesc(cfg.cycle_time.clock_end)}</span></div>`;
+      html += '</div>';
+    }
+
+    if (cfg.flow_efficiency?.active_columns?.length || cfg.flow_efficiency?.waiting_columns?.length) {
+      html += '<div class="cfg-block">';
+      html += '<div class="cfg-block-title">⚡ Flow Efficiency</div>';
+      if (cfg.flow_efficiency.active_columns?.length) {
+        html += '<div class="cfg-row" style="flex-direction:column;gap:4px;"><span class="cfg-lbl">Active</span><div style="display:flex;flex-wrap:wrap;gap:4px;">';
+        cfg.flow_efficiency.active_columns.forEach(c => { html += `<span class="eff-pill eff-active">✅ ${escapeHtml(c)}</span>`; });
+        html += '</div></div>';
+      }
+      if (cfg.flow_efficiency.waiting_columns?.length) {
+        html += '<div class="cfg-row" style="flex-direction:column;gap:4px;"><span class="cfg-lbl">Waiting</span><div style="display:flex;flex-wrap:wrap;gap:4px;">';
+        cfg.flow_efficiency.waiting_columns.forEach(c => { html += `<span class="eff-pill eff-waiting">⏳ ${escapeHtml(c)}</span>`; });
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+
+    if (cfg.blocked_time?.signals?.length) {
+      html += '<div class="cfg-block">';
+      html += '<div class="cfg-block-title">🚧 Blocked Signals</div>';
+      cfg.blocked_time.signals.forEach(s => {
+        html += `<div class="cfg-row"><span class="cfg-lbl">${escapeHtml(s.mechanism)}</span><span class="cfg-val">🏷️ <strong>${escapeHtml(s.tag || s.value || '')}</strong></span></div>`;
+      });
+      html += '</div>';
+    }
+
+    if (cfg.historical_column_mapping && Object.keys(cfg.historical_column_mapping).length) {
+      html += '<div class="cfg-block">';
+      html += '<div class="cfg-block-title">🗺️ Column Aliases</div>';
+      Object.entries(cfg.historical_column_mapping).forEach(([from, to]) => {
+        html += `<div class="cfg-row"><span class="cfg-val">${escapeHtml(from)}</span><span class="cfg-lbl" style="min-width:auto;">→</span><span class="cfg-val">${escapeHtml(to)}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    html += '</div></div>';
+  }
+
+  // Excluded items
+  {
+    html += '<div class="card">';
+    html += '<div class="info-section-title">🚫 Excluded Items</div>';
+    if (!excl.length) {
+      html += '<p class="info-empty">✅ No items have been excluded from the analysis.</p>';
+    } else {
+      html += `<p style="font-size:13px;color:#718096;margin-bottom:14px;">${excl.length} item${excl.length !== 1 ? 's' : ''} excluded from metric calculations.</p>`;
+      html += '<div class="excl-table">';
+      excl.forEach(item => {
+        html += `<div class="excl-row"><span class="excl-id">#${item.id}</span>`;
+        if (item.reasons?.length) html += `<span class="excl-reason">${item.reasons.map(r => escapeHtml(r)).join(' · ')}</span>`;
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>'; // /info-side-grid
+
+  // ── Section 3: Data Quality ─────────────────────────────────────
+  if (dqr) {
+    const CHECK_META = {
+      missing_board_entry_date:     { label: 'Missing board entry date',      desc: 'Items with no recorded date for first entering the board.' },
+      empty_column_history:         { label: 'Empty column history',          desc: 'Items with no column transitions in their history.' },
+      snapshot_history_mismatch:    { label: 'Snapshot / history mismatch',   desc: 'Items where the current board snapshot state doesn\'t match the column history.' },
+      unknown_swimlanes:            { label: 'Unknown swimlanes',             desc: 'Items assigned to swimlanes not present in the board configuration.' },
+      unknown_states_in_history:    { label: 'Unknown states in history',     desc: 'Work item states that don\'t map to known board columns. Common with older or migrated data — usually safe to ignore.' },
+      historical_unknown_columns:   { label: 'Historical unknown columns',    desc: 'Column names in history not present in the current board config. May affect time-in-column calculations for historical items.' },
+      short_dwell_spans:            { label: 'Short dwell spans',             desc: 'Items that moved through a column faster than the configured threshold. May indicate drag-and-drop errors or bulk column assignments.' },
+      future_column_timestamps:     { label: 'Future column timestamps',      desc: 'Column entry dates set in the future. Can occur during bulk imports or from clock skew.' },
+      unassigned_in_progress:       { label: 'Unassigned in-progress items',  desc: 'Active items with no assigned owner.' },
+      broken_parent_references:     { label: 'Broken parent references',      desc: 'Items whose parent work item doesn\'t exist or is in a different project.' },
+      broken_child_references:      { label: 'Broken child references',       desc: 'Items with child references pointing to non-existent work items.' },
+      broken_dependency_references: { label: 'Broken dependency references',  desc: 'Items with dependency links pointing to non-existent work items.' },
+    };
+
+    html += '<div class="card">';
+    html += '<div class="info-section-title">🔍 Data Quality Report</div>';
+
+    // Summary stat cards
+    const totalOk    = Object.values(dqr.checks || {}).filter(c => (c.count ?? 0) === 0).length;
+    const totalFlags = Object.values(dqr.checks || {}).filter(c => (c.count ?? 0) > 0).length;
+    html += '<div class="dq-summary">';
+    html += `<div class="dq-stat-card"><div class="dq-stat-label">📦 Total items</div><div class="dq-stat-value">${(dqr.total_items || 0).toLocaleString()}</div></div>`;
+    html += `<div class="dq-stat-card"><div class="dq-stat-label">✅ Checks passed</div><div class="dq-stat-value" style="color:#276749;">${totalOk}</div></div>`;
+    html += `<div class="dq-stat-card"><div class="dq-stat-label">${totalFlags ? '⚠️' : '✅'} Checks flagged</div><div class="dq-stat-value" style="color:${totalFlags ? '#c05621' : '#276749'};">${totalFlags}</div></div>`;
+    if (dqr.generated_at) {
+      const d = new Date(dqr.generated_at);
+      html += `<div class="dq-stat-card"><div class="dq-stat-label">🕐 Generated</div><div class="dq-stat-value" style="font-size:14px;font-weight:600;">${d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div></div>`;
+    }
+    html += '</div>';
+
+    // Check rows
+    if (dqr.checks) {
+      html += '<div class="dq-checks">';
+      Object.entries(dqr.checks).forEach(([key, check]) => {
+        const count = check.count ?? 0;
+        const meta  = CHECK_META[key] || { label: key, desc: '' };
+        const items = check.items || check.item_ids || check.unknown_columns || [];
+
+        let statusEmoji, rowCls;
+        if      (count === 0)   { statusEmoji = '✅'; rowCls = 'dq-ok'; }
+        else if (count <= 50)   { statusEmoji = '⚠️'; rowCls = 'dq-warn'; }
+        else                    { statusEmoji = 'ℹ️'; rowCls = 'dq-info'; }
+
+        const threshold = check.threshold_minutes ? ` (threshold: ${check.threshold_minutes} min)` : '';
+        const labelHtml = `${escapeHtml(meta.label)}${escapeHtml(threshold)}`
+          + (meta.desc ? `<small>${escapeHtml(meta.desc)}</small>` : '');
+        const countHtml = `<span class="dq-count">${count.toLocaleString()}</span>`;
+
+        if (count > 0 && Array.isArray(items) && items.length > 0) {
+          html += `<details class="dq-row ${rowCls}">`;
+          html += `<summary><span class="dq-status">${statusEmoji}</span><span class="dq-label">${labelHtml}</span>${countHtml}</summary>`;
+          html += `<div class="dq-detail">`;
+          if (check.note) html += `<div class="dq-note">📝 ${escapeHtml(check.note)}</div>`;
+          html += `<div class="dq-chips">`;
+          const show = items.slice(0, 24);
+          show.forEach(item => {
+            const label = typeof item === 'object'
+              ? `#${item.id}${item.state ? ' · ' + item.state : ''}`
+              : String(item);
+            html += `<span class="dq-chip">${escapeHtml(label)}</span>`;
+          });
+          if (items.length > 24) html += `<span class="dq-chip-more">+${items.length - 24} more</span>`;
+          html += `</div></div></details>`;
+        } else {
+          html += `<div class="dq-row ${rowCls}"><span class="dq-status">${statusEmoji}</span><span class="dq-label">${labelHtml}</span>${countHtml}</div>`;
+        }
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
 })();
 </script>
 </body>
