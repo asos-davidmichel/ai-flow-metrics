@@ -7,6 +7,7 @@ from pathlib import Path
 from util_ado import (
     ADOError,
     discover_board,
+    fetch_parent_items,
     fetch_work_item_history,
     fetch_work_item_ids,
     fetch_work_item_type_styles,
@@ -164,6 +165,27 @@ def main():
     except ADOError as e:
         print(f"Error fetching work items: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # Enrich work items with parent title/type (features, epics, etc.)
+    board_item_ids = {item["id"] for item in work_items}
+    parent_ids = {
+        item["parent_id"]
+        for item in work_items
+        if item.get("parent_id") and item["parent_id"] not in board_item_ids
+    }
+    parent_info = {}
+    if parent_ids:
+        print(f"\nFetching {len(parent_ids)} parent items (features/epics)...")
+        try:
+            parent_info = fetch_parent_items(org, project, parent_ids, headers)
+            print(f"  {len(parent_info)} parent items resolved")
+        except ADOError as e:
+            print(f"  Warning: could not fetch parent items: {e}", file=sys.stderr)
+    for item in work_items:
+        pid = item.get("parent_id")
+        info = parent_info.get(pid, {}) if pid else {}
+        item["parent_title"] = info.get("title")
+        item["parent_type"] = info.get("type")
 
     print("\nFetching work item type styles...")
     work_item_type_styles = fetch_work_item_type_styles(org, project, work_item_types, headers)

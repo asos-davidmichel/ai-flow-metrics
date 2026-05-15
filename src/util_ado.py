@@ -242,6 +242,36 @@ def _normalise_item(raw):
     }
 
 
+def fetch_parent_items(org, project, parent_ids, headers, batch_size=200):
+    """Fetch title and type for a list of parent work item IDs (features/epics).
+    Returns a dict mapping id -> {"title": ..., "type": ...}.
+    Silently skips IDs that cannot be fetched (e.g. from a different project).
+    """
+    if not parent_ids:
+        return {}
+    parent_fields = "System.Id,System.Title,System.WorkItemType"
+    base = f"https://dev.azure.com/{org}/{requests.utils.quote(project)}/_apis/wit/workitems"
+    result = {}
+    ids_list = list(parent_ids)
+    for i in range(0, len(ids_list), batch_size):
+        batch = ids_list[i: i + batch_size]
+        ids_param = ",".join(str(x) for x in batch)
+        try:
+            data = _get(
+                f"{base}?ids={ids_param}&fields={parent_fields}&api-version={API_VERSION}",
+                headers,
+            )
+            for raw in data.get("value", []):
+                flds = raw.get("fields", {})
+                result[raw["id"]] = {
+                    "title": flds.get("System.Title"),
+                    "type": flds.get("System.WorkItemType"),
+                }
+        except ADOError:
+            pass  # parent may live in a different project or be inaccessible
+    return result
+
+
 def fetch_work_items(org, project, ids, headers, batch_size=200):
     """Fetch full work item details for a list of IDs. Returns normalised records."""
     fields_param = ",".join(WORK_ITEM_FIELDS)

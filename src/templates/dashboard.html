@@ -228,6 +228,123 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
+    /* ── Filter bar ─────────────────────────────────────────────── */
+    .tab-nav-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      gap: 12px;
+    }
+    .tab-nav-row .tabs { margin-bottom: 0; flex-shrink: 0; }
+    #filterControl { position: relative; align-self: center; flex-shrink: 0; }
+    #filterBtn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 16px;
+      border: 1.5px solid #cbd5e0; background: white; border-radius: 8px;
+      font: 600 13px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #4a5568; cursor: pointer; white-space: nowrap;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #filterBtn:hover { border-color: #667eea; color: #667eea; }
+    #filterBtn.has-filters { border-color: #fc8181; background: #fff5f5; color: #c53030; }
+    #filterBadge {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #fc8181; color: white; border-radius: 10px;
+      font-size: 11px; font-weight: 700; padding: 1px 6px; min-width: 18px;
+    }
+    #filterPanel {
+      display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 200;
+      background: white; border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15); border: 1px solid #e2e8f0;
+      padding: 20px; min-width: 380px; max-width: 480px;
+    }
+    #filterPanel.open { display: block; }
+    .fp-section { margin-bottom: 16px; }
+    .fp-label {
+      font: 600 11px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #718096; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+    }
+    .fp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .fp-chip {
+      padding: 4px 10px; border: 1.5px solid #e2e8f0; border-radius: 20px;
+      font-size: 12px; font-weight: 500; cursor: pointer; color: #4a5568; background: white;
+      transition: all 0.12s; user-select: none;
+    }
+    .fp-chip:hover { border-color: #718096; }
+    .fp-chip.selected { background: #fed7d7; border-color: #fc8181; color: #c53030; }
+    .fp-token-box {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+      min-height: 36px; padding: 4px 8px;
+      border: 1.5px solid #e2e8f0; border-radius: 8px; cursor: text; position: relative;
+    }
+    .fp-token-box:focus-within { border-color: #667eea; }
+    .fp-token {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 4px 2px 10px; background: #fed7d7; border-radius: 20px;
+      font-size: 12px; font-weight: 500; color: #c53030;
+    }
+    .fp-token button { background: none; border: none; cursor: pointer; color: #c53030; font-size: 15px; line-height: 1; padding: 0 2px; }
+    .fp-token-input {
+      border: none; outline: none; font-size: 13px; color: #2d3748;
+      flex: 1; min-width: 100px; background: transparent; padding: 3px 0;
+    }
+    .fp-dropdown {
+      display: none; position: absolute; left: 0; right: 0; top: calc(100% + 3px); z-index: 300;
+      background: white; border: 1.5px solid #e2e8f0; border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-height: 200px; overflow-y: auto;
+    }
+    .fp-dropdown.open { display: block; }
+    .fp-dd-item { padding: 8px 12px; font-size: 13px; color: #2d3748; cursor: pointer; }
+    .fp-dd-item:hover, .fp-dd-item.fp-active { background: #f7fafc; }
+    .fp-input {
+      width: 100%; padding: 7px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+      font-size: 13px; color: #2d3748; outline: none; box-sizing: border-box;
+    }
+    .fp-input:focus { border-color: #667eea; }
+    .fp-age-row { display: flex; align-items: center; gap: 8px; }
+    .fp-age-row input {
+      width: 70px; padding: 7px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+      font-size: 13px; outline: none;
+    }
+    .fp-age-row input:focus { border-color: #667eea; }
+    .fp-age-row span { font-size: 13px; color: #4a5568; }
+    .fp-actions {
+      display: flex; justify-content: flex-end; gap: 10px;
+      margin-top: 18px; padding-top: 14px; border-top: 1px solid #e2e8f0;
+    }
+    .fp-clear-btn {
+      padding: 7px 14px; border: 1.5px solid #e2e8f0; border-radius: 7px;
+      background: white; font: 600 13px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #718096; cursor: pointer;
+    }
+    .fp-clear-btn:hover { border-color: #718096; color: #4a5568; }
+    .fp-apply-btn {
+      padding: 7px 18px; border: none; border-radius: 7px; background: #667eea;
+      font: 600 13px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: white; cursor: pointer;
+    }
+    .fp-apply-btn:hover { background: #5a67d8; }
+    #filterPills {
+      display: none; align-items: center; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 18px; padding: 8px 12px;
+      background: #fff5f5; border: 1px solid #fed7d7; border-radius: 8px;
+    }
+    #filterPills.visible { display: flex; }
+    .filter-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 8px 3px 10px; background: #fed7d7; border: 1px solid #fc8181;
+      border-radius: 12px; font-size: 12px; color: #c53030; font-weight: 500;
+    }
+    .filter-pill button {
+      background: none; border: none; padding: 0 0 0 2px; cursor: pointer;
+      color: #fc8181; font-size: 14px; line-height: 1; display: flex; align-items: center;
+    }
+    .filter-pill button:hover { color: #c53030; }
+    #filterExcludedCount { font-size: 12px; font-weight: 600; margin-left: auto; white-space: nowrap; }
+    #filterExcludedCount.heavy { color: #c53030; }
+    #filterExcludedCount:not(.heavy) { color: #718096; }
+
     /* Side-by-side card rows */
     .card-row {
       display: grid;
@@ -547,16 +664,61 @@
     </div>
   </div>
 
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="overview">📊 Overview</button>
-    <button class="tab-btn" data-tab="delivery">🚀 Delivery</button>
-    <button class="tab-btn" data-tab="bugs">🐛 Bugs</button>
-    <button class="tab-btn" data-tab="process">🌊 Flow</button>
-    <button class="tab-btn" data-tab="wip">🔄 WIP</button>
-    <button class="tab-btn" data-tab="blockers">🚧 Blockers</button>
-    <button class="tab-btn" data-tab="efficiency">⚡ Efficiency</button>
-    <button class="tab-btn" data-tab="info">ℹ️ Info</button>
+  <div class="tab-nav-row">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+      <button class="tab-btn" data-tab="delivery">🚀 Delivery</button>
+      <button class="tab-btn" data-tab="bugs">🐛 Bugs</button>
+      <button class="tab-btn" data-tab="process">🌊 Flow</button>
+      <button class="tab-btn" data-tab="wip">🔄 WIP</button>
+      <button class="tab-btn" data-tab="blockers">🚧 Blockers</button>
+      <button class="tab-btn" data-tab="efficiency">⚡ Efficiency</button>
+      <button class="tab-btn" data-tab="info">ℹ️ Info</button>
+    </div>
+    <div id="filterControl">
+      <button id="filterBtn">⊕ Filter</button>
+      <div id="filterPanel">
+        <div class="fp-section" id="fp-tags-section" style="display:none">
+          <div class="fp-label">Exclude by tag</div>
+          <div class="fp-token-box" id="fp-tags">
+            <input class="fp-token-input" id="fp-tags-input" type="text" placeholder="Type to search tags…" autocomplete="off">
+            <div class="fp-dropdown" id="fp-tags-dropdown"></div>
+          </div>
+        </div>
+        <div class="fp-section" id="fp-swimlanes-section" style="display:none">
+          <div class="fp-label">Exclude by swimlane</div>
+          <div class="fp-chips" id="fp-swimlanes"></div>
+        </div>
+        <div class="fp-section" id="fp-parents-section" style="display:none">
+          <div class="fp-label">Exclude by parent (feature / epic)</div>
+          <div class="fp-token-box" id="fp-parents">
+            <input class="fp-token-input" id="fp-parents-input" type="text" placeholder="Type to search features…" autocomplete="off">
+            <div class="fp-dropdown" id="fp-parents-dropdown"></div>
+          </div>
+        </div>
+        <div class="fp-section">
+          <div class="fp-label">Exclude item IDs (e.g. 1234, 1100-1200)</div>
+          <input class="fp-input" id="fp-ids" type="text" placeholder="comma-separated IDs or ranges">
+        </div>
+        <div class="fp-section">
+          <div class="fp-label">Exclude by title pattern (* = wildcard)</div>
+          <input class="fp-input" id="fp-title" type="text" placeholder="e.g. Single Region Migration*">
+        </div>
+        <div class="fp-section">
+          <div class="fp-label">Exclude items created more than</div>
+          <div class="fp-age-row">
+            <input id="fp-age" type="number" min="1" placeholder="e.g. 90">
+            <span>days ago</span>
+          </div>
+        </div>
+        <div class="fp-actions">
+          <button class="fp-clear-btn" id="fp-clear">Clear all</button>
+          <button class="fp-apply-btn" id="fp-apply">Apply</button>
+        </div>
+      </div>
+    </div>
   </div>
+  <div id="filterPills"></div>
 
   <!-- ── Overview tab ─────────────────────────────────────────────── -->
   <div id="tab-overview" class="tab-panel active">
@@ -852,6 +1014,119 @@
 <div id="sharedTooltip" class="chart-tooltip"></div>
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
+
+// ── Global filter: runs before any chart code ────────────────────────
+// Loads exclusion rules from localStorage, builds excludedIds, then
+// patches every dashboard.* array so all charts see filtered data.
+(function applyGlobalFilter() {
+  const FILTER_KEY = 'flow_filter_rules';
+  const rules = (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || '[]'); } catch(e) { return []; } })();
+  const allItems = dashboard.work_items || [];
+  const totalCount = allItems.length;
+
+  function _wkStart(iso) {
+    const d = new Date(iso.slice(0,10) + 'T00:00:00Z');
+    const diff = (d.getUTCDay() === 0 ? -6 : 1 - d.getUTCDay());
+    d.setUTCDate(d.getUTCDate() + diff);
+    return d.toISOString().slice(0,10);
+  }
+
+  function computeExcludedIds(rules, items) {
+    const excl = new Set();
+    const now = Date.now();
+    for (const item of items) {
+      for (const rule of rules) {
+        let hit = false;
+        if (rule.type === 'tag') {
+          hit = Array.isArray(item.tags) && item.tags.some(t => t.toLowerCase() === rule.value.toLowerCase());
+        } else if (rule.type === 'swimlane') {
+          hit = (item.swimlane || '') === rule.value;
+        } else if (rule.type === 'id') {
+          const parts = String(rule.value).split(',').map(s => s.trim()).filter(Boolean);
+          for (const part of parts) {
+            const m = part.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+            if (m) { const lo = +m[1], hi = m[2] ? +m[2] : lo; if (item.id >= lo && item.id <= hi) { hit = true; break; } }
+          }
+        } else if (rule.type === 'parent') {
+          hit = item.parent_id != null && item.parent_id === Number(rule.value);
+        } else if (rule.type === 'title') {
+          try { hit = new RegExp('^' + rule.value.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i').test(item.title || ''); } catch(e) {}
+        } else if (rule.type === 'age') {
+          if (item.created_date) hit = (now - new Date(item.created_date).getTime()) / 86400000 > Number(rule.value);
+        }
+        if (hit) { excl.add(item.id); break; }
+      }
+    }
+    return excl;
+  }
+
+  const excludedIds = rules.length ? computeExcludedIds(rules, allItems) : new Set();
+
+  if (excludedIds.size) {
+    dashboard.work_items = allItems.filter(i => !excludedIds.has(i.id));
+    dashboard.work_item_history = (dashboard.work_item_history || []).filter(h => !excludedIds.has(h.id));
+
+    // Patch cycle_time
+    const ct = dashboard.cycle_time;
+    if (ct?.items) {
+      ct.items = ct.items.filter(i => !excludedIds.has(i.id));
+      if (ct.throughput_items) ct.throughput_items = ct.throughput_items.filter(i => !excludedIds.has(i.id));
+      const vals = ct.items.map(i => i.cycle_time_days).filter(v => v != null).sort((a,b) => a-b);
+      const n = vals.length;
+      ct.item_count = n;
+      ct.overall = n ? { n, mean_days: vals.reduce((s,v)=>s+v,0)/n, median_days: vals[Math.floor(n/2)],
+        p85_days: vals[Math.floor(n*0.85)], min_days: vals[0], max_days: vals[n-1] } : { n: 0 };
+      const byWk = {};
+      ct.items.forEach(i => { if (!i.completed_at) return; const w = _wkStart(i.completed_at); (byWk[w] = byWk[w]||[]).push(i); });
+      ct.weekly_stats = Object.entries(byWk).sort().map(([w, its]) => {
+        const vs = its.map(i=>i.cycle_time_days).filter(v=>v!=null).sort((a,b)=>a-b);
+        const mn = vs.length ? vs.reduce((s,v)=>s+v,0)/vs.length : null;
+        const mms = its.reduce((s,i)=>s+new Date(i.completed_at).getTime(),0)/its.length;
+        return { _week: w, n: its.length, mean_days: mn ? Math.round(mn*10)/10 : null,
+          median_days: vs.length ? vs[Math.floor(vs.length/2)] : null, mean_completed_ms: mms };
+      });
+    }
+
+    // Patch lead_time
+    const lt = dashboard.lead_time;
+    if (lt?.items) {
+      lt.items = lt.items.filter(i => !excludedIds.has(i.id));
+      const vals = lt.items.map(i => i.lead_time_days).filter(v => v != null).sort((a,b) => a-b);
+      const n = vals.length;
+      lt.item_count = n;
+      lt.overall = n ? { n, mean_days: vals.reduce((s,v)=>s+v,0)/n, median_days: vals[Math.floor(n/2)],
+        p85_days: vals[Math.floor(n*0.85)], min_days: vals[0], max_days: vals[n-1] } : { n: 0 };
+      const byWk = {};
+      lt.items.forEach(i => { if (!i.completed_at) return; const w = _wkStart(i.completed_at); (byWk[w] = byWk[w]||[]).push(i); });
+      lt.weekly_stats = Object.entries(byWk).sort().map(([w, its]) => {
+        const vs = its.map(i=>i.lead_time_days).filter(v=>v!=null).sort((a,b)=>a-b);
+        const mn = vs.length ? vs.reduce((s,v)=>s+v,0)/vs.length : null;
+        const mms = its.reduce((s,i)=>s+new Date(i.completed_at).getTime(),0)/its.length;
+        return { _week: w, n: its.length, mean_days: mn ? Math.round(mn*10)/10 : null,
+          median_days: vs.length ? vs[Math.floor(vs.length/2)] : null, mean_completed_ms: mms };
+      });
+    }
+
+    // Patch time_in_columns
+    const tic = dashboard.time_in_columns;
+    if (tic?.items) {
+      tic.items = tic.items.filter(i => !excludedIds.has(i.id));
+      (tic.columns || []).forEach(col => {
+        const hrs = tic.items.map(i => (i.column_hours||{})[col.name]).filter(h => h != null).sort((a,b)=>a-b);
+        col.n = hrs.length;
+        col.total_hours = hrs.reduce((s,v)=>s+v, 0);
+        col.mean_hours  = hrs.length ? col.total_hours / hrs.length : 0;
+        col.median_hours = hrs.length ? hrs[Math.floor(hrs.length/2)] : 0;
+      });
+      tic.item_count = tic.items.length;
+    }
+  }
+
+  window._filterState = { rules, excludedIds, excludedCount: excludedIds.size, totalCount };
+  window._FILTER_KEY = FILTER_KEY;
+})();
+// ────────────────────────────────────────────────────────────────────
+
 const data = dashboard.time_in_columns;
 
 function escapeHtml(s) {
@@ -4350,6 +4625,231 @@ function updateChart() {
     const ord = orderMap[label];
     if (ord) card.style.order = ord;
   });
+})();
+
+// ── Filter UI ────────────────────────────────────────────────────────
+(function initFilterUI() {
+  const FILTER_KEY = window._FILTER_KEY;
+  const fs = window._filterState;
+  const btn    = document.getElementById('filterBtn');
+  const panel  = document.getElementById('filterPanel');
+  const pills  = document.getElementById('filterPills');
+
+  // ── Populate tag + swimlane chips from raw work_items (unfiltered) ──
+  const rawItems = (() => {
+    // The original work_items before filtering — reconstruct from ct/lt items
+    // plus the already-patched work_items (tags/swimlane fields not on ct/lt items).
+    // We stored totalCount; use the DOM's embedded data for tag/swimlane discovery.
+    // Since dashboard.work_items may be filtered, we need all unique values from it
+    // plus what's in the filter rules already (so removed chips stay visible).
+    return dashboard.work_items || [];
+  })();
+
+  const allTags = [...new Set(
+    rawItems.flatMap(i => Array.isArray(i.tags) ? i.tags : []).filter(Boolean)
+  )].sort();
+  const allSwimlanes = [...new Set(
+    rawItems.map(i => i.swimlane).filter(Boolean)
+  )].sort();
+
+  // Show sections only if there are values
+  let selectedTags = new Set(fs.rules.filter(r => r.type === 'tag').map(r => r.value));
+  if (allTags.length) {
+    document.getElementById('fp-tags-section').style.display = '';
+    const box      = document.getElementById('fp-tags');
+    const tagInput = document.getElementById('fp-tags-input');
+    const tagDrop  = document.getElementById('fp-tags-dropdown');
+    let ddActive = -1;
+
+    function renderTags() {
+      box.querySelectorAll('.fp-token').forEach(t => t.remove());
+      [...selectedTags].forEach(tag => {
+        const tok = document.createElement('span');
+        tok.className = 'fp-token';
+        tok.innerHTML = escapeHtml(tag) + '<button title="Remove">×</button>';
+        tok.querySelector('button').addEventListener('click', () => { selectedTags.delete(tag); renderTags(); });
+        box.insertBefore(tok, tagInput);
+      });
+    }
+
+    function renderTagDrop(q) {
+      const matches = allTags.filter(t => !selectedTags.has(t) && t.toLowerCase().includes(q.toLowerCase()));
+      if (!matches.length) { tagDrop.classList.remove('open'); return; }
+      ddActive = -1;
+      tagDrop.innerHTML = '';
+      matches.slice(0, 25).forEach(tag => {
+        const item = document.createElement('div');
+        item.className = 'fp-dd-item';
+        item.textContent = tag;
+        item.addEventListener('mousedown', e => {
+          e.preventDefault(); selectedTags.add(tag); tagInput.value = ''; renderTags(); renderTagDrop(''); tagInput.focus();
+        });
+        tagDrop.appendChild(item);
+      });
+      tagDrop.classList.add('open');
+    }
+
+    tagInput.addEventListener('input', () => renderTagDrop(tagInput.value));
+    tagInput.addEventListener('focus', () => { if (tagInput.value || !selectedTags.size) renderTagDrop(tagInput.value); });
+    tagInput.addEventListener('blur', () => setTimeout(() => tagDrop.classList.remove('open'), 150));
+    tagInput.addEventListener('keydown', e => {
+      const items = [...tagDrop.querySelectorAll('.fp-dd-item')];
+      if      (e.key === 'ArrowDown')  { e.preventDefault(); ddActive = Math.min(ddActive+1, items.length-1); items.forEach((it,i) => it.classList.toggle('fp-active', i===ddActive)); }
+      else if (e.key === 'ArrowUp')   { e.preventDefault(); ddActive = Math.max(ddActive-1, 0); items.forEach((it,i) => it.classList.toggle('fp-active', i===ddActive)); }
+      else if (e.key === 'Enter' && ddActive >= 0) { e.preventDefault(); const t = items[ddActive]?.textContent; if (t) { selectedTags.add(t); tagInput.value = ''; renderTags(); tagDrop.classList.remove('open'); } }
+      else if (e.key === 'Backspace' && !tagInput.value) { const arr = [...selectedTags]; if (arr.length) { selectedTags.delete(arr[arr.length-1]); renderTags(); } }
+      else if (e.key === 'Escape') { tagDrop.classList.remove('open'); }
+    });
+    box.addEventListener('click', () => tagInput.focus());
+    renderTags();
+  }
+
+  if (allSwimlanes.length) {
+    document.getElementById('fp-swimlanes-section').style.display = '';
+    const selectedSL = new Set(fs.rules.filter(r => r.type === 'swimlane').map(r => r.value));
+    const container = document.getElementById('fp-swimlanes');
+    allSwimlanes.forEach(sl => {
+      const chip = document.createElement('button');
+      chip.className = 'fp-chip' + (selectedSL.has(sl) ? ' selected' : '');
+      chip.textContent = sl;
+      chip.addEventListener('click', () => chip.classList.toggle('selected'));
+      container.appendChild(chip);
+    });
+  }
+
+  // ── Parent typeahead ──────────────────────────────────────────────
+  const parentMap = new Map();
+  rawItems.forEach(i => {
+    if (i.parent_id != null && i.parent_title) parentMap.set(i.parent_id, { id: i.parent_id, title: i.parent_title, type: i.parent_type || '' });
+  });
+  const allParents = [...parentMap.values()].sort((a, b) => a.title.localeCompare(b.title));
+  // Also add any parent rules whose id is not in current (filtered) items
+  fs.rules.filter(r => r.type === 'parent').forEach(r => {
+    if (!parentMap.has(Number(r.value))) parentMap.set(Number(r.value), { id: Number(r.value), title: r.label || String(r.value), type: '' });
+  });
+
+  // selectedParentIds: Map<id, label>
+  let selectedParentIds = new Map(fs.rules.filter(r => r.type === 'parent').map(r => [Number(r.value), r.label || String(r.value)]));
+
+  if (allParents.length) {
+    document.getElementById('fp-parents-section').style.display = '';
+    const pBox   = document.getElementById('fp-parents');
+    const pInput = document.getElementById('fp-parents-input');
+    const pDrop  = document.getElementById('fp-parents-dropdown');
+    let pDdActive = -1;
+
+    function renderParents() {
+      pBox.querySelectorAll('.fp-token').forEach(t => t.remove());
+      selectedParentIds.forEach((label, id) => {
+        const tok = document.createElement('span');
+        tok.className = 'fp-token';
+        tok.innerHTML = escapeHtml(label) + '<button title="Remove">×</button>';
+        tok.querySelector('button').addEventListener('click', () => { selectedParentIds.delete(id); renderParents(); });
+        pBox.insertBefore(tok, pInput);
+      });
+    }
+
+    function renderParentDrop(q) {
+      const matches = allParents.filter(p => !selectedParentIds.has(p.id) && (p.title.toLowerCase().includes(q.toLowerCase()) || (p.type || '').toLowerCase().includes(q.toLowerCase())));
+      if (!matches.length) { pDrop.classList.remove('open'); return; }
+      pDdActive = -1;
+      pDrop.innerHTML = '';
+      matches.slice(0, 25).forEach(p => {
+        const item = document.createElement('div');
+        item.className = 'fp-dd-item';
+        item.textContent = (p.type ? p.type + ': ' : '') + p.title;
+        item.addEventListener('mousedown', e => {
+          e.preventDefault(); selectedParentIds.set(p.id, item.textContent); pInput.value = ''; renderParents(); renderParentDrop(''); pInput.focus();
+        });
+        pDrop.appendChild(item);
+      });
+      pDrop.classList.add('open');
+    }
+
+    pInput.addEventListener('input', () => renderParentDrop(pInput.value));
+    pInput.addEventListener('focus', () => renderParentDrop(pInput.value));
+    pInput.addEventListener('blur', () => setTimeout(() => pDrop.classList.remove('open'), 150));
+    pInput.addEventListener('keydown', e => {
+      const items = [...pDrop.querySelectorAll('.fp-dd-item')];
+      if      (e.key === 'ArrowDown')  { e.preventDefault(); pDdActive = Math.min(pDdActive+1, items.length-1); items.forEach((it,i) => it.classList.toggle('fp-active', i===pDdActive)); }
+      else if (e.key === 'ArrowUp')   { e.preventDefault(); pDdActive = Math.max(pDdActive-1, 0); items.forEach((it,i) => it.classList.toggle('fp-active', i===pDdActive)); }
+      else if (e.key === 'Enter' && pDdActive >= 0) { e.preventDefault(); const p = items[pDdActive]; if (p) { const txt = p.textContent; const match = allParents.find(x => (x.type ? x.type + ': ' : '') + x.title === txt); if (match) { selectedParentIds.set(match.id, txt); pInput.value = ''; renderParents(); pDrop.classList.remove('open'); } } }
+      else if (e.key === 'Backspace' && !pInput.value) { const last = [...selectedParentIds.keys()].pop(); if (last != null) { selectedParentIds.delete(last); renderParents(); } }
+      else if (e.key === 'Escape') { pDrop.classList.remove('open'); }
+    });
+    pBox.addEventListener('click', () => pInput.focus());
+    renderParents();
+  }
+
+  // Pre-fill text fields from existing rules
+  const idRule    = fs.rules.find(r => r.type === 'id');
+  const titleRule = fs.rules.find(r => r.type === 'title');
+  const ageRule   = fs.rules.find(r => r.type === 'age');
+  if (idRule)    document.getElementById('fp-ids').value   = idRule.value;
+  if (titleRule) document.getElementById('fp-title').value = titleRule.value;
+  if (ageRule)   document.getElementById('fp-age').value   = ageRule.value;
+
+  // ── Toggle panel ──────────────────────────────────────────────────
+  btn.addEventListener('click', e => { e.stopPropagation(); panel.classList.toggle('open'); });
+  document.addEventListener('click', e => {
+    if (!panel.contains(e.target) && e.target !== btn) panel.classList.remove('open');
+  });
+
+  // ── Apply button ─────────────────────────────────────────────────
+  document.getElementById('fp-apply').addEventListener('click', () => {
+    const rules = [];
+    selectedTags.forEach(tag => rules.push({ type: 'tag', value: tag }));
+    document.querySelectorAll('#fp-swimlanes .fp-chip.selected').forEach(c => rules.push({ type: 'swimlane', value: c.textContent }));
+    selectedParentIds.forEach((label, id) => rules.push({ type: 'parent', value: id, label }));
+    const ids = document.getElementById('fp-ids').value.trim();
+    if (ids) rules.push({ type: 'id', value: ids });
+    const title = document.getElementById('fp-title').value.trim();
+    if (title) rules.push({ type: 'title', value: title });
+    const age = document.getElementById('fp-age').value.trim();
+    if (age && !isNaN(age)) rules.push({ type: 'age', value: Number(age) });
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(rules)); } catch(e) {}
+    location.reload();
+  });
+
+  // ── Clear all ────────────────────────────────────────────────────
+  document.getElementById('fp-clear').addEventListener('click', () => {
+    try { localStorage.removeItem(FILTER_KEY); } catch(e) {}
+    location.reload();
+  });
+
+  // ── Render pills strip ───────────────────────────────────────────
+  if (fs.rules.length) {
+    btn.classList.add('has-filters');
+    const badge = document.createElement('span');
+    badge.id = 'filterBadge';
+    badge.textContent = fs.rules.length;
+    btn.appendChild(badge);
+
+    const LABELS = { tag: '🏷', swimlane: '⛵', id: '#', title: '🔤', age: '📅' };
+    fs.rules.forEach((rule, idx) => {
+      const pill = document.createElement('span');
+      pill.className = 'filter-pill';
+      const label = LABELS[rule.type] || rule.type;
+      const val = rule.type === 'age' ? `created > ${rule.value}d ago` : escapeHtml(String(rule.label || rule.value));
+      pill.innerHTML = `${label} ${escapeHtml(String(val))}<button title="Remove">×</button>`;
+      pill.querySelector('button').addEventListener('click', () => {
+        const updated = fs.rules.filter((_, i) => i !== idx);
+        try { localStorage.setItem(FILTER_KEY, JSON.stringify(updated)); } catch(e) {}
+        location.reload();
+      });
+      pills.appendChild(pill);
+    });
+
+    // Excluded count
+    const countEl = document.createElement('span');
+    countEl.id = 'filterExcludedCount';
+    const pct = fs.totalCount ? fs.excludedCount / fs.totalCount : 0;
+    countEl.textContent = `${fs.excludedCount} of ${fs.totalCount} items excluded`;
+    if (pct >= 0.3) countEl.classList.add('heavy');
+    pills.appendChild(countEl);
+
+    pills.classList.add('visible');
+  }
 })();
 
 // ── Tab switching ────────────────────────────────────────────────────
