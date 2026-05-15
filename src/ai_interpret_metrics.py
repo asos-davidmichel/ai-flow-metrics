@@ -541,6 +541,136 @@ def summarise_ad_ratio(ct, ctx, wih):
     }
 
 
+def summarise_cfd(ct, ctx, wih):
+    """Cohort CFD summary: only items whose first column event falls within the window.
+    Computes arrival/departure rates and band widths — mirrors the dashboard JS model."""
+    from datetime import timedelta
+    if not ct or not ctx or not wih:
+        return None
+    window = ct.get("window", {})
+    win_start = _parse_dt(window.get("start"))
+    win_end   = _parse_dt(window.get("end"))
+    if not win_start or not win_end:
+        return None
+
+    all_cols = [c["name"] for c in ctx.get("columns", [])]
+    if len(all_cols) < 2:
+        return None
+    col_order = {col: i for i, col in enumerate(all_cols)}
+
+    # Weekly buckets aligned to Monday of the window start week
+    def _mon(dt):
+        return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    cur = _mon(win_start)
+    weeks = []
+    while cur <= win_end:
+        weeks.append(cur)
+        cur += timedelta(weeks=1)
+    if not weeks:
+        return None
+
+    win_start_ts = win_start.timestamp()
+    win_end_ts   = win_end.timestamp()
+    week_end_ts  = [(w + timedelta(weeks=1) - timedelta(microseconds=1)).timestamp() for w in weeks]
+
+    # Build cohort item progressions (mirrors JS itemProgressions)
+    progressions = []
+    for entry in wih:
+        events = []
+        for seg in entry.get("column_history", []):
+            idx = col_order.get(seg.get("value"))
+            if idx is None:
+                continue
+            ent = _parse_dt(seg.get("entered"))
+            if ent:
+                events.append((ent.timestamp(), idx))
+        if not events:
+            continue
+        events.sort()
+        if events[0][0] < win_start_ts or events[0][0] > win_end_ts:
+            continue  # outside cohort window
+        sorted_ts, max_idx_at, run_max = [], [], -1
+        for ts, idx in events:
+            run_max = max(run_max, idx)
+            sorted_ts.append(ts)
+            max_idx_at.append(run_max)
+        progressions.append((sorted_ts, max_idx_at))
+
+    if not progressions:
+        return None
+
+    def _max_idx_at_snap(prog, snap_ts):
+        ts_list, idx_list = prog
+        lo, hi, res = 0, len(ts_list) - 1, -1
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if ts_list[mid] <= snap_ts:
+                res = mid; lo = mid + 1
+            else:
+                hi = mid - 1
+        return idx_list[res] if res >= 0 else -1
+
+    # cumAtOrBeyond[col_i][week_i] = cohort items at or beyond col_i by end of week
+    n_cols  = len(all_cols)
+    n_weeks = len(weeks)
+    cum = [[0] * n_weeks for _ in range(n_cols)]
+    for wi_idx in range(n_weeks):
+        snap_ts = week_end_ts[wi_idx]
+        for prog in progressions:
+            mi = _max_idx_at_snap(prog, snap_ts)
+            if mi >= 0:
+                for col_i in range(mi + 1):
+                    cum[col_i][wi_idx] += 1
+
+    def _slope(values):
+        n = len(values)
+        return _round((values[-1] - values[0]) / (n - 1), 1) if n >= 2 else 0
+
+    arrival_rate   = _slope(cum[0])       # first col = all cohort items
+    departure_rate = _slope(cum[-1])      # last col  = completed items
+
+    # Average band width per column (items currently in that column per week)
+    band_avgs = {}
+    for col_i, col in enumerate(all_cols):
+        if col_i < n_cols - 1:
+            vals = [cum[col_i][w] - cum[col_i + 1][w] for w in range(n_weeks)]
+        else:
+            vals = cum[col_i]
+        band_avgs[col] = _round(sum(vals) / len(vals), 1) if vals else 0
+
+    # Widening bands: second-half average > first-half by >30 %
+    mid = max(1, n_weeks // 2)
+    widening = []
+    for col_i, col in enumerate(all_cols):
+        if col_i < n_cols - 1:
+            vals = [cum[col_i][w] - cum[col_i + 1][w] for w in range(n_weeks)]
+        else:
+            vals = cum[col_i]
+        if len(vals) >= 4:
+            fh = sum(vals[:mid]) / mid
+            sh = sum(vals[mid:]) / (n_weeks - mid)
+            if sh > fh * 1.3:
+                widening.append(col)
+
+    acc = arrival_rate or 0
+    dep = departure_rate or 0
+    return {
+        "chart": "cfd",
+        "weeks_in_window": n_weeks,
+        "cohort_size": len(progressions),
+        "arrival_rate_per_week": arrival_rate,
+        "departure_rate_per_week": departure_rate,
+        "accumulation_signal": (
+            "growing"   if acc > dep * 1.1
+            else "draining" if dep > acc * 1.1
+            else "balanced"
+        ),
+        "avg_items_per_column": band_avgs,
+        "widening_bands": widening,
+    }
+
+
 def summarise_ageing_wip(wi, wih, ctx):
     """Current in-progress items with age, time in current column, and blocked status."""
     if not wi or not ctx:
@@ -1140,6 +1270,7 @@ def build_summary():
         "bugs":                  summarise_bugs(wi, ctx, ct),
         "net_flow":              summarise_net_flow(ct, ctx),
         "arrival_departure":     summarise_ad_ratio(ct, ctx, wih),
+        "cfd":                   summarise_cfd(ct, ctx, wih),
         "wip_level_distribution": summarise_wip_level_distribution(wih, ctx, ct),
     }
 

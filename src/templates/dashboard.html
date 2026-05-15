@@ -2359,12 +2359,13 @@ function updateChart() {
     _col: col,
   }));
 
-  // Trend line: straight line from (0,0) to the final data point.
-  // slope = final value / number of weeks  →  line[x] = slope * x
+  // Trend line: straight line from the first data point to the last data point.
+  // slope = (last_value - first_value) / n_weeks  →  line[x] = first_value + slope * x
   function linTrendLine(values) {
     const last = values.length - 1;
-    const slope = last > 0 ? values[last] / last : 0;
-    return { line: values.map((_, x) => Math.round(slope * x * 10) / 10), slope };
+    if (last <= 0) return { line: values.map(() => 0), slope: 0 };
+    const slope = (values[last] - values[0]) / last;
+    return { line: values.map((_, x) => Math.round((values[0] + slope * x) * 10) / 10), slope };
   }
 
   // Started = first inProgress column (not incoming backlog). Closed = last column.
