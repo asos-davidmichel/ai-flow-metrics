@@ -4789,6 +4789,12 @@ function updateChart() {
   if (titleRule) document.getElementById('fp-title').value = titleRule.value;
   if (ageRule)   document.getElementById('fp-age').value   = ageRule.value;
 
+  function reloadKeepTab() {
+    const t = document.querySelector('.tab-btn.active')?.dataset.tab;
+    if (t) sessionStorage.setItem('flow_active_tab', t);
+    location.reload();
+  }
+
   // ── Toggle panel ──────────────────────────────────────────────────
   btn.addEventListener('click', e => { e.stopPropagation(); panel.classList.toggle('open'); });
   document.addEventListener('click', e => {
@@ -4808,13 +4814,13 @@ function updateChart() {
     const age = document.getElementById('fp-age').value.trim();
     if (age && !isNaN(age)) rules.push({ type: 'age', value: Number(age) });
     try { localStorage.setItem(FILTER_KEY, JSON.stringify(rules)); } catch(e) {}
-    location.reload();
+    reloadKeepTab();
   });
 
   // ── Clear all ────────────────────────────────────────────────────
   document.getElementById('fp-clear').addEventListener('click', () => {
     try { localStorage.removeItem(FILTER_KEY); } catch(e) {}
-    location.reload();
+    reloadKeepTab();
   });
 
   // ── Render pills strip ───────────────────────────────────────────
@@ -4835,7 +4841,7 @@ function updateChart() {
       pill.querySelector('button').addEventListener('click', () => {
         const updated = fs.rules.filter((_, i) => i !== idx);
         try { localStorage.setItem(FILTER_KEY, JSON.stringify(updated)); } catch(e) {}
-        location.reload();
+        reloadKeepTab();
       });
       pills.appendChild(pill);
     });
@@ -4862,6 +4868,19 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     sharedTooltip.reset();
   });
 });
+
+// Restore tab after filter reload
+const _savedTab = sessionStorage.getItem('flow_active_tab');
+if (_savedTab) {
+  sessionStorage.removeItem('flow_active_tab');
+  const _btn = document.querySelector(`.tab-btn[data-tab="${_savedTab}"]`);
+  if (_btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    _btn.classList.add('active');
+    document.getElementById('tab-' + _savedTab)?.classList.add('active');
+  }
+}
 
 // ── AI Insights ──────────────────────────────────────────────────────
 (function renderInsights() {
