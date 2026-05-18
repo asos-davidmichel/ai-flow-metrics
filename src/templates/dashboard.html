@@ -570,6 +570,13 @@
     .cfg-row:last-child { margin-bottom: 0; }
     .cfg-lbl { color: #a0aec0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; min-width: 68px; padding-top: 1px; }
     .cfg-val { color: #2d3748; font-weight: 500; }
+    .alias-table { display: grid; grid-template-columns: auto auto 1fr; column-gap: 10px; row-gap: 7px; align-items: center; }
+    .alias-dest-pill { display: inline-block; padding: 2px 9px; border-radius: 9999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .alias-arrow { color: #cbd5e0; font-size: 12px; }
+    .alias-sources { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .alias-source-tag { color: #4a5568; font-size: 12px; white-space: nowrap; }
+    .alias-source-sep { color: #cbd5e0; font-size: 12px; margin: 0 2px; }
+    .alias-unmapped { color: #a0aec0; font-size: 11px; font-style: italic; }
     .eff-pill {
       display: inline-flex; align-items: center; gap: 3px;
       border-radius: 4px; padding: 2px 8px; font-size: 12px;
@@ -5239,11 +5246,40 @@ if (_savedTab) {
     }
 
     if (cfg.historical_column_mapping && Object.keys(cfg.historical_column_mapping).length) {
-      html += '<div class="cfg-block">';
+      html += '<div class="cfg-block" style="grid-column:1/-1">';
       html += '<div class="cfg-block-title">🗺️ Column Aliases</div>';
+      const _aliasPalette = [
+        {bg:'#ebf4ff',color:'#2b6cb0'},{bg:'#faf5ff',color:'#6b21a8'},
+        {bg:'#f0fff4',color:'#276749'},{bg:'#fffaf0',color:'#c05621'},
+        {bg:'#e6fffa',color:'#2c7a7b'},{bg:'#fefcbf',color:'#744210'},
+        {bg:'#fff5f5',color:'#c53030'},{bg:'#f7fafc',color:'#4a5568'}
+      ];
+      function _aliasPillStyle(name) {
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
+        const p = _aliasPalette[Math.abs(h) % _aliasPalette.length];
+        return `background:${p.bg};color:${p.color};`;
+      }
+      const _aliasGroups = {};
       Object.entries(cfg.historical_column_mapping).forEach(([from, to]) => {
-        html += `<div class="cfg-row"><span class="cfg-val">${escapeHtml(from)}</span><span class="cfg-lbl" style="min-width:auto;">→</span><span class="cfg-val">${escapeHtml(to)}</span></div>`;
+        const key = to || '\x00';
+        (_aliasGroups[key] = _aliasGroups[key] || []).push(from);
       });
+      // mapped groups first (sorted by dest name), unmapped last
+      const _sortedKeys = Object.keys(_aliasGroups).sort((a, b) =>
+        a === '\x00' ? 1 : b === '\x00' ? -1 : a.localeCompare(b));
+      html += '<div class="alias-table">';
+      _sortedKeys.forEach(key => {
+        const isUnmapped = key === '\x00';
+        const destHtml = isUnmapped
+          ? `<span class="alias-unmapped">not mapped</span>`
+          : `<span class="alias-dest-pill" style="${_aliasPillStyle(key)}">${escapeHtml(key)}</span>`;
+        const sourcesHtml = _aliasGroups[key].slice().sort()
+          .map(s => `<span class="alias-source-tag">${escapeHtml(s)}</span>`)
+          .join('<span class="alias-source-sep">,</span>');
+        html += `${destHtml}<span class="alias-arrow">←</span><span class="alias-sources">${sourcesHtml}</span>`;
+      });
+      html += '</div>';
       html += '</div>';
     }
 
