@@ -254,7 +254,7 @@ If no signal found, return an empty array [].
 
 ## Required output format
 
-Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble.
+Produce the JSON object, then write it to `output/data/config.json`. Do not print it to chat.
 
 {
   "lead_time": {
@@ -351,7 +351,7 @@ def build_plain_prompt(findings):
 def build_copilot_prompt(findings):
     header = """\
 ---
-mode: ask
+mode: agent
 description: "Flow metrics — interpret board structure and write config.json"
 ---
 
