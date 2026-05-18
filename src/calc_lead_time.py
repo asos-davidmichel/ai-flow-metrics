@@ -133,7 +133,7 @@ def main():
     config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     history = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
     excluded_raw = json.loads(EXCLUDED_PATH.read_text(encoding="utf-8"))
-    excluded_ids = set(excluded_raw) if isinstance(excluded_raw, list) else set()
+    excluded_ids = set(item["id"] if isinstance(item, dict) else item for item in excluded_raw) if isinstance(excluded_raw, list) else set()
     work_items_raw = json.loads(WORK_ITEMS_PATH.read_text(encoding="utf-8"))
 
     item_meta = {
