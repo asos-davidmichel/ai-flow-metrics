@@ -459,34 +459,65 @@ def summarise_blockers(wi, wih, ctx, ct):
     }
 
 
-def summarise_net_flow(ct, ctx):
+def summarise_net_flow(ct, ctx, wih):
     if not ct or not ctx:
         return None
     cols = ctx.get("columns", [])
     first_in_prog = next((c["name"] for c in cols if c.get("column_type") == "inProgress"), None)
-    last_col = cols[-1]["name"] if cols else None
-    if not first_in_prog or not last_col:
+    if not first_in_prog:
         return None
 
-    # Use arrival slope vs departure slope from cycle_time items as proxy
-    # (same approach as the dashboard JS)
-    wih_path = WIH_PATH
-    # We don't have cumAtOrBeyond here, so approximate from item counts
-    window = ct.get("window", {})
+    window  = ct.get("window", {})
     w_start = _parse_dt(window.get("start"))
     w_end   = _parse_dt(window.get("end"))
     if not w_start or not w_end:
         return None
+
+    ws_ms = w_start.timestamp() * 1000
+    we_ms = w_end.timestamp() * 1000
     total_weeks = max(1, round((w_end - w_start).days / 7))
-    completed = len(ct.get("items", []))
-    dep_rate = _round(completed / total_weeks)
+
+    # Completions per week
+    completions_by_week = defaultdict(int)
+    for item in ct.get("throughput_items", ct.get("items", [])):
+        dt = _parse_dt(item.get("completed_at"))
+        if dt and ws_ms <= dt.timestamp() * 1000 <= we_ms:
+            completions_by_week[_week_start(dt)] += 1
+
+    # Arrivals per week: entries into the first in-progress column
+    arrivals_by_week = defaultdict(int)
+    if wih:
+        for h in wih:
+            for seg in h.get("column_history", []):
+                if seg.get("value") == first_in_prog:
+                    entered = _parse_dt(seg.get("entered"))
+                    if entered and ws_ms <= entered.timestamp() * 1000 <= we_ms:
+                        arrivals_by_week[_week_start(entered)] += 1
+
+    all_weeks = sorted(set(list(completions_by_week.keys()) + list(arrivals_by_week.keys())))
+    weekly = [
+        {
+            "week_start": w,
+            "arrived":    arrivals_by_week.get(w, 0),
+            "completed":  completions_by_week.get(w, 0),
+            "net_flow":   completions_by_week.get(w, 0) - arrivals_by_week.get(w, 0),
+        }
+        for w in all_weeks
+    ]
+
+    total_arrived  = sum(arrivals_by_week.values())
+    total_completed = sum(completions_by_week.values())
+    arr_rate = _round(total_arrived / total_weeks)
+    dep_rate = _round(total_completed / total_weeks)
 
     return {
         "chart": "net_flow",
         "total_weeks": total_weeks,
-        "completed_items": completed,
+        "arrived_items": total_arrived,
+        "completed_items": total_completed,
+        "arrival_rate_per_week": arr_rate,
         "departure_rate_per_week": dep_rate,
-        "note": "arrival rate requires full work_item_history scan — omitted from summary",
+        "weekly": weekly,
     }
 
 
@@ -1268,7 +1299,7 @@ def build_summary():
         "blocker_timeline":      summarise_blocker_timeline(wi, wih, ctx, ct),
         "current_blocked_items": summarise_blocked_items_detail(wi, wih, ctx, ct),
         "bugs":                  summarise_bugs(wi, ctx, ct),
-        "net_flow":              summarise_net_flow(ct, ctx),
+        "net_flow":              summarise_net_flow(ct, ctx, wih),
         "arrival_departure":     summarise_ad_ratio(ct, ctx, wih),
         "cfd":                   summarise_cfd(ct, ctx, wih),
         "wip_level_distribution": summarise_wip_level_distribution(wih, ctx, ct),
