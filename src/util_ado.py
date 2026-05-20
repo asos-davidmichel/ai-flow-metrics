@@ -110,10 +110,11 @@ def get_board_rows(board_url, headers):
     url = f"{board_url}/rows?api-version={API_VERSION}"
     data = _get(url, headers)
     rows = data.get("value", [])
-    # Normalise the default (unnamed) swimlane
+    # Normalise the default (unnamed) swimlane to "Main" — ADO returns "Main"
+    # via System.BoardLane for items in this row, so the names must match.
     for row in rows:
         if not row.get("name"):
-            row["name"] = "(default)"
+            row["name"] = "Main"
     return rows
 
 
