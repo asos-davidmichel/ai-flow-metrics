@@ -100,21 +100,26 @@ def _round(v, d=1):
 
 
 def _load_signals(config):
-    """Return list of {tag (lowercase), label, color} from blocked_time.signals.
+    """Return list of {tags (lowercase list), label, color} from blocked_time.signals.
     Last entry = highest priority (matches ADO card rule evaluation order).
+    Supports both 'tags' (list) and legacy 'tag' (single string).
     Falls back to Blocked/On Hold if config has no tag signals."""
     raw = (config or {}).get("blocked_time", {}).get("signals", [])
-    result = [
-        {
-            "tag":   s["tag"].lower(),
-            "label": s.get("label", s["tag"]),
+    result = []
+    for s in raw:
+        if s.get("mechanism") != "tag":
+            continue
+        raw_tags = s.get("tags") or ([s["tag"]] if s.get("tag") else [])
+        if not raw_tags:
+            continue
+        result.append({
+            "tags":  [t.lower() for t in raw_tags],
+            "label": s.get("label", raw_tags[0]),
             "color": s.get("color", "#fc8181"),
-        }
-        for s in raw if s.get("mechanism") == "tag"
-    ]
+        })
     return result or [
-        {"tag": "blocked", "label": "Blocked",  "color": "#fc8181"},
-        {"tag": "hold",    "label": "On Hold",  "color": "#63b3ed"},
+        {"tags": ["blocked"], "label": "Blocked",  "color": "#fc8181"},
+        {"tags": ["hold"],    "label": "On Hold",   "color": "#63b3ed"},
     ]
 
 
@@ -123,7 +128,7 @@ def _item_signal(signals, tags):
     tags_lower = {t.lower() for t in (tags or [])}
     match = None
     for sig in signals:
-        if sig["tag"] in tags_lower:
+        if any(t in tags_lower for t in sig["tags"]):
             match = sig["label"]
     return match
 
@@ -396,7 +401,7 @@ def summarise_blockers(wi, wih, ctx, ct, cfg=None):
         return None
 
     signals      = _load_signals(cfg)
-    all_sig_tags = {s["tag"] for s in signals}
+    all_sig_tags = {t for s in signals for t in s["tags"]}
 
     win_start_ms = None
     win_end_ms   = None
@@ -853,7 +858,7 @@ def summarise_blocked_items_detail(wi, wih, ctx, ct, cfg=None):
         return None
 
     signals      = _load_signals(cfg)
-    all_sig_tags = {s["tag"] for s in signals}
+    all_sig_tags = {t for s in signals for t in s["tags"]}
 
     now      = datetime.now(timezone.utc)
     out_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
@@ -1031,7 +1036,7 @@ def summarise_blocker_timeline(wi, wih, ctx, ct, cfg=None):
         return None
 
     signals      = _load_signals(cfg)
-    all_sig_tags = {s["tag"] for s in signals}
+    all_sig_tags = {t for s in signals for t in s["tags"]}
 
     window    = ct.get("window", {})
     win_start = _parse_dt(window.get("start"))
@@ -1081,7 +1086,7 @@ def summarise_blocker_timeline(wi, wih, ctx, ct, cfg=None):
         history = sorted(tag_hist_map.get(item_id, []), key=lambda e: e.get("changed_at", ""))
 
         for sig in signals:
-            is_active = sig["tag"] in tags_lower
+            is_active = any(t in tags_lower for t in sig["tags"])
             sig_start = None
             sig_ivs   = []
             for ev in history:
@@ -1089,8 +1094,8 @@ def summarise_blocker_timeline(wi, wih, ctx, ct, cfg=None):
                 if not ev_dt:
                     continue
                 ms     = ev_dt.timestamp() * 1000
-                had    = sig["tag"] in _ptags(ev.get("old_value"))
-                has_   = sig["tag"] in _ptags(ev.get("new_value"))
+                had    = any(t in _ptags(ev.get("old_value")) for t in sig["tags"])
+                has_   = any(t in _ptags(ev.get("new_value")) for t in sig["tags"])
                 if not had and has_:             sig_start = ms
                 if had and not has_ and sig_start: sig_ivs.append((sig_start, ms)); sig_start = None
             if sig_start and is_active: sig_ivs.append((sig_start, we_ms))

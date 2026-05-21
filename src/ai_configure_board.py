@@ -165,6 +165,17 @@ def analyse(context, history, work_items=None):
         if _has_blocked_keyword(col["name"]):
             blocked_signals.append({"mechanism": "column_name", "value": col["name"]})
 
+    # 4b. Tags actually observed in work items that imply blocking
+    blocked_tags_in_use = []
+    if work_items:
+        seen: set = set()
+        for item in work_items:
+            for tag in (item.get("tags") or []):
+                if tag.lower() not in seen and _has_blocked_keyword(tag):
+                    seen.add(tag.lower())
+                    blocked_tags_in_use.append(tag)
+        blocked_tags_in_use.sort(key=str.lower)
+
     # 5. Flow efficiency: deterministic vs needs classification
     waiting_deterministic = [
         c["name"] for c in context["columns"]
@@ -193,6 +204,7 @@ def analyse(context, history, work_items=None):
         "columns": columns_info,
         "unknown_historical_columns": sorted(unknown_hist_cols),
         "blocked_signals": blocked_signals,
+        "blocked_tags_in_use": blocked_tags_in_use,
         "flow_efficiency": {
             "waiting_deterministic": waiting_deterministic,
             "needs_classification": needs_classification,
@@ -254,13 +266,23 @@ incoming and outgoing columns are always "waiting" — do not include them in yo
 Only classify the inProgress columns listed above.
 
 ### 6. Blocked time detection
-List ALL signals this team uses to indicate blocked or on-hold items.
+List ALL signals this team uses to indicate blocked or waiting items.
 Return an array — include every signal you find with reasonable confidence.
 Include waiting/on-hold states (e.g. "Waiting - Internal" tags) as well as hard blocks.
-Use the card rule background_color for each signal's color where available.
-Each signal is one of:
-  {"mechanism": "swimlane", "swimlane_name": "<name>", "label": "<display label>", "color": "<hex or null>"}
-  {"mechanism": "tag", "tag": "<tag>", "label": "<display label>", "color": "<hex from card rule or null>"}
+
+For tag signals:
+- Use the "tags" field as a LIST of tag strings that all belong to the same concept.
+- If multiple tags clearly refer to the same blocking concept (e.g. "Blocked by BAG", "Blocked by PLP"
+  are variants of the same type of block), group them into ONE signal with all matching tags listed.
+- If tags represent meaningfully different concepts (e.g. "Waiting - Internal" vs "Blocked"), keep
+  them as separate signals.
+- Use the card rule background_color for each signal's color where available.
+- If a tag is in the "tags in use" list but has no card rule, infer a reasonable color (or use null).
+
+Tag signal format:
+  {"mechanism": "tag", "tags": ["<tag1>", "<tag2>"], "label": "<display label>", "color": "<hex or null>"}
+Other signal formats (non-tag, treated as informational only):
+  {"mechanism": "swimlane", "swimlane_name": "<name>", "label": "<display label>", "color": null}
   {"mechanism": "column", "column_name": "<name>", "label": "<display label>", "color": null}
 If no signal found, return an empty array [].
 
@@ -294,7 +316,8 @@ Produce the JSON object, then write it to `output/data/config.json`. Do not prin
   },
   "blocked_time": {
     "signals": [
-      {"mechanism": "<swimlane | tag | column>", "<swimlane_name | tag | column_name>": "<value>", "label": "<display label>", "color": "<hex color or null>"}
+      {"mechanism": "tag", "tags": ["<tag1>", "<tag2>"], "label": "<display label>", "color": "<hex or null>"},
+      {"mechanism": "swimlane", "swimlane_name": "<name>", "label": "<display label>", "color": null}
     ]
   },
   "swimlane_mapping": {
@@ -329,10 +352,18 @@ def _findings_as_text(findings):
         lines.append("None.")
     lines.append("")
 
-    lines.append("## Blocked signals detected")
+    lines.append("## Blocked signals detected (from card rules / swimlanes / columns)")
     if findings["blocked_signals"]:
         for sig in findings["blocked_signals"]:
             lines.append(f"- {json.dumps(sig)}")
+    else:
+        lines.append("None found.")
+    lines.append("")
+
+    lines.append("## Tags actually in use in work items that imply blocking")
+    if findings.get("blocked_tags_in_use"):
+        for tag in findings["blocked_tags_in_use"]:
+            lines.append(f"- {tag}")
     else:
         lines.append("None found.")
     lines.append("")

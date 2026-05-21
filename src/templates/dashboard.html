@@ -3939,12 +3939,13 @@ function updateChart() {
   // Signals from config: last entry = highest priority (matches ADO card rule evaluation order)
   const rawSignals = (dashboard.config?.blocked_time?.signals || []).filter(s => s.mechanism === 'tag');
   const SIGNALS = rawSignals.length ? rawSignals.map(s => ({
-    tag:   s.tag.toLowerCase(),
-    label: s.label || s.tag,
+    // support both "tags" (list) and legacy "tag" (string)
+    tags:  (s.tags || [s.tag]).filter(Boolean).map(t => t.toLowerCase()),
+    label: s.label || (s.tags ? s.tags[0] : s.tag) || '',
     color: s.color || '#fc8181',
   })) : [
-    { tag: 'blocked', label: 'Blocked', color: '#fc8181' },
-    { tag: 'hold',    label: 'On Hold', color: '#63b3ed' },
+    { tags: ['blocked'], label: 'Blocked', color: '#fc8181' },
+    { tags: ['hold'],    label: 'On Hold', color: '#63b3ed' },
   ];
 
   // Update chart subtitles with config-driven signal badge pills
@@ -3959,7 +3960,7 @@ function updateChart() {
   function getItemSignal(tags) {
     const tl = (tags || []).map(t => t.toLowerCase());
     let match = null;
-    for (const sig of SIGNALS) { if (tl.includes(sig.tag)) match = sig; }
+    for (const sig of SIGNALS) { if (sig.tags.some(t => tl.includes(t))) match = sig; }
     return match;
   }
   function isAnySignal(tags) { return getItemSignal(tags) !== null; }
@@ -3968,7 +3969,7 @@ function updateChart() {
   function parseTags(str) {
     return (str || '').split(';').map(t => t.trim().toLowerCase()).filter(Boolean);
   }
-  function strHasSig(str, sig) { return parseTags(str).includes(sig.tag); }
+  function strHasSig(str, sig) { const pt = parseTags(str); return sig.tags.some(t => pt.includes(t)); }
 
   // Compute per-signal intervals for an item from tag_history, clipped to window.
   // Returns array of interval arrays, one per signal (in SIGNALS order).
