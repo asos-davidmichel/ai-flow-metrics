@@ -696,6 +696,10 @@
           <div class="fp-label">Exclude by swimlane</div>
           <div class="fp-chips" id="fp-swimlanes"></div>
         </div>
+        <div class="fp-section" id="fp-areapaths-section" style="display:none">
+          <div class="fp-label">Exclude by area path</div>
+          <div class="fp-chips" id="fp-areapaths"></div>
+        </div>
         <div class="fp-section" id="fp-parents-section" style="display:none">
           <div class="fp-label">Exclude by parent (feature / epic)</div>
           <div class="fp-token-box" id="fp-parents">
@@ -1027,6 +1031,29 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 // patches every dashboard.* array so all charts see filtered data.
 (function applyGlobalFilter() {
   const FILTER_KEY = 'flow_filter_rules';
+
+  // Normalise swimlanes before any filtering or charting:
+  //   1. Apply explicit swimlane_mapping from config (historical renames).
+  //   2. Any item whose swimlane is still not a known current swimlane → default.
+  //   3. null/undefined swimlane → default (safety net for older fetched data).
+  // This guarantees ALL items are attributed to a current swimlane so the filter
+  // chips show only real board lanes and no item is silently dropped.
+  const slMap            = dashboard.config?.swimlane_mapping || {};
+  const knownSwimlanes   = new Set(
+    (dashboard.context?.swimlanes || []).map(s => s.name).filter(Boolean)
+  );
+  const defaultSwimlane  = dashboard.context?.default_swimlane || null;
+
+  (dashboard.work_items || []).forEach(item => {
+    // 1. Explicit mapping
+    if (item.swimlane in slMap) item.swimlane = slMap[item.swimlane] || null;
+    // 2. Unknown name → default
+    if (item.swimlane && knownSwimlanes.size && !knownSwimlanes.has(item.swimlane))
+      item.swimlane = defaultSwimlane;
+    // 3. null/undefined → default
+    if (!item.swimlane && defaultSwimlane) item.swimlane = defaultSwimlane;
+  });
+
   const rules = (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || '[]'); } catch(e) { return []; } })();
   const allItems = dashboard.work_items || [];
   const totalCount = allItems.length;
@@ -1048,6 +1075,8 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
           hit = Array.isArray(item.tags) && item.tags.some(t => t.toLowerCase() === rule.value.toLowerCase());
         } else if (rule.type === 'swimlane') {
           hit = (item.swimlane || '') === rule.value;
+        } else if (rule.type === 'area_path') {
+          hit = (item.area_path || '') === rule.value;
         } else if (rule.type === 'id') {
           const parts = String(rule.value).split(',').map(s => s.trim()).filter(Boolean);
           for (const part of parts) {
@@ -4655,9 +4684,14 @@ function updateChart() {
   const allTags = [...new Set(
     rawItems.flatMap(i => Array.isArray(i.tags) ? i.tags : []).filter(Boolean)
   )].sort();
-  const allSwimlanes = [...new Set(
-    rawItems.map(i => i.swimlane).filter(Boolean)
-  )].sort();
+  // Build chip list in board order (context.swimlanes).
+  // All registered swimlanes are shown, even if currently empty.
+  // Falls back to sorted-from-data if context is absent.
+  const _boardLaneOrder = (dashboard.context?.swimlanes || []).map(s => s.name).filter(Boolean);
+  const _lanesInData    = new Set(rawItems.map(i => i.swimlane).filter(Boolean));
+  const allSwimlanes    = _boardLaneOrder.length
+    ? _boardLaneOrder
+    : [..._lanesInData].sort();
 
   // Show sections only if there are values
   let selectedTags = new Set(fs.rules.filter(r => r.type === 'tag').map(r => r.value));
@@ -4721,6 +4755,25 @@ function updateChart() {
       chip.textContent = sl;
       chip.addEventListener('click', () => chip.classList.toggle('selected'));
       container.appendChild(chip);
+    });
+  }
+
+  const allAreaPaths = [...new Set(
+    rawItems.map(i => i.area_path).filter(Boolean)
+  )].sort();
+
+  if (allAreaPaths.length > 1) {
+    document.getElementById('fp-areapaths-section').style.display = '';
+    const selectedAP = new Set(fs.rules.filter(r => r.type === 'area_path').map(r => r.value));
+    const apContainer = document.getElementById('fp-areapaths');
+    allAreaPaths.forEach(ap => {
+      const chip = document.createElement('button');
+      chip.className = 'fp-chip' + (selectedAP.has(ap) ? ' selected' : '');
+      chip.textContent = ap.split('\\').pop() || ap;
+      chip.dataset.value = ap;
+      chip.title = ap;
+      chip.addEventListener('click', () => chip.classList.toggle('selected'));
+      apContainer.appendChild(chip);
     });
   }
 
@@ -4813,6 +4866,7 @@ function updateChart() {
     const rules = [];
     selectedTags.forEach(tag => rules.push({ type: 'tag', value: tag }));
     document.querySelectorAll('#fp-swimlanes .fp-chip.selected').forEach(c => rules.push({ type: 'swimlane', value: c.textContent }));
+    document.querySelectorAll('#fp-areapaths .fp-chip.selected').forEach(c => rules.push({ type: 'area_path', value: c.dataset.value || c.textContent }));
     selectedParentIds.forEach((label, id) => rules.push({ type: 'parent', value: id, label }));
     const ids = document.getElementById('fp-ids').value.trim();
     if (ids) rules.push({ type: 'id', value: ids });
@@ -4838,12 +4892,14 @@ function updateChart() {
     badge.textContent = fs.rules.length;
     btn.appendChild(badge);
 
-    const LABELS = { tag: '🏷', swimlane: '⛵', id: '#', title: '🔤', age: '📅' };
+    const LABELS = { tag: '🏷', swimlane: '⛵', area_path: '📂', id: '#', title: '🔤', age: '📅' };
     fs.rules.forEach((rule, idx) => {
       const pill = document.createElement('span');
       pill.className = 'filter-pill';
       const label = LABELS[rule.type] || rule.type;
-      const val = rule.type === 'age' ? `created > ${rule.value}d ago` : escapeHtml(String(rule.label || rule.value));
+      const val = rule.type === 'age' ? `created > ${rule.value}d ago`
+                : rule.type === 'area_path' ? escapeHtml(String(rule.value).split('\\').pop() || rule.value)
+                : escapeHtml(String(rule.label || rule.value));
       pill.innerHTML = `${label} ${escapeHtml(String(val))}<button title="Remove">×</button>`;
       pill.querySelector('button').addEventListener('click', () => {
         const updated = fs.rules.filter((_, i) => i !== idx);
@@ -5166,6 +5222,21 @@ if (_savedTab) {
           ? `<span style="width:12px;height:12px;border-radius:2px;background:${escapeHtml(sl.color)};border:1px solid rgba(0,0,0,.2);display:inline-block;vertical-align:middle;margin-right:5px;flex-shrink:0;"></span>`
           : '';
         html += `<span style="display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500;background:#edf2f7;color:#4a5568;border:1px solid #e2e8f0;">${swatch}${escapeHtml(sl.name)}</span>`;
+      });
+      html += '</div></div>';
+    }
+
+    // Area paths
+    if (ctx.area_paths?.length) {
+      html += '<div style="margin-top:16px;">';
+      html += '<div class="cfg-block-title" style="margin-bottom:8px;">📂 Area Paths</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+      ctx.area_paths.forEach(ap => {
+        const leaf = (ap.value || '').split('\\').pop() || ap.value;
+        const childBadge = ap.includeChildren
+          ? `<span style="font-size:11px;opacity:.65;margin-left:3px;">+children</span>`
+          : '';
+        html += `<span style="display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500;background:#ebf4ff;color:#2b6cb0;border:1px solid #90cdf4;" title="${escapeHtml(ap.value)}">📂 ${escapeHtml(leaf)}${childBadge}</span>`;
       });
       html += '</div></div>';
     }
