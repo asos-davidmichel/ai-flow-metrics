@@ -99,6 +99,35 @@ def _round(v, d=1):
     return round(v, d) if v is not None else None
 
 
+def _load_signals(config):
+    """Return list of {tag (lowercase), label, color} from blocked_time.signals.
+    Last entry = highest priority (matches ADO card rule evaluation order).
+    Falls back to Blocked/On Hold if config has no tag signals."""
+    raw = (config or {}).get("blocked_time", {}).get("signals", [])
+    result = [
+        {
+            "tag":   s["tag"].lower(),
+            "label": s.get("label", s["tag"]),
+            "color": s.get("color", "#fc8181"),
+        }
+        for s in raw if s.get("mechanism") == "tag"
+    ]
+    return result or [
+        {"tag": "blocked", "label": "Blocked",  "color": "#fc8181"},
+        {"tag": "hold",    "label": "On Hold",  "color": "#63b3ed"},
+    ]
+
+
+def _item_signal(signals, tags):
+    """Return label of highest-priority matching signal for these tags, or None."""
+    tags_lower = {t.lower() for t in (tags or [])}
+    match = None
+    for sig in signals:
+        if sig["tag"] in tags_lower:
+            match = sig["label"]
+    return match
+
+
 def _type_breakdown(items, field="cycle_time_days"):
     by_type = defaultdict(list)
     for i in items:
@@ -362,12 +391,12 @@ def summarise_wip(wi, ctx, ct):
     }
 
 
-def summarise_blockers(wi, wih, ctx, ct):
+def summarise_blockers(wi, wih, ctx, ct, cfg=None):
     if not wi or not ctx:
         return None
 
-    BLOCKED_TAGS = ['blocked', 'blocked by bag', 'blocked by plp']
-    HOLD_TAGS    = ['hold']
+    signals      = _load_signals(cfg)
+    all_sig_tags = {s["tag"] for s in signals}
 
     win_start_ms = None
     win_end_ms   = None
@@ -382,8 +411,7 @@ def summarise_blockers(wi, wih, ctx, ct):
     def parse_tags(s):
         return [t.strip().lower() for t in (s or "").split(";") if t.strip()]
 
-    def has_b(s): return any(t in BLOCKED_TAGS for t in parse_tags(s))
-    def has_h(s): return any(t in HOLD_TAGS    for t in parse_tags(s))
+    def has_sig(s): return any(t in all_sig_tags for t in parse_tags(s))
 
     tag_hist_map = {}
     if wih:
@@ -394,33 +422,26 @@ def summarise_blockers(wi, wih, ctx, ct):
             ]
 
     def get_intervals(item_id, current_tags):
-        tl  = [t.lower() for t in (current_tags or [])]
-        is_b = any(t in BLOCKED_TAGS for t in tl)
-        is_h = any(t in HOLD_TAGS    for t in tl)
+        tl     = [t.lower() for t in (current_tags or [])]
+        is_any = any(t in all_sig_tags for t in tl)
         history = sorted(tag_hist_map.get(item_id, []), key=lambda e: e.get("changed_at", ""))
-        b_start = h_start = None
-        b_ivs, h_ivs = [], []
+        start = None
+        ivs   = []
         for ev in history:
             ms = _parse_dt(ev.get("changed_at"))
             if not ms: continue
             ms = ms.timestamp() * 1000
-            had_b, has_b_ = has_b(ev.get("old_value")), has_b(ev.get("new_value"))
-            had_h, has_h_ = has_h(ev.get("old_value")), has_h(ev.get("new_value"))
-            if not had_b and has_b_: b_start = ms
-            if had_b and not has_b_ and b_start: b_ivs.append((b_start, ms)); b_start = None
-            if not had_h and has_h_: h_start = ms
-            if had_h and not has_h_ and h_start: h_ivs.append((h_start, ms)); h_start = None
-        if b_start and is_b and win_end_ms: b_ivs.append((b_start, win_end_ms))
-        if h_start and is_h and win_end_ms: h_ivs.append((h_start, win_end_ms))
+            had, now_ = has_sig(ev.get("old_value")), has_sig(ev.get("new_value"))
+            if not had and now_: start = ms
+            if had and not now_ and start: ivs.append((start, ms)); start = None
+        if start and is_any and win_end_ms: ivs.append((start, win_end_ms))
 
         def clip(a, b):
             s = max(a, win_start_ms or a)
             e = min(b, win_end_ms   or b)
             return (s, e) if e > s else None
 
-        b_ivs = [r for r in (clip(*iv) for iv in b_ivs) if r]
-        h_ivs = [r for r in (clip(*iv) for iv in h_ivs) if r]
-        return b_ivs, h_ivs
+        return [r for r in (clip(*iv) for iv in ivs) if r]
 
     def sum_days(ivs):
         return sum((e - s) / 86400000 for s, e in ivs)
@@ -436,14 +457,13 @@ def summarise_blockers(wi, wih, ctx, ct):
         return merged
 
     active_blocked = [i for i in wi if i.get("column") not in out_cols
-                      and any(t.lower() in BLOCKED_TAGS + HOLD_TAGS for t in (i.get("tags") or []))]
+                      and any(t.lower() in all_sig_tags for t in (i.get("tags") or []))]
 
     total_days_lost = 0
     by_col = defaultdict(int)
     max_days = 0
     for item in active_blocked:
-        b_ivs, h_ivs = get_intervals(item["id"], item.get("tags"))
-        merged = merge(b_ivs + h_ivs)
+        merged = merge(get_intervals(item["id"], item.get("tags")))
         days = sum_days(merged)
         total_days_lost += days
         by_col[item.get("column", "Unknown")] += 1
@@ -702,15 +722,14 @@ def summarise_cfd(ct, ctx, wih):
     }
 
 
-def summarise_ageing_wip(wi, wih, ctx):
+def summarise_ageing_wip(wi, wih, ctx, cfg=None):
     """Current in-progress items with age, time in current column, and blocked status."""
     if not wi or not ctx:
         return None
 
     now          = datetime.now(timezone.utc)
     in_prog_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "inProgress"}
-    BLOCKED_TAGS = {"blocked", "blocked by bag", "blocked by plp"}
-    HOLD_TAGS    = {"hold"}
+    signals      = _load_signals(cfg)
     wih_map      = {h["id"]: h for h in (wih or [])}
 
     items_out = []
@@ -740,14 +759,8 @@ def summarise_ageing_wip(wi, wih, ctx):
         changed           = _parse_dt(item.get("changed_date"))
         days_since_update = _round((now - changed).total_seconds() / 86400, 1) if changed else None
 
-        # Blocked status from current tags
-        tags_lower = {t.lower() for t in (item.get("tags") or [])}
-        if tags_lower & BLOCKED_TAGS:
-            blocked_status = "Blocked"
-        elif tags_lower & HOLD_TAGS:
-            blocked_status = "On Hold"
-        else:
-            blocked_status = None
+        # Blocked status from current tags (highest-priority matching signal)
+        blocked_status = _item_signal(signals, item.get("tags") or [])
 
         items_out.append({
             "id":                    item_id,
@@ -834,13 +847,13 @@ def summarise_stale_work(wi, ctx, threshold_days=30):
     }
 
 
-def summarise_blocked_items_detail(wi, wih, ctx, ct):
+def summarise_blocked_items_detail(wi, wih, ctx, ct, cfg=None):
     """Currently blocked/on-hold items with computed days-blocked and last-update age."""
     if not wi or not ctx:
         return None
 
-    BLOCKED_TAGS = ["blocked", "blocked by bag", "blocked by plp"]
-    HOLD_TAGS    = ["hold"]
+    signals      = _load_signals(cfg)
+    all_sig_tags = {s["tag"] for s in signals}
 
     now      = datetime.now(timezone.utc)
     out_cols = {c["name"] for c in ctx.get("columns", []) if c.get("column_type") == "outgoing"}
@@ -859,37 +872,30 @@ def summarise_blocked_items_detail(wi, wih, ctx, ct):
     def _ptags(s):
         return [t.strip().lower() for t in (s or "").split(";") if t.strip()]
 
-    def _has_b(s): return any(t in BLOCKED_TAGS for t in _ptags(s))
-    def _has_h(s): return any(t in HOLD_TAGS    for t in _ptags(s))
+    def _has_sig(s): return any(t in all_sig_tags for t in _ptags(s))
 
     result = []
     for item in wi:
         if item.get("column") in out_cols:
             continue
-        tags_lower = {t.lower() for t in (item.get("tags") or [])}
-        is_blocked = bool(tags_lower & set(BLOCKED_TAGS))
-        is_on_hold = bool(tags_lower & set(HOLD_TAGS))
-        if not is_blocked and not is_on_hold:
+        signal_label = _item_signal(signals, item.get("tags") or [])
+        if not signal_label:
             continue
 
-        # Compute total blocked / on-hold time from tag history
+        # Compute total blocked time from tag history (all signals combined)
         history  = sorted(tag_hist_map.get(item["id"], []), key=lambda e: e.get("changed_at", ""))
-        b_start  = h_start = None
+        start    = None
         total_ms = 0
         for ev in history:
             ev_dt = _parse_dt(ev.get("changed_at"))
             if not ev_dt:
                 continue
-            ms     = ev_dt.timestamp() * 1000
-            had_b, now_b = _has_b(ev.get("old_value")), _has_b(ev.get("new_value"))
-            had_h, now_h = _has_h(ev.get("old_value")), _has_h(ev.get("new_value"))
-            if not had_b and now_b:              b_start = ms
-            if had_b and not now_b and b_start:  total_ms += ms - b_start; b_start = None
-            if not had_h and now_h:              h_start = ms
-            if had_h and not now_h and h_start:  total_ms += ms - h_start; h_start = None
+            ms      = ev_dt.timestamp() * 1000
+            had, now_ = _has_sig(ev.get("old_value")), _has_sig(ev.get("new_value"))
+            if not had and now_:      start = ms
+            if had and not now_ and start: total_ms += ms - start; start = None
 
-        if b_start and is_blocked:  total_ms += ref_ms - b_start
-        if h_start and is_on_hold:  total_ms += ref_ms - h_start
+        if start:  total_ms += ref_ms - start
 
         days_blocked = _round(total_ms / 86400000, 1) if total_ms > 0 else None
         changed      = _parse_dt(item.get("changed_date"))
@@ -899,7 +905,7 @@ def summarise_blocked_items_detail(wi, wih, ctx, ct):
             "id":                    item["id"],
             "type":                  item.get("type"),
             "current_column":        item.get("column"),
-            "blocked_status":        "Blocked" if is_blocked else "On Hold",
+            "blocked_status":        signal_label,
             "days_blocked":          days_blocked,
             "days_since_last_update": days_since_update,
         })
@@ -1015,7 +1021,7 @@ def summarise_throughput_weekly(ct, wih, ctx):
 # Assemble all summaries
 # ---------------------------------------------------------------------------
 
-def summarise_blocker_timeline(wi, wih, ctx, ct):
+def summarise_blocker_timeline(wi, wih, ctx, ct, cfg=None):
     """Weekly count of items that were blocked or on-hold during each week of the analysis window.
 
     Mirrors the JS logic in blockerTimelineChart: an item is counted in a week
@@ -1024,8 +1030,8 @@ def summarise_blocker_timeline(wi, wih, ctx, ct):
     if not wi or not wih or not ctx or not ct:
         return None
 
-    BLOCKED_TAGS = ["blocked", "blocked by bag", "blocked by plp"]
-    HOLD_TAGS    = ["hold"]
+    signals      = _load_signals(cfg)
+    all_sig_tags = {s["tag"] for s in signals}
 
     window    = ct.get("window", {})
     win_start = _parse_dt(window.get("start"))
@@ -1055,11 +1061,15 @@ def summarise_blocker_timeline(wi, wih, ctx, ct):
     def _ptags(s):
         return [t.strip().lower() for t in (s or "").split(";") if t.strip()]
 
-    def _has_b(s): return any(t in BLOCKED_TAGS for t in _ptags(s))
-    def _has_h(s): return any(t in HOLD_TAGS    for t in _ptags(s))
+    def _has_sig(s): return any(t in all_sig_tags for t in _ptags(s))
 
-    blocked_per_week = defaultdict(int)
-    hold_per_week    = defaultdict(int)
+    # Per-signal weekly counts (keyed by signal label)
+    per_sig_per_week = {s["label"]: defaultdict(int) for s in signals}
+
+    def _clip(s, e):
+        cs = max(s, ws_ms)
+        ce = min(e, we_ms)
+        return (cs, ce) if ce > cs else None
 
     for item in wi:
         if item.get("column") in out_cols:
@@ -1067,66 +1077,45 @@ def summarise_blocker_timeline(wi, wih, ctx, ct):
 
         item_id    = item["id"]
         tags_lower = {t.lower() for t in (item.get("tags") or [])}
-        is_b       = bool(tags_lower & set(BLOCKED_TAGS))
-        is_h       = bool(tags_lower & set(HOLD_TAGS))
 
-        history  = sorted(tag_hist_map.get(item_id, []), key=lambda e: e.get("changed_at", ""))
-        b_start  = h_start = None
-        b_ivs, h_ivs = [], []
+        history = sorted(tag_hist_map.get(item_id, []), key=lambda e: e.get("changed_at", ""))
 
-        for ev in history:
-            ev_dt = _parse_dt(ev.get("changed_at"))
-            if not ev_dt:
-                continue
-            ms    = ev_dt.timestamp() * 1000
-            had_b, now_b = _has_b(ev.get("old_value")), _has_b(ev.get("new_value"))
-            had_h, now_h = _has_h(ev.get("old_value")), _has_h(ev.get("new_value"))
-            if not had_b and now_b:             b_start = ms
-            if had_b and not now_b and b_start: b_ivs.append((b_start, ms)); b_start = None
-            if not had_h and now_h:             h_start = ms
-            if had_h and not now_h and h_start: h_ivs.append((h_start, ms)); h_start = None
+        for sig in signals:
+            is_active = sig["tag"] in tags_lower
+            sig_start = None
+            sig_ivs   = []
+            for ev in history:
+                ev_dt = _parse_dt(ev.get("changed_at"))
+                if not ev_dt:
+                    continue
+                ms     = ev_dt.timestamp() * 1000
+                had    = sig["tag"] in _ptags(ev.get("old_value"))
+                has_   = sig["tag"] in _ptags(ev.get("new_value"))
+                if not had and has_:             sig_start = ms
+                if had and not has_ and sig_start: sig_ivs.append((sig_start, ms)); sig_start = None
+            if sig_start and is_active: sig_ivs.append((sig_start, we_ms))
+            sig_ivs = [r for r in (_clip(*iv) for iv in sig_ivs) if r]
+            for wk_ms in weeks_ms:
+                wk_end_ms = wk_ms + week_ms
+                wk_str    = datetime.utcfromtimestamp(wk_ms / 1000).strftime("%Y-%m-%d")
+                if any(s < wk_end_ms and e > wk_ms for s, e in sig_ivs):
+                    per_sig_per_week[sig["label"]][wk_str] += 1
 
-        if b_start and is_b: b_ivs.append((b_start, we_ms))
-        if h_start and is_h: h_ivs.append((h_start, we_ms))
-
-        # Clip to window
-        def _clip(s, e):
-            cs = max(s, ws_ms)
-            ce = min(e, we_ms)
-            return (cs, ce) if ce > cs else None
-
-        b_ivs = [r for r in (_clip(*iv) for iv in b_ivs) if r]
-        h_ivs = [r for r in (_clip(*iv) for iv in h_ivs) if r]
-
-        if not b_ivs and not h_ivs:
-            continue
-
-        for wk_ms in weeks_ms:
-            wk_end_ms = wk_ms + week_ms
-            wk_str    = datetime.utcfromtimestamp(wk_ms / 1000).strftime("%Y-%m-%d")
-            if any(s < wk_end_ms and e > wk_ms for s, e in b_ivs):
-                blocked_per_week[wk_str] += 1
-            if any(s < wk_end_ms and e > wk_ms for s, e in h_ivs):
-                hold_per_week[wk_str] += 1
-
-    all_weeks = sorted(set(list(blocked_per_week.keys()) + list(hold_per_week.keys())))
+    all_weeks = sorted(set(w for pw in per_sig_per_week.values() for w in pw))
     if not all_weeks:
         return None
 
-    blocked_vals = [blocked_per_week.get(w, 0) for w in all_weeks]
-    hold_vals    = [hold_per_week.get(w, 0)    for w in all_weeks]
-    total_vals   = [b + h for b, h in zip(blocked_vals, hold_vals)]
-
-    b_slope = _linreg_slope(list(enumerate(blocked_vals)))
+    # Combined total for trend calculation
+    total_vals = [sum(per_sig_per_week[s["label"]].get(w, 0) for s in signals) for w in all_weeks]
     t_slope = _linreg_slope(list(enumerate(total_vals)))
 
     return {
-        "blocked_per_week":              {w: blocked_per_week.get(w, 0) for w in all_weeks},
-        "on_hold_per_week":              {w: hold_per_week.get(w, 0)    for w in all_weeks},
-        "peak_blocked_in_one_week":      max(blocked_vals, default=0),
-        "peak_on_hold_in_one_week":      max(hold_vals, default=0),
-        "weeks_with_any_blocked":        sum(1 for v in blocked_vals if v > 0),
-        "blocked_trend_slope_per_week":  _round(b_slope, 2) if b_slope is not None else None,
+        "per_signal_per_week": {
+            label: {w: pw.get(w, 0) for w in all_weeks}
+            for label, pw in per_sig_per_week.items()
+        },
+        "peak_any_in_one_week":          max(total_vals, default=0),
+        "weeks_with_any_blocked":        sum(1 for v in total_vals if v > 0),
         "total_blocked_trend_direction": (
             "increasing" if t_slope and t_slope > 0.1
             else "decreasing" if t_slope and t_slope < -0.1
@@ -1293,11 +1282,11 @@ def build_summary():
         "work_start_efficiency": summarise_work_start_efficiency(ct, lt),
         "wip":                   summarise_wip(wi, ctx, ct),
         "wip_over_time":         summarise_wip_over_time(wih, ctx, ct),
-        "ageing_wip":            summarise_ageing_wip(wi, wih, ctx),
+        "ageing_wip":            summarise_ageing_wip(wi, wih, ctx, cfg),
         "stale_work":            summarise_stale_work(wi, ctx),
-        "blockers":              summarise_blockers(wi, wih, ctx, ct),
-        "blocker_timeline":      summarise_blocker_timeline(wi, wih, ctx, ct),
-        "current_blocked_items": summarise_blocked_items_detail(wi, wih, ctx, ct),
+        "blockers":              summarise_blockers(wi, wih, ctx, ct, cfg),
+        "blocker_timeline":      summarise_blocker_timeline(wi, wih, ctx, ct, cfg),
+        "current_blocked_items": summarise_blocked_items_detail(wi, wih, ctx, ct, cfg),
         "bugs":                  summarise_bugs(wi, ctx, ct),
         "net_flow":              summarise_net_flow(ct, ctx, wih),
         "arrival_departure":     summarise_ad_ratio(ct, ctx, wih),

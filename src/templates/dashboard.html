@@ -3936,47 +3936,54 @@ function updateChart() {
     return segs.length ? Math.min(...segs.map(s => new Date(s.entered).getTime())) : null;
   }
 
-  const BLOCKED_TAGS = ['blocked', 'blocked by bag', 'blocked by plp'];
-  function getSignals(tags) {
+  // Signals from config: last entry = highest priority (matches ADO card rule evaluation order)
+  const rawSignals = (dashboard.config?.blocked_time?.signals || []).filter(s => s.mechanism === 'tag');
+  const SIGNALS = rawSignals.length ? rawSignals.map(s => ({
+    tag:   s.tag.toLowerCase(),
+    label: s.label || s.tag,
+    color: s.color || '#fc8181',
+  })) : [
+    { tag: 'blocked', label: 'Blocked', color: '#fc8181' },
+    { tag: 'hold',    label: 'On Hold', color: '#63b3ed' },
+  ];
+
+  // Return highest-priority matching signal for this item's tags, or null
+  function getItemSignal(tags) {
     const tl = (tags || []).map(t => t.toLowerCase());
-    return {
-      isBlocked: tl.some(t => BLOCKED_TAGS.includes(t)),
-      isOnHold:  tl.includes('hold'),
-    };
+    let match = null;
+    for (const sig of SIGNALS) { if (tl.includes(sig.tag)) match = sig; }
+    return match;
   }
+  function isAnySignal(tags) { return getItemSignal(tags) !== null; }
 
   // Parse semicolon-separated ADO tag string into lowercase array
   function parseTags(str) {
     return (str || '').split(';').map(t => t.trim().toLowerCase()).filter(Boolean);
   }
-  function hasBlockerTag(str) { return parseTags(str).some(t => BLOCKED_TAGS.includes(t)); }
-  function hasHoldTag(str)    { return parseTags(str).includes('hold'); }
+  function strHasSig(str, sig) { return parseTags(str).includes(sig.tag); }
 
-  // Compute exact blocked/hold intervals for an item from tag_history, clipped to analysis window.
-  // Returns { blockedIntervals: [[startMs, endMs], ...], holdIntervals: [...] }
-  function getTagIntervals(id, currentTags) {
+  // Compute per-signal intervals for an item from tag_history, clipped to window.
+  // Returns array of interval arrays, one per signal (in SIGNALS order).
+  function getTagIntervalsAll(id, currentTags) {
+    const starts = new Array(SIGNALS.length).fill(null);
+    const result = SIGNALS.map(() => []);
     const history = [...(tagHistMap[id] || [])].sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
-    const blockedIntervals = [], holdIntervals = [];
-    let bStart = null, hStart = null;
     for (const ev of history) {
       const ms = new Date(ev.changed_at).getTime();
-      const hadB = hasBlockerTag(ev.old_value), hasB = hasBlockerTag(ev.new_value);
-      const hadH = hasHoldTag(ev.old_value),    hasH = hasHoldTag(ev.new_value);
-      if (!hadB && hasB) bStart = ms;
-      if (hadB && !hasB && bStart !== null) { blockedIntervals.push([bStart, ms]); bStart = null; }
-      if (!hadH && hasH) hStart = ms;
-      if (hadH && !hasH && hStart !== null) { holdIntervals.push([hStart, ms]); hStart = null; }
+      SIGNALS.forEach((sig, i) => {
+        const hadSig = strHasSig(ev.old_value, sig), hasSig = strHasSig(ev.new_value, sig);
+        if (!hadSig && hasSig) starts[i] = ms;
+        if (hadSig && !hasSig && starts[i] !== null) { result[i].push([starts[i], ms]); starts[i] = null; }
+      });
     }
-    // If tag still present now, interval extends to winEndMs
-    const s = getSignals(currentTags);
-    if (bStart !== null || s.isBlocked) { if (bStart !== null) blockedIntervals.push([bStart, winEndMs]); }
-    if (hStart !== null || s.isOnHold)  { if (hStart !== null) holdIntervals.push([hStart, winEndMs]); }
-    // Clip to analysis window, drop zero-length
+    SIGNALS.forEach((sig, i) => { if (starts[i] !== null) result[i].push([starts[i], winEndMs]); });
     const clip = ([a, b]) => { const s2 = Math.max(a, winStartMs), e2 = Math.min(b, winEndMs); return e2 > s2 ? [s2, e2] : null; };
-    return {
-      blockedIntervals: blockedIntervals.map(clip).filter(Boolean),
-      holdIntervals:    holdIntervals.map(clip).filter(Boolean),
-    };
+    return result.map(ivs => ivs.map(clip).filter(Boolean));
+  }
+
+  // Merge all signal intervals for an item (for total days-lost calculation)
+  function getAllMergedIntervals(id, currentTags) {
+    return mergeIntervals(getTagIntervalsAll(id, currentTags).flat());
   }
 
   // Sum interval durations in days
@@ -3996,7 +4003,7 @@ function updateChart() {
     return merged;
   }
 
-  const allBlockedItems    = wi.filter(i => { const s = getSignals(i.tags); return s.isBlocked || s.isOnHold; });
+  const allBlockedItems    = wi.filter(i => isAnySignal(i.tags));
   const activeBlockedItems = allBlockedItems.filter(i => !outCols.has(i.column));
 
   // Preload type icons for afterDraw
@@ -4041,23 +4048,19 @@ function updateChart() {
   const weekIdxMap = new Map(weekMsList.map((ms, i) => [ms, i]));
   const btLabels = weekMsList.map(ms => new Date(ms).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
 
-  const blockedPerWeek = new Array(weekMsList.length).fill(0);
-  const holdPerWeek    = new Array(weekMsList.length).fill(0);
-  const blockedItemsByWeek = weekMsList.map(() => []);
-  const holdItemsByWeek    = weekMsList.map(() => []);
-  // Count items whose blocked/hold interval overlaps each week (exact, from tag_history)
+  const perSigPerWeek     = SIGNALS.map(() => new Array(weekMsList.length).fill(0));
+  const perSigItemsByWeek = SIGNALS.map(() => weekMsList.map(() => []));
+  // Count items whose signal interval overlaps each week (exact, from tag_history)
   allBlockedItems.forEach(item => {
-    const { blockedIntervals, holdIntervals } = getTagIntervals(item.id, item.tags);
-    weekMsList.forEach((wkMs, idx) => {
+    const sigIntervals = getTagIntervalsAll(item.id, item.tags);
+    weekMsList.forEach((wkMs, wkIdx) => {
       const wkEnd = wkMs + 7 * MS_DAY;
-      if (blockedIntervals.some(([s, e]) => s < wkEnd && e > wkMs)) {
-        blockedPerWeek[idx]++;
-        blockedItemsByWeek[idx].push(item);
-      }
-      if (holdIntervals.some(([s, e]) => s < wkEnd && e > wkMs)) {
-        holdPerWeek[idx]++;
-        holdItemsByWeek[idx].push(item);
-      }
+      SIGNALS.forEach((sig, sigIdx) => {
+        if (sigIntervals[sigIdx].some(([s, e]) => s < wkEnd && e > wkMs)) {
+          perSigPerWeek[sigIdx][wkIdx]++;
+          perSigItemsByWeek[sigIdx][wkIdx].push(item);
+        }
+      });
     });
   });
 
@@ -4065,10 +4068,9 @@ function updateChart() {
     type: 'bar',
     data: {
       labels: btLabels,
-      datasets: [
-        { label: 'Blocked', data: blockedPerWeek, backgroundColor: '#fc8181', stack: 'b' },
-        { label: 'On Hold', data: holdPerWeek,    backgroundColor: '#63b3ed', stack: 'b' },
-      ],
+      datasets: SIGNALS.map((sig, i) => ({
+        label: sig.label, data: perSigPerWeek[i], backgroundColor: sig.color, stack: 'b',
+      })),
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
@@ -4079,23 +4081,18 @@ function updateChart() {
           const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
           if (idx === undefined) return;
           let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(btLabels[idx] ?? '')}</div>`;
-          if (blockedItemsByWeek[idx].length) {
-            html += `<div class="tt-total" style="color:#e53e3e;font-weight:600;margin-top:4px;">Blocked (${blockedItemsByWeek[idx].length})</div>`;
-            blockedItemsByWeek[idx].forEach(item => {
+          let anyItems = false;
+          SIGNALS.forEach((sig, sigIdx) => {
+            const items = perSigItemsByWeek[sigIdx][idx] || [];
+            if (!items.length) return;
+            anyItems = true;
+            html += `<div class="tt-total" style="color:${sig.color};font-weight:600;margin-top:4px;">${escapeHtml(sig.label)} (${items.length})</div>`;
+            items.forEach(item => {
               const url = adoBase ? `${adoBase}/${item.id}` : '';
               html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
             });
-          }
-          if (holdItemsByWeek[idx].length) {
-            html += `<div class="tt-total" style="color:#3182ce;font-weight:600;margin-top:4px;">On Hold (${holdItemsByWeek[idx].length})</div>`;
-            holdItemsByWeek[idx].forEach(item => {
-              const url = adoBase ? `${adoBase}/${item.id}` : '';
-              html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
-            });
-          }
-          if (!blockedItemsByWeek[idx].length && !holdItemsByWeek[idx].length) {
-            html += `<div class="tt-total">No blocked items this week</div>`;
-          }
+          });
+          if (!anyItems) html += `<div class="tt-total">No blocked items this week</div>`;
           sharedTooltip.show(html + TT_HINT, c);
         }},
       },
@@ -4109,52 +4106,45 @@ function updateChart() {
   // ── Chart 1b: Blocked by column ───────────────────────────────────
   (() => {
     const colOrder = (ctx.columns || []).filter(c => c.column_type === 'inProgress').map(c => c.name);
-    const blockedCount = {}, holdCount = {};
-    colOrder.forEach(c => { blockedCount[c] = 0; holdCount[c] = 0; });
+    const sigColCounts = SIGNALS.map(() => { const m = {}; colOrder.forEach(c => m[c] = 0); return m; });
     activeBlockedItems.forEach(item => {
       const col = item.column;
       if (!colOrder.includes(col)) return;
-      const s = getSignals(item.tags);
-      if (s.isBlocked) blockedCount[col] = (blockedCount[col] || 0) + 1;
-      if (s.isOnHold)  holdCount[col]    = (holdCount[col]    || 0) + 1;
+      const sig = getItemSignal(item.tags);
+      if (!sig) return;
+      const i = SIGNALS.indexOf(sig);
+      sigColCounts[i][col] = (sigColCounts[i][col] || 0) + 1;
     });
-    // Always show all in-progress columns
-    const allBlockedCols = colOrder;
 
     const blockedByColTooltip = (c) => {
       if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
       const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
-      const col = allBlockedCols[idx]; if (!col) return;
+      const col = colOrder[idx]; if (!col) return;
       const colItems = activeBlockedItems.filter(i => i.column === col);
-      const bItems = colItems.filter(i => getSignals(i.tags).isBlocked);
-      const hItems = colItems.filter(i => getSignals(i.tags).isOnHold);
       let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(col)}</div>`;
-      if (bItems.length) {
-        html += `<div class="tt-total" style="color:#e53e3e;font-weight:600;margin-top:4px;">Blocked (${bItems.length})</div>`;
-        bItems.forEach(item => {
+      let any = false;
+      SIGNALS.forEach(sig => {
+        const items = colItems.filter(i => getItemSignal(i.tags) === sig);
+        if (!items.length) return;
+        any = true;
+        html += `<div class="tt-total" style="color:${sig.color};font-weight:600;margin-top:4px;">${escapeHtml(sig.label)} (${items.length})</div>`;
+        items.forEach(item => {
           const url = adoBase ? `${adoBase}/${item.id}` : '';
           html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
         });
-      }
-      if (hItems.length) {
-        html += `<div class="tt-total" style="color:#3182ce;font-weight:600;margin-top:4px;">On Hold (${hItems.length})</div>`;
-        hItems.forEach(item => {
-          const url = adoBase ? `${adoBase}/${item.id}` : '';
-          html += ttItemRow(typeStyles[item.type] || {}, url, item.id, item.title || '', 0).replace(/<span class="tt-item-days">0d<\/span>/, '');
-        });
-      }
-      if (!bItems.length && !hItems.length) html += `<div class="tt-total" style="color:#718096;">No blocked items</div>`;
+      });
+      if (!any) html += `<div class="tt-total" style="color:#718096;">No blocked items</div>`;
       sharedTooltip.show(html + TT_HINT, c);
     };
 
     new Chart(document.getElementById('blockedByColumnChart'), {
       type: 'bar',
       data: {
-        labels: allBlockedCols,
-        datasets: [
-          { label: 'Blocked', data: allBlockedCols.map(c => blockedCount[c] || 0), backgroundColor: '#fc8181', stack: 'col', borderRadius: 3 },
-          { label: 'On Hold', data: allBlockedCols.map(c => holdCount[c]    || 0), backgroundColor: '#63b3ed', stack: 'col', borderRadius: 3 },
-        ],
+        labels: colOrder,
+        datasets: SIGNALS.map((sig, i) => ({
+          label: sig.label, data: colOrder.map(c => sigColCounts[i][c] || 0),
+          backgroundColor: sig.color, stack: 'col', borderRadius: 3,
+        })),
       },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
@@ -4173,11 +4163,11 @@ function updateChart() {
   // ── Chart 2: Current Blocked Items ────────────────────────────────
   const sortedBlocked = [...activeBlockedItems]
     .map(i => {
-      const s = getSignals(i.tags);
-      const { blockedIntervals, holdIntervals } = getTagIntervals(i.id, i.tags);
-      const daysB = Math.round(sumIntervalDays(blockedIntervals));
-      const daysH = Math.round(sumIntervalDays(holdIntervals));
-      return { ...i, style: typeStyles[i.type] || {}, days: Math.max(daysB, daysH), daysB, daysH, signals: s };
+      const primarySig   = getItemSignal(i.tags);
+      const sigIntervals = getTagIntervalsAll(i.id, i.tags);
+      const sigIdx       = primarySig ? SIGNALS.indexOf(primarySig) : -1;
+      const days         = sigIdx >= 0 ? Math.round(sumIntervalDays(sigIntervals[sigIdx])) : 0;
+      return { ...i, style: typeStyles[i.type] || {}, days, primarySig, sigIntervals };
     })
     .sort((a, b) => b.days - a.days)
     .slice(0, 10);
@@ -4187,10 +4177,12 @@ function updateChart() {
     type: 'bar',
     data: {
       labels: sortedBlocked.map(i => `#${i.id}`),
-      datasets: [
-        { label: 'Blocked', data: sortedBlocked.map(i => i.signals.isBlocked ? i.days : null), backgroundColor: '#fc8181', borderRadius: 3 },
-        { label: 'On Hold', data: sortedBlocked.map(i => i.signals.isOnHold  ? i.days : null), backgroundColor: '#63b3ed', borderRadius: 3 },
-      ],
+      datasets: SIGNALS.map(sig => ({
+        label: sig.label,
+        data: sortedBlocked.map(i => i.primarySig === sig ? i.days : null),
+        backgroundColor: sig.color,
+        borderRadius: 3,
+      })),
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false,
@@ -4202,11 +4194,9 @@ function updateChart() {
           const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
           const item = sortedBlocked[idx]; if (!item) return;
           const url = adoBase ? `${adoBase}/${item.id}` : '';
-          const short = (item.title||'').length > 55 ? item.title.slice(0,55)+'\u2026' : (item.title||'');
           sharedTooltip.show(
             ttItemRow(item.style, url, item.id, item.title||'', item.days) +
-            (item.signals.isBlocked ? `<div class="tt-total" style="color:#e53e3e">Blocked: ${item.daysB}d</div>` : '') +
-            (item.signals.isOnHold  ? `<div class="tt-total" style="color:#3182ce">On Hold: ${item.daysH}d</div>` : '') +
+            (item.primarySig ? `<div class="tt-total" style="color:${item.primarySig.color}">${escapeHtml(item.primarySig.label)}: ${item.days}d</div>` : '') +
             TT_HINT, c
           );
         }},
@@ -4259,9 +4249,7 @@ function updateChart() {
   // ── Chart 4: Days Lost to Blockers ────────────────────────────────
   const lostItems = [...activeBlockedItems]
     .map(i => {
-      const { blockedIntervals, holdIntervals } = getTagIntervals(i.id, i.tags);
-      // Merge blocked + hold to avoid double-counting if both apply simultaneously
-      const merged      = mergeIntervals([...blockedIntervals, ...holdIntervals]);
+      const merged      = getAllMergedIntervals(i.id, i.tags);
       const daysBlocked = Math.round(sumIntervalDays(merged));
       const fProg       = firstInProgMs(i.id);
       const totalInProgDays = fProg ? Math.max(0, (winEndMs - fProg) / MS_DAY) : 0;
@@ -4316,8 +4304,9 @@ function updateChart() {
   // Card: blocked items count + trend (slope of weekly blocked count over window)
   (() => {
     const totalBlocked = activeBlockedItems.length;
-    // Weekly slope from blockedPerWeek (re-compute since we have it in scope)
-    const bwPts = blockedPerWeek.map((y, x) => ({ x, y }));
+    // Weekly slope from perSigPerWeek (sum all signals per week)
+    const totalPerWeek = weekMsList.map((_, wkIdx) => SIGNALS.reduce((sum, _, j) => sum + perSigPerWeek[j][wkIdx], 0));
+    const bwPts = totalPerWeek.map((y, x) => ({ x, y }));
     const bwN = bwPts.length;
     if (bwN < 2) return;
     const bwMx = bwPts.reduce((s,p)=>s+p.x,0)/bwN, bwMy = bwPts.reduce((s,p)=>s+p.y,0)/bwN;

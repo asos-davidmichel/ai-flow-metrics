@@ -43,12 +43,13 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 CONTEXT_PATH = DATA_DIR / "context.json"
 HISTORY_PATH = DATA_DIR / "work_item_history.json"
 QUALITY_PATH = DATA_DIR / "data_quality_report.json"
+WORK_ITEMS_PATH = DATA_DIR / "work_items.json"
 CONFIG_PATH = DATA_DIR / "config.json"
 PROMPT_TXT_PATH = DATA_DIR / "ai_configure_board_prompt.txt"
 PROMPT_MD_PATH = PROMPTS_DIR / "ai_configure_board.prompt.md"
 
 VIRTUAL_COLUMNS = {"Backlog"}
-BLOCKED_KEYWORDS = ("block", "impede", "impediment", "on hold", "hold")
+BLOCKED_KEYWORDS = ("block", "impede", "impediment", "on hold", "hold", "waiting")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +100,7 @@ def _has_blocked_keyword(text):
 # ---------------------------------------------------------------------------
 
 
-def analyse(context, history):
+def analyse(context, history, work_items=None):
     known_cols = {c["name"] for c in context["columns"]}
 
     # 1. Unknown historical columns
@@ -173,6 +174,15 @@ def analyse(context, history):
         c for c in columns_info if c["column_type"] == "inProgress"
     ]
 
+    # 6. Unknown historical swimlanes
+    known_lanes = {s["name"] for s in context.get("swimlanes", [])}
+    unknown_hist_swimlanes = set()
+    if work_items:
+        for item in work_items:
+            lane = item.get("swimlane")
+            if lane and lane not in known_lanes:
+                unknown_hist_swimlanes.add(lane)
+
     return {
         "board": {
             "org": context["org"],
@@ -187,6 +197,8 @@ def analyse(context, history):
             "waiting_deterministic": waiting_deterministic,
             "needs_classification": needs_classification,
         },
+        "unknown_historical_swimlanes": sorted(unknown_hist_swimlanes),
+        "current_swimlanes": [s["name"] for s in context.get("swimlanes", [])],
     }
 
 
@@ -244,11 +256,19 @@ Only classify the inProgress columns listed above.
 ### 6. Blocked time detection
 List ALL signals this team uses to indicate blocked or on-hold items.
 Return an array — include every signal you find with reasonable confidence.
+Include waiting/on-hold states (e.g. "Waiting - Internal" tags) as well as hard blocks.
+Use the card rule background_color for each signal's color where available.
 Each signal is one of:
-  {"mechanism": "swimlane", "swimlane_name": "<name>"}
-  {"mechanism": "tag", "tag": "<tag>"}
-  {"mechanism": "column", "column_name": "<name>"}
+  {"mechanism": "swimlane", "swimlane_name": "<name>", "label": "<display label>", "color": "<hex or null>"}
+  {"mechanism": "tag", "tag": "<tag>", "label": "<display label>", "color": "<hex from card rule or null>"}
+  {"mechanism": "column", "column_name": "<name>", "label": "<display label>", "color": null}
 If no signal found, return an empty array [].
+
+### 7. Swimlane mapping
+Some items may carry a historical swimlane name that no longer matches the current board.
+For each unknown historical swimlane name, provide the current swimlane name it should map to,
+or null to leave those items unmapped.
+If there are no unknown swimlanes, return an empty object {}.
 
 ---
 
@@ -274,8 +294,11 @@ Produce the JSON object, then write it to `output/data/config.json`. Do not prin
   },
   "blocked_time": {
     "signals": [
-      {"mechanism": "<swimlane | tag | column>", "<swimlane_name | tag | column_name>": "<value>"}
+      {"mechanism": "<swimlane | tag | column>", "<swimlane_name | tag | column_name>": "<value>", "label": "<display label>", "color": "<hex color or null>"}
     ]
+  },
+  "swimlane_mapping": {
+    "<old swimlane name>": "<current swimlane name, or null to leave unmapped>"
   }
 }
 """
@@ -323,6 +346,22 @@ def _findings_as_text(findings):
         d = col["dwell"]
         dwell = f"avg={d['avg_hours']}h, median={d['median_hours']}h" if d else "no dwell data"
         lines.append(f"- {col['name']} ({dwell})")
+    lines.append("")
+
+    lines.append("## Swimlanes (current board)")
+    if findings.get("current_swimlanes"):
+        for sl in findings["current_swimlanes"]:
+            lines.append(f"- {sl}")
+    else:
+        lines.append("None.")
+    lines.append("")
+
+    lines.append("## Unknown historical swimlanes (not on current board)")
+    if findings.get("unknown_historical_swimlanes"):
+        for sl in findings["unknown_historical_swimlanes"]:
+            lines.append(f"- {sl}")
+    else:
+        lines.append("None.")
     lines.append("")
 
     return "\n".join(lines)
@@ -468,8 +507,9 @@ def main():
     context = load(CONTEXT_PATH)
     history = load(HISTORY_PATH)
     quality = load(QUALITY_PATH)
+    work_items = json.loads(WORK_ITEMS_PATH.read_text(encoding="utf-8")) if WORK_ITEMS_PATH.exists() else None
 
-    findings = analyse(context, history)
+    findings = analyse(context, history, work_items)
 
     if args.mode == "copilot":
         write_copilot_prompt(findings)
