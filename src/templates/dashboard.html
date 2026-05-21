@@ -957,12 +957,12 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
       <div class="card">
         <div class="card-header"><h2>Blocker Timeline</h2></div>
-        <p style="font-size:13px;color:#718096;margin-bottom:12px;">When items became blocked/on-hold (based on when the blocker tag was added).</p>
+        <p id="bt-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">When a blocked signal was active per item, by week.</p>
         <div class="chart-wrap" style="height:220px;"><canvas id="blockerTimelineChart"></canvas></div>
       </div>
       <div class="card">
-        <div class="card-header"><h2>Blocked Items by Column</h2></div>
-        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Distribution of currently blocked and on-hold items across in-progress columns.</p>
+        <div class="card-header"><h2>Impeded Items by Column</h2></div>
+        <p id="bc-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">Distribution of currently impeded items across in-progress columns.</p>
         <div class="chart-wrap" style="height:220px;"><canvas id="blockedByColumnChart"></canvas></div>
       </div>
     </div>
@@ -970,8 +970,8 @@
     <!-- Row 2: Current Blocked + Stale Work side by side -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
       <div class="card">
-        <div class="card-header"><h2>Current Blocked Items</h2></div>
-        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Currently blocked items sorted by how long they&rsquo;ve been blocked.</p>
+        <div class="card-header"><h2>Currently Impeded Items</h2></div>
+        <p id="cb-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">Active items with a blocked signal, sorted by how long it has been active.</p>
         <div class="chart-wrap" style="height:360px;"><canvas id="currentBlockedChart"></canvas></div>
       </div>
       <div class="card">
@@ -983,8 +983,8 @@
 
     <!-- Row 3: Days Lost (full width) -->
     <div class="card">
-      <div class="card-header"><h2>Days Lost to Being Blocked</h2></div>
-      <p style="font-size:13px;color:#718096;margin-bottom:12px;">How many days of an item&rsquo;s in-progress time was spent blocked vs not blocked.</p>
+      <div class="card-header"><h2>Days Lost to Blocked Signals</h2></div>
+      <p id="dl-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">How many days of an item&rsquo;s in-progress time was spent on a blocked signal vs freely flowing.</p>
       <div class="chart-wrap" style="height:320px;"><canvas id="daysLostBlockedChart"></canvas></div>
     </div>
 
@@ -3946,6 +3946,14 @@ function updateChart() {
     { tag: 'blocked', label: 'Blocked', color: '#fc8181' },
     { tag: 'hold',    label: 'On Hold', color: '#63b3ed' },
   ];
+
+  // Update chart subtitles with config-driven signal badge pills
+  const _sigPills = SIGNALS.map(s =>
+    `<span style="display:inline-block;background:${escapeHtml(s.color)};color:#1a202c;border-radius:3px;` +
+    `padding:1px 7px;font-size:11px;font-weight:600;margin-right:4px;line-height:1.6;">${escapeHtml(s.label)}</span>`
+  ).join('');
+  document.getElementById('bt-subtitle').innerHTML = `When a blocked signal was active per item, by week. ${_sigPills}`;
+  document.getElementById('bc-subtitle').innerHTML = `Distribution of currently impeded items across in-progress columns. ${_sigPills}`;
 
   // Return highest-priority matching signal for this item's tags, or null
   function getItemSignal(tags) {
