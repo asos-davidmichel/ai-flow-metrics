@@ -16,6 +16,7 @@ from util_ado import (
     get_board_rows,
     get_card_rule_settings,
     get_boards,
+    get_team_area_paths,
     make_auth_header,
     parse_board_url,
 )
@@ -156,15 +157,33 @@ def main():
     for wit in work_item_types:
         print(f"  - {wit}")
 
+    print("\nFetching team area paths...")
+    area_paths = get_team_area_paths(org, project, team, headers)
+    for ap in area_paths:
+        op = "UNDER" if ap.get("includeChildren", True) else "="
+        print(f"  {op} {ap['value']}")
+
     print("\nFetching work items...")
     try:
-        ids = fetch_work_item_ids(org, project, team, work_item_types, headers, closed_within_days=365)
+        ids = fetch_work_item_ids(org, project, team, work_item_types, headers, closed_within_days=365, area_paths=area_paths)
         print(f"  {len(ids)} items found")
         work_items = fetch_work_items(org, project, ids, headers)
         print(f"  {len(work_items)} items fetched")
     except ADOError as e:
         print(f"Error fetching work items: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # Normalise null swimlane → the board's default swimlane name.
+    # ADO returns System.BoardLane = null for items in the first/default swimlane
+    # regardless of what that swimlane is called.
+    _default_sl = next(
+        (r["name"] for r in rows if r.get("id") == "00000000-0000-0000-0000-000000000000"),
+        rows[0]["name"] if rows else None,
+    )
+    if _default_sl:
+        for item in work_items:
+            if item.get("swimlane") is None:
+                item["swimlane"] = _default_sl
 
     # Enrich work items with parent title/type (features, epics, etc.)
     board_item_ids = {item["id"] for item in work_items}
@@ -219,6 +238,11 @@ def main():
         "work_item_type_styles": work_item_type_styles,
         "state_mappings": state_mappings,
         "swimlanes": [{"id": r["id"], "name": r["name"], "color": r.get("color")} for r in rows],
+        "default_swimlane": next(
+            (r["name"] for r in rows if r.get("id") == "00000000-0000-0000-0000-000000000000"),
+            rows[0]["name"] if rows else None,
+        ),
+        "area_paths": area_paths,
         "card_rules": {
             "fill": [
                 {

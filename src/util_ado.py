@@ -125,11 +125,35 @@ def get_card_rule_settings(board_url, headers):
     return data.get("rules", {})
 
 
+def get_team_area_paths(org, project, team, headers):
+    """
+    Return the area path constraints configured for the team.
+
+    Each entry is a dict: {"value": "<area path>", "includeChildren": bool}.
+    Falls back to [{"value": "<project>\\<team>", "includeChildren": True}] if the
+    API call fails, preserving the previous behaviour.
+    """
+    url = (
+        f"https://dev.azure.com/{org}/{requests.utils.quote(project)}"
+        f"/{requests.utils.quote(team)}/_apis/work/teamsettings/teamfieldvalues"
+        f"?api-version={API_VERSION}"
+    )
+    try:
+        data = _get(url, headers)
+        values = data.get("values", [])
+        if values:
+            return values
+    except ADOError:
+        pass
+    return [{"value": f"{project}\\{team}", "includeChildren": True}]
+
+
 WORK_ITEM_FIELDS = [
     "System.Id",
     "System.Title",
     "System.WorkItemType",
     "System.State",
+    "System.AreaPath",
     "System.BoardColumn",
     "System.BoardColumnDone",
     "System.BoardLane",
@@ -148,13 +172,16 @@ LINK_TYPE_DEP_FWD = "System.LinkTypes.Dependency-Forward"
 LINK_TYPE_DEP_REV = "System.LinkTypes.Dependency-Reverse"
 
 
-def fetch_work_item_ids(org, project, team, work_item_types, headers, closed_within_days=365):
+def fetch_work_item_ids(org, project, team, work_item_types, headers, closed_within_days=365, area_paths=None):
     """
     Return work item IDs for the team, scoped to the given work item types.
 
     Fetches two groups:
     - All non-removed items that are currently open (any state except Closed/Removed).
     - Items closed within the last `closed_within_days` days, needed for cycle time.
+
+    area_paths: list of {"value": str, "includeChildren": bool} from get_team_area_paths().
+    If None, falls back to UNDER '{project}\\{team}'.
 
     Returns a deduplicated sorted list of IDs.
     """
@@ -163,9 +190,17 @@ def fetch_work_item_ids(org, project, team, work_item_types, headers, closed_wit
         f"/_apis/wit/wiql?api-version={API_VERSION}"
     )
     types_list = ", ".join(f"'{t}'" for t in work_item_types)
+    if area_paths:
+        parts = []
+        for ap in area_paths:
+            op = "UNDER" if ap.get("includeChildren", True) else "="
+            parts.append(f"[System.AreaPath] {op} '{ap['value']}'")
+        area_clause = "(" + " OR ".join(parts) + ")"
+    else:
+        area_clause = f"[System.AreaPath] UNDER '{project}\\{team}'"
     area_filter = (
         f"[System.TeamProject] = '{project}' "
-        f"AND [System.AreaPath] UNDER '{project}\\{team}' "
+        f"AND {area_clause} "
         f"AND [System.WorkItemType] IN ({types_list}) "
     )
 
@@ -224,6 +259,7 @@ def _normalise_item(raw):
         "type": fields.get("System.WorkItemType"),
         "title": fields.get("System.Title"),
         "state": fields.get("System.State"),
+        "area_path": fields.get("System.AreaPath"),
         "column": fields.get("System.BoardColumn"),
         "column_done": fields.get("System.BoardColumnDone", False),
         "swimlane": fields.get("System.BoardLane"),

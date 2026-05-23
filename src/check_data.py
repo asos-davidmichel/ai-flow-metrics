@@ -90,6 +90,7 @@ def check_snapshot_history_mismatch(work_items, history):
 
 
 def check_unknown_swimlanes(work_items, context):
+    # null/None swimlane = item is in the default swimlane; always valid.
     known_lanes = {s["name"] for s in context.get("swimlanes", [])}
     unknown = []
     for item in work_items:
