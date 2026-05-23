@@ -1080,9 +1080,9 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       if (!controls) {
         controls = document.createElement('div');
         controls.className = 'zoom-controls';
-        ['\u002b', '\u2212', '\u21ba\u00a0Reset'].forEach((label, i) => {
+        ['\u25c4', '\u002b', '\u2212', '\u25ba', '\u21ba\u00a0Reset'].forEach((label, i) => {
           const btn = document.createElement('button');
-          btn.className = i < 2 ? 'zoom-btn' : 'zoom-reset-btn';
+          btn.className = i === 4 ? 'zoom-reset-btn' : 'zoom-btn';
           btn.textContent = label;
           controls.appendChild(btn);
         });
@@ -1094,23 +1094,20 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       // because charts on hidden tabs have a 0×0 canvas and empty scales at init time.
       chart._origScaleLimits = null;
 
-      const isScatter  = chart.config.type === 'scatter' || chart.config.type === 'bubble';
-      const isHorizBar = chart.config.options.indexAxis === 'y';
+      function ensureOrigLimits() {
+        if (chart._origScaleLimits) return;
+        chart._origScaleLimits = {};
+        Object.keys(chart.scales).forEach(id => {
+          const cfg = (chart.config.options.scales || {})[id] || {};
+          chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
+        });
+      }
 
       function applyZoom(factor) {
-        // Lazy capture: snapshot the config min/max before we ever touch it.
-        if (!chart._origScaleLimits) {
-          chart._origScaleLimits = {};
-          Object.keys(chart.scales).forEach(id => {
-            const cfg = (chart.config.options.scales || {})[id] || {};
-            chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
-          });
-        }
+        ensureOrigLimits();
         let changed = false;
         Object.entries(chart.scales).forEach(([id, scale]) => {
-          if (!isScatter && !isHorizBar && scale.axis === 'x') return;
-          if (!isScatter &&  isHorizBar && scale.axis === 'y') return;
-          if (scale.type === 'category') return;
+          if (scale.type === 'category') return;          // skip discrete axes
           const mid = (scale.min + scale.max) / 2;
           const newHalf = (scale.max - scale.min) / 2 * factor;
           const cOpts = chart.config.options;
@@ -1118,6 +1115,26 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
           if (!cOpts.scales[id])  cOpts.scales[id] = {};
           cOpts.scales[id].min = mid - newHalf;
           cOpts.scales[id].max = mid + newHalf;
+          changed = true;
+        });
+        if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); }
+      }
+
+      function applyPan(fraction) {
+        ensureOrigLimits();
+        // Pan the most natural axis: x if the chart has a linear x-axis, otherwise y.
+        const hasLinearX = Object.values(chart.scales)
+          .some(s => s.axis === 'x' && s.type !== 'category');
+        const panAxis = hasLinearX ? 'x' : 'y';
+        let changed = false;
+        Object.entries(chart.scales).forEach(([id, scale]) => {
+          if (scale.axis !== panAxis || scale.type === 'category') return;
+          const delta = (scale.max - scale.min) * fraction;
+          const cOpts = chart.config.options;
+          if (!cOpts.scales)      cOpts.scales = {};
+          if (!cOpts.scales[id])  cOpts.scales[id] = {};
+          cOpts.scales[id].min = scale.min + delta;
+          cOpts.scales[id].max = scale.max + delta;
           changed = true;
         });
         if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); }
@@ -1136,9 +1153,11 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
         wrap.classList.remove('is-zoomed');
       }
 
-      controls.children[0].onclick = () => applyZoom(0.75);       // zoom in
-      controls.children[1].onclick = () => applyZoom(1 / 0.75);   // zoom out
-      controls.children[2].onclick = resetZoom;
+      controls.children[0].onclick = () => applyPan(-0.25);       // pan ◀
+      controls.children[1].onclick = () => applyZoom(0.75);        // zoom in
+      controls.children[2].onclick = () => applyZoom(1 / 0.75);    // zoom out
+      controls.children[3].onclick = () => applyPan(0.25);         // pan ▶
+      controls.children[4].onclick = resetZoom;
 
       const onWheel = (e) => { e.preventDefault(); applyZoom(e.deltaY < 0 ? 0.82 : (1 / 0.82)); };
       chart.canvas.addEventListener('wheel', onWheel, { passive: false });
