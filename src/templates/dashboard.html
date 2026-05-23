@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Flow Metrics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -1052,34 +1051,79 @@
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 
-// ── Zoom plugin: wheel zoom + per-chart reset button ─────────────────
-Chart.defaults.plugins.zoom = {
-  zoom: {
-    wheel: { enabled: true },
-    mode: 'y',
-    onZoomComplete({ chart }) {
-      if (chart._zoomResetBtn) chart._zoomResetBtn.style.display = '';
+// ── Manual wheel zoom + per-chart reset button ────────────────────
+(function () {
+  const NO_ZOOM_TYPES = new Set(['pie', 'doughnut', 'polarArea']);
+  const NO_ZOOM_IDS   = new Set(['wipLevelDistChart']);
+
+  Chart.register({
+    id: 'chartZoom',
+    afterInit(chart) {
+      if (NO_ZOOM_TYPES.has(chart.config.type)) return;
+      if (NO_ZOOM_IDS.has(chart.canvas.id)) return;
+      const wrap = chart.canvas.closest('.chart-wrap');
+      if (!wrap) return;
+
+      let btn = wrap.querySelector('.zoom-reset-btn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.className = 'zoom-reset-btn';
+        btn.textContent = '\u21ba Reset';
+        wrap.appendChild(btn);
+      }
+      btn.style.display = 'none';
+      chart._zoomResetBtn = btn;
+
+      // Capture original scale limits for clean reset
+      chart._origScaleLimits = {};
+      Object.keys(chart.scales).forEach(id => {
+        const cfg = (chart.options.scales || {})[id] || {};
+        chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
+      });
+
+      btn.onclick = () => {
+        Object.entries(chart._origScaleLimits || {}).forEach(([id, orig]) => {
+          const cfg = (chart.options.scales || {})[id];
+          if (!cfg) return;
+          if (orig.min === undefined) delete cfg.min; else cfg.min = orig.min;
+          if (orig.max === undefined) delete cfg.max; else cfg.max = orig.max;
+        });
+        chart.update('none');
+        btn.style.display = 'none';
+      };
+
+      // xy for scatter/bubble; x-only for horizontal bar; y-only otherwise
+      const isScatter  = chart.config.type === 'scatter' || chart.config.type === 'bubble';
+      const isHorizBar = chart.options.indexAxis === 'y';
+
+      const onWheel = (e) => {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 0.82 : (1 / 0.82);
+        let changed = false;
+        Object.entries(chart.scales).forEach(([id, scale]) => {
+          if (!isScatter && !isHorizBar &&  scale.isHorizontal()) return;
+          if (!isScatter &&  isHorizBar && !scale.isHorizontal()) return;
+          if (scale.type === 'category') return;
+          const mid = (scale.min + scale.max) / 2;
+          const newHalf = (scale.max - scale.min) / 2 * factor;
+          chart.options.scales = chart.options.scales || {};
+          chart.options.scales[id] = chart.options.scales[id] || {};
+          chart.options.scales[id].min = mid - newHalf;
+          chart.options.scales[id].max = mid + newHalf;
+          changed = true;
+        });
+        if (changed) { chart.update('none'); btn.style.display = ''; }
+      };
+      chart.canvas.addEventListener('wheel', onWheel, { passive: false });
+      chart._zoomWheelHandler = onWheel;
     },
-  },
-};
-Chart.register({
-  id: 'zoomResetBtn',
-  afterInit(chart) {
-    const wrap = chart.canvas.closest('.chart-wrap');
-    if (!wrap) return;
-    // Reuse existing button if chart is being rebuilt in the same wrap
-    let btn = wrap.querySelector('.zoom-reset-btn');
-    if (!btn) {
-      btn = document.createElement('button');
-      btn.className = 'zoom-reset-btn';
-      btn.textContent = '\u21ba Reset';
-      wrap.appendChild(btn);
-    }
-    btn.onclick = () => { chart.resetZoom(); btn.style.display = 'none'; };
-    btn.style.display = 'none';
-    chart._zoomResetBtn = btn;
-  },
-});
+    beforeDestroy(chart) {
+      if (chart._zoomWheelHandler) {
+        chart.canvas.removeEventListener('wheel', chart._zoomWheelHandler);
+      }
+    },
+  });
+})();
 
 // ── Global filter: runs before any chart code ────────────────────────
 // Loads exclusion rules from localStorage, builds excludedIds, then
@@ -1678,7 +1722,6 @@ function updateChart() {
       plugins: {
         legend: { display: false },
         tooltip: { enabled: false, external: ctExternalTooltip },
-        zoom: { zoom: { mode: 'xy' } },
       },
       scales: {
         x: {
@@ -1933,7 +1976,7 @@ function updateChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false, external: ltExternalTooltip }, zoom: { zoom: { mode: 'xy' } } },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: ltExternalTooltip } },
       scales: {
         x: { type: 'linear', min: ltMinMs, max: ltMaxMs, title: { display: true, text: 'Completion date' }, ticks: { maxTicksLimit: 8, callback: val => fmtMs(val) }, grid: { display: false } },
         y: { title: { display: true, text: 'Lead time (days)' }, beginAtZero: true },
@@ -3307,7 +3350,6 @@ function updateChart() {
       plugins: {
         legend: { display: false },
         tooltip: { enabled: false },
-        zoom: { zoom: { wheel: { enabled: false } } },
       },
       scales: {
         x: {
@@ -3670,7 +3712,6 @@ function updateChart() {
         plugins: {
           legend: { display: false },
           tooltip: { enabled: false, external: wipScatterTooltip },
-          zoom: { zoom: { mode: 'xy' } },
         },
         scales: {
           x: { type: 'linear', min: xMin, max: xMax, ticks: { display: false }, grid: { color: '#e2e8f0' } },
