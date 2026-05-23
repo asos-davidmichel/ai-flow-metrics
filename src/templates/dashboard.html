@@ -897,6 +897,7 @@
       <div class="card">
         <div class="card-header"><h2>Sustainability (Net Flow)</h2></div>
         <p style="font-size:13px;color:#718096;margin-bottom:4px;">How sustainable is our pace of starting and finishing work?</p>
+        <p style="font-size:13px;color:#718096;margin-bottom:4px;"><span id="netFlowDesc"></span></p>
         <p style="font-size:13px;color:#718096;margin-bottom:12px;">Goal: Stop starting, start finishing &mdash; aim to keep around zero and avoid high/low peaks.</p>
         <div class="chart-wrap" style="height:260px;"><canvas id="netFlowChart"></canvas></div>
       </div>
@@ -2841,6 +2842,15 @@ function updateChart() {
   let departureSlope  = Math.round(departureResult.slope * 10) / 10;
   // Expose for reuse by other IIFEs
   window._flowRates = { arrivalSlope, departureSlope };
+
+  // Populate the dynamic start/finish description
+  const netFlowDescEl = document.getElementById('netFlowDesc');
+  if (netFlowDescEl) {
+    netFlowDescEl.innerHTML =
+      `<strong>Started</strong> = item enters <em>${escapeHtml(firstInProgressCol)}</em>` +
+      ` &nbsp;|&nbsp; ` +
+      `<strong>Finished</strong> = item reaches <em>${escapeHtml(lastCol)}</em>`;
+  }
 
   // ── Net Flow chart ───────────────────────────────────────────────
   // Net flow per week = Δfinished − Δstarted
