@@ -15,7 +15,7 @@ A Python + Chart.js tool that fetches work item data from **Azure DevOps**, calc
 - **Flow efficiency** — ratio of active time to total cycle time
 - **Work start efficiency** — how long items wait before development begins
 - **WIP** — current in-progress items by column, with limit violations
-- **Blockers** — blocked and on-hold items, days lost, timeline, and by-column breakdown
+- **Blockers** — impeded items by signal type, days lost, timeline, and by-column breakdown
 - **Cumulative Flow Diagram** — with toggleable columns and dynamic arrival/departure rate lines
 - **Net flow** — items finished minus items started each week
 - **Arrival/Departure ratio** — per column, to identify accumulation points
@@ -57,19 +57,23 @@ flowchart TD
     check["2 · check_data.py\n📄 data_quality_report.json · excluded_items.json · work_item_rework.json"]:::script
     aiconf["3 · ai_configure_board.py"]:::script
     aiconfprompt{{"🤖✎ Run AI prompt\n→ save response as config.json"}}:::humanai
+    autoconf["OpenAI-compatible API\nauto-writes config.json"]:::autoai
     calccol["4 · calc_columns.py  →  📄 time_in_columns.json"]:::script
     calcct["5 · calc_cycle_time.py  →  📄 cycle_time.json"]:::script
     calclt["6 · calc_lead_time.py  →  📄 lead_time.json"]:::script
     dash["7 · create_dashboard.py  →  📄 dashboard.html"]:::script
     out(["🌐 dashboard.html (basic)"]):::output
 
-    fetch --> check --> aiconf --> aiconfprompt --> calccol --> calcct --> calclt --> dash --> out
+    fetch --> check --> aiconf
+    aiconf -->|"--mode copilot / prompt"| aiconfprompt --> calccol
+    aiconf -->|"--mode openai"| autoconf --> calccol
+    calccol --> calcct --> calclt --> dash --> out
   end
 
   subgraph opt["Optional — AI chart insights (step 8 + re-run 7)"]
     aimetrics["8 · ai_interpret_metrics.py"]:::script
     savemetrics{{"🤖✎ Run AI prompt\n→ save response as insights.json"}}:::humanai
-    autoinsights["OpenAI API\nauto-writes insights.json"]:::autoai
+    autoinsights["OpenAI-compatible API\nauto-writes insights.json"]:::autoai
     insights[/"insights.json"/]:::file
     redash["re-run 7 · create_dashboard.py  →  📄 dashboard.html"]:::script
     out2(["🌐 dashboard.html (with AI insights)"]):::output
@@ -110,12 +114,22 @@ Steps 4–6 require `output/data/config.json` to exist.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--window 6m` | `6m` | Analysis window for metrics. Accepts `1m`, `3m`, `6m`, `1y`. |
+| `--window 6m` | `6m` | Analysis window for metrics. Accepts `2w`, `1m`, `3m`, `6m`, `1y`. |
+| `--from YYYY-MM-DD` | — | Explicit window start date (overrides `--window`). |
+| `--to YYYY-MM-DD` | today | Explicit window end date (used with `--from`). |
 | `--clean` | off | Delete all generated output files before running. |
+| `--yes` | off | Skip all confirmation prompts (required for fully automated runs). |
 | `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
-| `--interpret-mode MODE` | `copilot` | AI mode for board configuration step — see [AI modes](#ai-modes) below. |
+| `--interpret-mode MODE` | `copilot` | AI mode for board configuration — see [AI modes](#ai-modes) below. |
+| `--insights-mode MODE` | `copilot` | AI mode for chart insights — see [AI modes](#ai-modes) below. |
 
-**Example:**
+**Fully automated run (no human interaction):**
+```bash
+# Requires OPENAI_API_KEY (and optionally OPENAI_BASE_URL, OPENAI_MODEL)
+python run.py https://dev.azure.com/... --interpret-mode openai --insights-mode openai --yes
+```
+
+**Default interactive run:**
 ```bash
 python run.py https://dev.azure.com/org/project/_boards/... --window 3m --clean
 ```
@@ -132,7 +146,23 @@ Two scripts generate AI prompts. Both support a `--mode` flag.
 |------|--------------|
 | `copilot` *(default)* | Writes a `.prompt.md` file and opens it in VS Code Copilot chat. |
 | `prompt` | Writes a `.txt` file you can paste into any AI assistant (ChatGPT, Claude, etc.). |
-| `openai` | Calls the OpenAI API directly and writes the response to `insights.json`. Requires `OPENAI_API_KEY`. |
+| `openai` | Calls an OpenAI-compatible API directly and writes the output automatically. Requires `OPENAI_API_KEY`. |
+
+**Environment variables for `openai` mode:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | *(required)* | API key — OpenAI key, GitHub PAT, Azure key, etc. |
+| `OPENAI_MODEL` | `gpt-4o` | Model name (e.g. `gpt-4o`, `claude-sonnet-4-5`). |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for any OpenAI-compatible endpoint. |
+
+**Compatible endpoints:**
+
+| Provider | `OPENAI_BASE_URL` | Auth |
+|----------|-------------------|------|
+| OpenAI | `https://api.openai.com/v1` *(default)* | OpenAI API key |
+| GitHub Models | `https://models.inference.ai.azure.com` | GitHub PAT |
+| Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` | Azure key |
 
 ### Board configuration
 
@@ -141,7 +171,7 @@ Proposes column classification, flow efficiency rules, and blocker tag signals. 
 ```bash
 python src/ai_configure_board.py                     # opens in VS Code Copilot (default)
 python src/ai_configure_board.py --mode prompt       # writes a .txt file to paste elsewhere
-python src/ai_configure_board.py --mode openai       # calls OpenAI API directly
+python src/ai_configure_board.py --mode openai       # calls API directly → writes config.json
 ```
 
 ### Metrics interpretation
@@ -151,7 +181,7 @@ Generates chart-by-chart insights and a leadership narrative that are embedded i
 ```bash
 python src/ai_interpret_metrics.py                   # opens in VS Code Copilot (default)
 python src/ai_interpret_metrics.py --mode prompt     # writes a .txt file to paste elsewhere
-python src/ai_interpret_metrics.py --mode openai     # calls OpenAI API directly
+python src/ai_interpret_metrics.py --mode openai     # calls API directly → writes insights.json
 python src/ai_interpret_metrics.py --dump-summary    # print the anonymised metrics JSON sent to the AI
 ```
 
@@ -201,10 +231,13 @@ Key fields:
     "active_columns":  ["In Development", "In Review", "QA"],
     "waiting_columns": ["Ready for Dev", "External Review", "Ready for QA", "Ready for release"]
   },
-  "blocked_signals": {
-    "tags": ["blocked", "on hold"]
+  "blocked_time": {
+    "signals": [
+      { "mechanism": "tag", "tags": ["Blocked", "Blocked by BAG", "Blocked by PLP"], "label": "Blocked",           "color": "#f06673" },
+      { "mechanism": "tag", "tags": ["Waiting - Internal"],                           "label": "Waiting Internal", "color": "#ffe0c1" }
+    ]
   }
 }
 ```
 
-`config.json` is produced by running the AI prompt generated by `ai_configure_board.py`. Paste the AI's JSON response directly into `output/data/config.json`.
+`config.json` is produced by running `ai_configure_board.py`. The AI detects blocked signals from card rules and actual tags in use, and can merge tag variants into a single signal (e.g. "Blocked by BAG" + "Blocked by PLP" → one "Blocked" entry). Each signal has a `label` (shown in charts) and a `color` (from the card rule background colour).
