@@ -14,7 +14,7 @@ Reads:
 
 Writes (depending on --mode):
   src/prompts/ai_configure_board.prompt.md  (--mode prompt)   open in VS Code chat or paste into any AI
-  output/data/config.json                   (--mode openai)   direct API call (requires OPENAI_API_KEY)
+  output/data/config.json                   (--mode auto)    direct API call (requires OPENAI_API_KEY)
 
 After prompt mode: paste the AI's JSON response directly into output/data/config.json.
 The metrics script requires config.json.
@@ -22,7 +22,7 @@ The metrics script requires config.json.
 Usage:
   python src/ai_configure_board.py
   python src/ai_configure_board.py --mode prompt
-  python src/ai_configure_board.py --mode openai
+  python src/ai_configure_board.py --mode auto
 """
 
 import json
@@ -537,7 +537,7 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["prompt", "openai"],
+        choices=["prompt", "auto"],
         default="prompt",
         help="How to deliver the prompt (default: prompt)",
     )
@@ -556,7 +556,7 @@ def main():
 
     if args.mode == "prompt":
         write_prompt(findings)
-    elif args.mode == "openai":
+    elif args.mode == "auto":
         call_openai(findings)
 
 

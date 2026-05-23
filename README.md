@@ -66,7 +66,7 @@ flowchart TD
 
     fetch --> check --> aiconf
     aiconf -->|"--mode copilot / prompt"| aiconfprompt --> calccol
-    aiconf -->|"--mode openai"| autoconf --> calccol
+    aiconf -->|"--mode auto"| autoconf --> calccol
     calccol --> calcct --> calclt --> dash --> out
   end
 
@@ -79,7 +79,7 @@ flowchart TD
     out2(["🌐 dashboard.html (with AI insights)"]):::output
 
     aimetrics -->|"--mode copilot / prompt"| savemetrics --> insights
-    aimetrics -->|"--mode openai"| autoinsights --> insights
+    aimetrics -->|"--mode auto"| autoinsights --> insights
     insights --> redash --> out2
   end
 
@@ -125,7 +125,7 @@ Steps 4–6 require `output/data/config.json` to exist.
 **Fully automated run (no human interaction):**
 ```bash
 # Requires OPENAI_API_KEY (and optionally OPENAI_BASE_URL, OPENAI_MODEL)
-python run.py https://dev.azure.com/... --ai-mode openai --yes
+python run.py https://dev.azure.com/... --ai-mode auto --yes
 ```
 
 **Default interactive run:**
@@ -144,9 +144,9 @@ Two scripts generate AI prompts. Both support a `--mode` flag.
 | Mode | What happens |
 |------|--------------|
 | `prompt` *(default)* | Writes a `.prompt.md` file with the full prompt (including inline data). Opens it in VS Code Copilot automatically if `code` is on PATH — or paste the file contents into any AI assistant. |
-| `openai` | Calls an OpenAI-compatible API directly and writes the output automatically. Requires `OPENAI_API_KEY`. |
+| `auto` | Calls any OpenAI-compatible API directly and writes the output automatically. Configure via env vars — works with OpenAI, Claude (via compatible endpoint), GitHub Models, Azure OpenAI, etc. Requires `OPENAI_API_KEY`. |
 
-**Environment variables for `openai` mode:**
+**Environment variables for `auto` mode:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -168,7 +168,7 @@ Proposes column classification, flow efficiency rules, and blocker tag signals. 
 
 ```bash
 python src/ai_configure_board.py                     # prompt mode (default)
-python src/ai_configure_board.py --mode openai       # calls API directly → writes config.json
+python src/ai_configure_board.py --mode auto        # calls API directly → writes config.json
 ```
 
 ### Metrics interpretation
@@ -177,7 +177,7 @@ Generates chart-by-chart insights and a leadership narrative that are embedded i
 
 ```bash
 python src/ai_interpret_metrics.py                   # prompt mode (default)
-python src/ai_interpret_metrics.py --mode openai     # calls API directly → writes insights.json
+python src/ai_interpret_metrics.py --mode auto       # calls API directly → writes insights.json
 python src/ai_interpret_metrics.py --dump-summary    # print the anonymised metrics JSON sent to the AI
 ```
 

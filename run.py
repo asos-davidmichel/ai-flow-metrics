@@ -24,11 +24,11 @@ If output/data/config.json exists, also runs:
 
 Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 --from / --to: explicit date range YYYY-MM-DD (overrides --window when --from is given)
---ai-mode: prompt (default), openai, skip
+--ai-mode: prompt (default), auto, skip
   skip omits step 8 (insights) only — board config (step 3) always runs.
 
 --clean  Delete all previously generated output files before running.
---yes    Skip all confirmation prompts (useful with --ai-mode openai).
+--yes    Skip all confirmation prompts (useful with --ai-mode auto).
 """
 
 import subprocess
@@ -113,11 +113,11 @@ def main():
         idx = sys.argv.index("--ai-mode")
         try:
             ai_mode = sys.argv[idx + 1]
-            if ai_mode not in ("prompt", "openai", "skip"):
-                print("Error: --ai-mode must be prompt, openai, or skip.", file=sys.stderr)
+            if ai_mode not in ("prompt", "auto", "skip"):
+                print("Error: --ai-mode must be prompt, auto, or skip.", file=sys.stderr)
                 sys.exit(1)
         except IndexError:
-            print("Error: --ai-mode requires a value (prompt, openai, skip).", file=sys.stderr)
+            print("Error: --ai-mode requires a value (prompt, auto, skip).", file=sys.stderr)
             sys.exit(1)
 
     # Forward --window to metrics.py if provided (default: 6m)
@@ -170,10 +170,10 @@ def main():
     print("Available options (Ctrl+C to abort and rerun with different flags):")
     print("  --window         2w | 1m | 3m | 6m | 1y         (default: 6m)")
     print("  --from YYYY-MM-DD [--to YYYY-MM-DD]             (explicit date range, overrides --window)")
-    print("  --ai-mode        prompt | openai | skip              (default: prompt)")
+    print("  --ai-mode        prompt | auto | skip                (default: prompt)")
     print("  --short-dwell-minutes N                       (flag items moved too quickly)")
     print("  --clean                                       (delete all output files first)")
-    print("  --yes                                         (skip all confirmation prompts; pair with --ai-mode openai)")
+    print("  --yes                                         (skip all confirmation prompts; pair with --ai-mode auto)")
     print()
 
     yes = "--yes" in sys.argv or "-y" in sys.argv

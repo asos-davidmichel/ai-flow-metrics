@@ -18,7 +18,7 @@ Writes (depending on --mode):
 Usage:
   python src/ai_interpret_metrics.py
   python src/ai_interpret_metrics.py --mode prompt
-  python src/ai_interpret_metrics.py --mode openai
+  python src/ai_interpret_metrics.py --mode auto
 """
 
 import json
@@ -1544,7 +1544,7 @@ def main():
         description="Generate AI prompts or call OpenAI to produce chart insights."
     )
     parser.add_argument(
-        "--mode", choices=["prompt", "openai"], default="prompt",
+        "--mode", choices=["prompt", "auto"], default="prompt",
         help="How to deliver the prompt (default: prompt)",
     )
     parser.add_argument(
@@ -1553,7 +1553,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if not args.dump_summary and args.mode == "openai" and INSIGHTS_PATH.exists():
+    if not args.dump_summary and args.mode == "auto" and INSIGHTS_PATH.exists():
         print(f"Skipping: {INSIGHTS_PATH} already exists. Delete it to regenerate.")
         sys.exit(0)
 
@@ -1565,7 +1565,7 @@ def main():
 
     if args.mode == "prompt":
         write_prompt(summary)
-    elif args.mode == "openai":
+    elif args.mode == "auto":
         call_openai(summary)
 
 
