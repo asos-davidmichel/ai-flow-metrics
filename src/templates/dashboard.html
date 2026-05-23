@@ -1090,18 +1090,22 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       }
       chart._zoomControls = controls;
 
-      // Capture the actual rendered (computed) scale range so reset is pixel-exact.
-      // Use chart.scales[id].min/max (runtime values) not the config options
-      // (which may be undefined for auto-scaled axes).
-      chart._origScaleLimits = {};
-      Object.keys(chart.scales).forEach(id => {
-        chart._origScaleLimits[id] = { min: chart.scales[id].min, max: chart.scales[id].max };
-      });
+      // _origScaleLimits is captured lazily on first zoom (not here at afterInit),
+      // because charts on hidden tabs have a 0×0 canvas and empty scales at init time.
+      chart._origScaleLimits = null;
 
       const isScatter  = chart.config.type === 'scatter' || chart.config.type === 'bubble';
       const isHorizBar = chart.config.options.indexAxis === 'y';
 
       function applyZoom(factor) {
+        // Lazy capture: snapshot the config min/max before we ever touch it.
+        if (!chart._origScaleLimits) {
+          chart._origScaleLimits = {};
+          Object.keys(chart.scales).forEach(id => {
+            const cfg = (chart.config.options.scales || {})[id] || {};
+            chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
+          });
+        }
         let changed = false;
         Object.entries(chart.scales).forEach(([id, scale]) => {
           if (!isScatter && !isHorizBar && scale.axis === 'x') return;
@@ -1122,11 +1126,12 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       function resetZoom() {
         const cOpts = chart.config.options;
         Object.entries(chart._origScaleLimits || {}).forEach(([id, orig]) => {
-          if (!cOpts.scales)      cOpts.scales = {};
-          if (!cOpts.scales[id])  cOpts.scales[id] = {};
-          cOpts.scales[id].min = orig.min;
-          cOpts.scales[id].max = orig.max;
+          const scaleCfg = cOpts && cOpts.scales && cOpts.scales[id];
+          if (!scaleCfg) return;
+          if (orig.min === undefined) delete scaleCfg.min; else scaleCfg.min = orig.min;
+          if (orig.max === undefined) delete scaleCfg.max; else scaleCfg.max = orig.max;
         });
+        chart._origScaleLimits = null;   // clear so next zoom cycle re-snapshots
         chart.update('none');
         wrap.classList.remove('is-zoomed');
       }
