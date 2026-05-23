@@ -558,11 +558,13 @@
       gap: 12px;
     }
     .cfg-block {
-      background: #f7fafc; border-radius: 8px; padding: 12px 14px;
+      background: #f7fafc; border-radius: 8px; padding: 12px 14px; overflow: hidden;
     }
     .cfg-block-title {
       font-size: 13px; font-weight: 700; color: #4a5568; margin-bottom: 9px;
     }
+    .clock-grid { display: grid; grid-template-columns: auto 1fr 1fr; gap: 5px 18px; align-items: center; }
+    .clock-col-head { font-size: 11px; font-weight: 700; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; padding-bottom: 2px; }
     .cfg-row {
       display: flex; align-items: flex-start; gap: 8px;
       font-size: 13px; margin-bottom: 5px; flex-wrap: wrap;
@@ -571,6 +573,12 @@
     .cfg-lbl { color: #a0aec0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; min-width: 68px; padding-top: 1px; }
     .cfg-val { color: #2d3748; font-weight: 500; }
     .alias-table { display: grid; grid-template-columns: auto auto 1fr; column-gap: 10px; row-gap: 7px; align-items: center; }
+    .sig-row { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 7px 0; border-bottom: 1px solid #e2e8f0; }
+    .sig-row:last-child { border-bottom: none; }
+    .sig-label { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; color: #2d3748; white-space: nowrap; }
+    .sig-swatch { width: 28px; height: 16px; border-radius: 3px; flex-shrink: 0; display: inline-block; border: 1px solid rgba(0,0,0,0.08); }
+    .sig-tags { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 36px; }
+    .sig-tag { color: #718096; font-size: 11px; font-family: monospace; }
     .alias-dest-pill { display: inline-block; padding: 2px 9px; border-radius: 9999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
     .alias-arrow { color: #cbd5e0; font-size: 12px; }
     .alias-sources { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
@@ -645,12 +653,13 @@
     /* Excluded items */
     .excl-table { display: flex; flex-direction: column; gap: 5px; }
     .excl-row {
-      display: flex; align-items: baseline; gap: 10px;
+      display: flex; align-items: flex-start; gap: 10px;
       background: #fffaf0; border: 1px solid #fbd38d;
       border-radius: 6px; padding: 7px 12px; font-size: 13px;
     }
     .excl-id { font-weight: 700; color: #c05621; font-family: monospace; flex-shrink: 0; }
-    .excl-reason { color: #744210; font-size: 12px; }
+    .excl-reason { color: #744210; font-size: 12px; font-weight: 600; }
+    .excl-reason-desc { display: block; color: #a0aec0; font-size: 11px; margin-top: 2px; font-weight: 400; }
     .info-empty { color: #a0aec0; font-size: 14px; padding: 8px 0; }
     /* Two-col layout for config + excluded */
     .info-side-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
@@ -5292,10 +5301,9 @@ if (_savedTab) {
       html += `<div class="cfg-row"><span class="cfg-lbl">Stop</span><span class="cfg-val">${clockDesc(cfg.lead_time.clock_end)}</span></div>`;
       html += '</div>';
     }
-
     if (cfg.cycle_time) {
       html += '<div class="cfg-block">';
-      html += '<div class="cfg-block-title">🔄 Cycle Time</div>';
+      html += '<div class="cfg-block-title">⏱️ Cycle Time</div>';
       html += `<div class="cfg-row"><span class="cfg-lbl">Start</span><span class="cfg-val">${clockDesc(cfg.cycle_time.clock_start)}</span></div>`;
       html += `<div class="cfg-row"><span class="cfg-lbl">Stop</span><span class="cfg-val">${clockDesc(cfg.cycle_time.clock_end)}</span></div>`;
       html += '</div>';
@@ -5321,7 +5329,14 @@ if (_savedTab) {
       html += '<div class="cfg-block">';
       html += '<div class="cfg-block-title">🚧 Blocked Signals</div>';
       cfg.blocked_time.signals.forEach(s => {
-        html += `<div class="cfg-row"><span class="cfg-lbl">${escapeHtml(s.mechanism)}</span><span class="cfg-val">🏷️ <strong>${escapeHtml(s.tag || s.value || '')}</strong></span></div>`;
+        const color  = s.color || '#e2e8f0';
+        const label  = escapeHtml(s.label || (s.tags || []).join(', ') || s.tag || s.mechanism || '');
+        const tags   = s.tags || (s.tag ? [s.tag] : []);
+        const tagsHtml = tags.map(t => `<span class="sig-tag">[System.Tags] contains '${escapeHtml(t)}'</span>`).join('<span class="sig-tag" style="color:#cbd5e0"> or </span>');
+        html += `<div class="sig-row">`;
+        html += `<span class="sig-label"><span class="sig-swatch" style="background:${escapeHtml(color)}"></span>${label}</span>`;
+        if (tagsHtml) html += `<span class="sig-tags">${tagsHtml}</span>`;
+        html += `</div>`;
       });
       html += '</div>';
     }
@@ -5377,15 +5392,23 @@ if (_savedTab) {
     } else {
       html += `<p style="font-size:13px;color:#718096;margin-bottom:14px;">${excl.length} item${excl.length !== 1 ? 's' : ''} excluded from metric calculations.</p>`;
       html += '<div class="excl-table">';
+      const _EXCL_REASON_META = {
+        missing_board_entry_date:  { label: 'Missing board entry date',    desc: 'No date was recorded for when this item first appeared on the board. It cannot be included in time-based metrics.' },
+        empty_column_history:      { label: 'No column history',            desc: 'This item has no column transition history. It may have been created directly in its current state without moving through the board.' },
+        snapshot_history_mismatch: { label: 'Snapshot / history mismatch', desc: 'The item\'s current board position doesn\'t match its recorded column history. This is usually caused by a bulk move, data import, or board restructure.' },
+        unknown_swimlane:          { label: 'Unknown swimlane',             desc: 'This item belongs to a swimlane that isn\'t in the current board configuration. Its history cannot be reliably interpreted.' },
+      };
       excl.forEach(item => {
         html += `<div class="excl-row"><span class="excl-id">#${item.id}</span>`;
-        const _EXCL_REASON_LABELS = {
-          missing_board_entry_date:  'Missing board entry date',
-          empty_column_history:      'No column history recorded',
-          snapshot_history_mismatch: 'Snapshot / history mismatch',
-          unknown_swimlane:          'Unknown swimlane',
-        };
-        if (item.reasons?.length) html += `<span class="excl-reason" title="${item.reasons.join(', ')}">${item.reasons.map(r => escapeHtml(_EXCL_REASON_LABELS[r] || r)).join(' · ')}</span>`;
+        if (item.reasons?.length) {
+          html += '<span>';
+          item.reasons.forEach(r => {
+            const m = _EXCL_REASON_META[r] || { label: r, desc: '' };
+            html += `<span class="excl-reason">${escapeHtml(m.label)}</span>`;
+            if (m.desc) html += `<span class="excl-reason-desc">${escapeHtml(m.desc)}</span>`;
+          });
+          html += '</span>';
+        }
         html += '</div>';
       });
       html += '</div>';
