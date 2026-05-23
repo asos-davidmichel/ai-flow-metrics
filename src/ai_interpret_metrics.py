@@ -1491,8 +1491,10 @@ in 3-5 bullet points.
 
 def call_openai(summary):
     import os, urllib.request
-    api_key = os.environ.get("OPENAI_API_KEY")
-    model   = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    api_key  = os.environ.get("OPENAI_API_KEY")
+    model    = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    endpoint = f"{base_url}/chat/completions"
     if not api_key:
         print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
         sys.exit(1)
@@ -1505,7 +1507,7 @@ def call_openai(summary):
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        endpoint,
         data=body,
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -1513,7 +1515,7 @@ def call_openai(summary):
         },
         method="POST",
     )
-    print(f"Calling OpenAI ({model})…")
+    print(f"Calling {endpoint} ({model})…")
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read())

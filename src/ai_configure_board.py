@@ -489,15 +489,22 @@ def write_plain_prompt(findings):
 
 def call_openai(findings):
     """
-    Call OpenAI Chat Completions API to produce config.json directly.
+    Call an OpenAI-compatible Chat Completions API to produce config.json directly.
 
     Required environment variables:
-      OPENAI_API_KEY — your OpenAI API key
-      OPENAI_MODEL   — model to use (default: gpt-4o)
+      OPENAI_API_KEY  — API key (OpenAI key, GitHub PAT, Azure key, etc.)
+    Optional:
+      OPENAI_MODEL    — model name (default: gpt-4o)
+      OPENAI_BASE_URL — base URL for the API (default: https://api.openai.com/v1)
+                        Examples:
+                          GitHub Models:  https://models.inference.ai.azure.com
+                          Azure OpenAI:   https://<resource>.openai.azure.com/openai/deployments/<deployment>
     """
     import os, urllib.request
-    api_key = os.environ.get("OPENAI_API_KEY")
-    model   = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    api_key  = os.environ.get("OPENAI_API_KEY")
+    model    = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    endpoint = f"{base_url}/chat/completions"
     if not api_key:
         print("Error: OPENAI_API_KEY environment variable is not set.", file=sys.stderr)
         sys.exit(1)
@@ -521,7 +528,7 @@ def call_openai(findings):
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        endpoint,
         data=body,
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -529,7 +536,7 @@ def call_openai(findings):
         },
         method="POST",
     )
-    print(f"Calling OpenAI ({model}) to configure board…")
+    print(f"Calling {endpoint} ({model}) to configure board…")
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read())
