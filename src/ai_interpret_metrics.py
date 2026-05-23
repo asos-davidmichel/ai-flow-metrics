@@ -608,8 +608,8 @@ def summarise_ad_ratio(ct, ctx, wih):
 
 
 def summarise_cfd(ct, ctx, wih):
-    """Cohort CFD summary: only items whose first column event falls within the window.
-    Computes arrival/departure rates and band widths — mirrors the dashboard JS model."""
+    """Snapshot CFD summary: all items on the board positioned at their furthest column
+    at each weekly snapshot. Mirrors the dashboard JS model."""
     from datetime import timedelta
     if not ct or not ctx or not wih:
         return None
@@ -636,11 +636,9 @@ def summarise_cfd(ct, ctx, wih):
     if not weeks:
         return None
 
-    win_start_ts = win_start.timestamp()
-    win_end_ts   = win_end.timestamp()
     week_end_ts  = [(w + timedelta(weeks=1) - timedelta(microseconds=1)).timestamp() for w in weeks]
 
-    # Build cohort item progressions (mirrors JS itemProgressions)
+    # Build item progressions for all items on the board (mirrors JS itemProgressions)
     progressions = []
     for entry in wih:
         events = []
@@ -654,8 +652,6 @@ def summarise_cfd(ct, ctx, wih):
         if not events:
             continue
         events.sort()
-        if events[0][0] < win_start_ts or events[0][0] > win_end_ts:
-            continue  # outside cohort window
         sorted_ts, max_idx_at, run_max = [], [], -1
         for ts, idx in events:
             run_max = max(run_max, idx)
@@ -693,8 +689,8 @@ def summarise_cfd(ct, ctx, wih):
         n = len(values)
         return _round((values[-1] - values[0]) / (n - 1), 1) if n >= 2 else 0
 
-    arrival_rate   = _slope(cum[0])       # first col = all cohort items
-    departure_rate = _slope(cum[-1])      # last col  = completed items
+    arrival_rate   = _slope(cum[0])       # slope of first col = new arrivals per week during window
+    departure_rate = _slope(cum[-1])      # slope of last col  = completions per week during window
 
     # Average band width per column (items currently in that column per week)
     band_avgs = {}
@@ -724,8 +720,7 @@ def summarise_cfd(ct, ctx, wih):
     return {
         "chart": "cfd",
         "weeks_in_window": n_weeks,
-        "cohort_size": len(progressions),
-        "cohort_definition": "Items whose first column history event (any column, including Backlog) falls within the analysis window",
+        "total_items_tracked": len(progressions),
         "arrival_rate_per_week": arrival_rate,
         "departure_rate_per_week": departure_rate,
         "accumulation_signal": (

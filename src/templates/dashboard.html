@@ -2631,9 +2631,9 @@ function updateChart() {
   const MS_WEEK      = 7 * 24 * 3600 * 1000;
   const cfdWeekEndMs = cfdWeeks.map(w => new Date(w + 'T00:00:00Z').getTime() + MS_WEEK - 1);
 
-  // Cohort CFD: only items that FIRST entered the workflow within the analysis window.
-  // Items in-flight or completed before winStart are excluded — we follow the journey
-  // of items that started during this period only.
+  // Snapshot CFD: all items on the board, positioned at their furthest column as of
+  // each weekly snapshot. Items in-flight before winStart are included from their
+  // existing column position; lines therefore start at existing WIP, not 0.
   const colOrder = {};
   allCols.forEach((col, i) => { colOrder[col] = i; });
 
@@ -2647,8 +2647,6 @@ function updateChart() {
     });
     if (!events.length) return;
     events.sort((a, b) => a.ms - b.ms);
-    // Only include items whose first recorded event falls within the window
-    if (events[0].ms < winStartMs || events[0].ms > winEndMs) return;
     const sortedMs = [], maxIdxAt = [];
     let runMax = -1;
     events.forEach(e => { runMax = Math.max(runMax, e.idx); sortedMs.push(e.ms); maxIdxAt.push(runMax); });
@@ -2661,8 +2659,8 @@ function updateChart() {
     return res >= 0 ? prog.maxIdxAt[res] : -1;
   }
 
-  // cumAtOrBeyond[col][weekIdx] = # cohort items that have reached col or further by that snapshot.
-  // Naturally starts at 0 (no cohort items existed before winStart) and is monotonically non-decreasing.
+  // cumAtOrBeyond[col][weekIdx] = # items (all time) that have reached col or further by end of that week.
+  // Includes pre-window items; lines therefore start at existing WIP, not 0.
   const cumAtOrBeyond = {};
   allCols.forEach((col, i) => {
     cumAtOrBeyond[col] = cfdWeekEndMs.map(snapMs =>
