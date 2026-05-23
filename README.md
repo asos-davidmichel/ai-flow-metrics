@@ -120,7 +120,7 @@ Steps 4–6 require `output/data/config.json` to exist.
 | `--clean` | off | Delete all generated output files before running. |
 | `--yes` | off | Skip all confirmation prompts (required for fully automated runs). |
 | `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
-| `--ai-mode MODE` | `copilot` | AI mode for both board configuration and chart insights — see [AI modes](#ai-modes) below. `skip` omits the insights step only. |
+| `--ai-mode MODE` | `prompt` | AI mode for both board configuration and chart insights — see [AI modes](#ai-modes) below. `skip` omits the insights step only. |
 
 **Fully automated run (no human interaction):**
 ```bash
@@ -143,8 +143,7 @@ Two scripts generate AI prompts. Both support a `--mode` flag.
 
 | Mode | What happens |
 |------|--------------|
-| `copilot` *(default)* | Writes a `.prompt.md` file and opens it in VS Code Copilot chat. |
-| `prompt` | Writes a `.txt` file you can paste into any AI assistant (ChatGPT, Claude, etc.). |
+| `prompt` *(default)* | Writes a `.prompt.md` file with the full prompt (including inline data). Opens it in VS Code Copilot automatically if `code` is on PATH — or paste the file contents into any AI assistant. |
 | `openai` | Calls an OpenAI-compatible API directly and writes the output automatically. Requires `OPENAI_API_KEY`. |
 
 **Environment variables for `openai` mode:**
@@ -168,8 +167,7 @@ Two scripts generate AI prompts. Both support a `--mode` flag.
 Proposes column classification, flow efficiency rules, and blocker tag signals. Run this before setting up `config.json`.
 
 ```bash
-python src/ai_configure_board.py                     # opens in VS Code Copilot (default)
-python src/ai_configure_board.py --mode prompt       # writes a .txt file to paste elsewhere
+python src/ai_configure_board.py                     # prompt mode (default)
 python src/ai_configure_board.py --mode openai       # calls API directly → writes config.json
 ```
 
@@ -178,8 +176,7 @@ python src/ai_configure_board.py --mode openai       # calls API directly → wr
 Generates chart-by-chart insights and a leadership narrative that are embedded in the dashboard.
 
 ```bash
-python src/ai_interpret_metrics.py                   # opens in VS Code Copilot (default)
-python src/ai_interpret_metrics.py --mode prompt     # writes a .txt file to paste elsewhere
+python src/ai_interpret_metrics.py                   # prompt mode (default)
 python src/ai_interpret_metrics.py --mode openai     # calls API directly → writes insights.json
 python src/ai_interpret_metrics.py --dump-summary    # print the anonymised metrics JSON sent to the AI
 ```

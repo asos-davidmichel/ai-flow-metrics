@@ -12,14 +12,11 @@ Reads:
   output/data/work_item_history.json
 
 Writes (depending on --mode):
-  src/prompts/ai_interpret_metrics.prompt.md      static template (tracked in git)
-  output/data/ai_interpret_metrics.prompt.md  (--mode copilot)  open in VS Code chat, pick your model
-  output/data/ai_interpret_metrics_prompt.txt (--mode prompt)   paste into any AI assistant
-  output/data/insights.json               (--mode openai)
+  output/data/ai_interpret_metrics.prompt.md  (--mode prompt)   open in VS Code chat or paste into any AI
+  output/data/insights.json                   (--mode openai)   direct API call (requires OPENAI_API_KEY)
 
 Usage:
   python src/ai_interpret_metrics.py
-  python src/ai_interpret_metrics.py --mode copilot
   python src/ai_interpret_metrics.py --mode prompt
   python src/ai_interpret_metrics.py --mode openai
 """
@@ -48,7 +45,6 @@ WI_PATH      = DATA_DIR / "work_items.json"
 WIH_PATH     = DATA_DIR / "work_item_history.json"
 
 PROMPT_MD_PATH  = DATA_DIR / "ai_interpret_metrics.prompt.md"
-PROMPT_TXT_PATH = DATA_DIR / "ai_interpret_metrics_prompt.txt"
 INSIGHTS_PATH   = DATA_DIR / "insights.json"
 
 # ---------------------------------------------------------------------------
@@ -1457,19 +1453,12 @@ def build_prompt_text(summary):
 # Modes
 # ---------------------------------------------------------------------------
 
-def write_plain_prompt(summary):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    content = build_prompt_text(summary)
-    PROMPT_TXT_PATH.write_text(content, encoding="utf-8")
-    print(f"Written: {PROMPT_TXT_PATH}")
-
-
-def write_copilot_prompt(summary):
+def write_prompt(summary):
     import subprocess
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
 ---
-agent: agent
+mode: agent
 description: "Flow metrics — generate chart insights and leadership overview"
 ---
 
@@ -1485,8 +1474,9 @@ in 3-5 bullet points.
     try:
         subprocess.Popen(["code", str(PROMPT_MD_PATH)])
         print("Opened in VS Code — click 'Run in Chat' and select your model.")
+        print("Or paste the file contents into any AI assistant.")
     except FileNotFoundError:
-        print(f"Open manually: {PROMPT_MD_PATH}")
+        print(f"Open {PROMPT_MD_PATH} in VS Code, or paste its contents into any AI assistant.")
 
 
 def call_openai(summary):
@@ -1554,8 +1544,8 @@ def main():
         description="Generate AI prompts or call OpenAI to produce chart insights."
     )
     parser.add_argument(
-        "--mode", choices=["copilot", "prompt", "openai"], default="copilot",
-        help="How to deliver the prompt (default: copilot)",
+        "--mode", choices=["prompt", "openai"], default="prompt",
+        help="How to deliver the prompt (default: prompt)",
     )
     parser.add_argument(
         "--dump-summary", action="store_true",
@@ -1573,10 +1563,8 @@ def main():
         print(json.dumps(summary, indent=2))
         return
 
-    if args.mode == "copilot":
-        write_copilot_prompt(summary)
-    elif args.mode == "prompt":
-        write_plain_prompt(summary)
+    if args.mode == "prompt":
+        write_prompt(summary)
     elif args.mode == "openai":
         call_openai(summary)
 

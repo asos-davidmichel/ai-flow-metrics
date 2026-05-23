@@ -13,16 +13,14 @@ Reads:
   output/data/data_quality_report.json
 
 Writes (depending on --mode):
-  src/prompts/ai_configure_board.prompt.md      (--mode copilot)  open in VS Code chat, pick your model
-  output/data/ai_configure_board_prompt.txt (--mode prompt)   paste into any AI assistant
-  output/data/config.json                   (--mode openai)   direct OpenAI API call
+  src/prompts/ai_configure_board.prompt.md  (--mode prompt)   open in VS Code chat or paste into any AI
+  output/data/config.json                   (--mode openai)   direct API call (requires OPENAI_API_KEY)
 
-After copilot/prompt mode: paste the AI's JSON response directly into output/data/config.json.
+After prompt mode: paste the AI's JSON response directly into output/data/config.json.
 The metrics script requires config.json.
 
 Usage:
   python src/ai_configure_board.py
-  python src/ai_configure_board.py --mode copilot
   python src/ai_configure_board.py --mode prompt
   python src/ai_configure_board.py --mode openai
 """
@@ -45,7 +43,6 @@ HISTORY_PATH = DATA_DIR / "work_item_history.json"
 QUALITY_PATH = DATA_DIR / "data_quality_report.json"
 WORK_ITEMS_PATH = DATA_DIR / "work_items.json"
 CONFIG_PATH = DATA_DIR / "config.json"
-PROMPT_TXT_PATH = DATA_DIR / "ai_configure_board_prompt.txt"
 PROMPT_MD_PATH = PROMPTS_DIR / "ai_configure_board.prompt.md"
 
 VIRTUAL_COLUMNS = {"Backlog"}
@@ -398,7 +395,15 @@ def _findings_as_text(findings):
     return "\n".join(lines)
 
 
-def build_plain_prompt(findings):
+def build_prompt(findings):
+    """Build prompt content with inline context data (works in VS Code and when pasted elsewhere)."""
+    header = """\
+---
+mode: agent
+description: "Flow metrics — interpret board structure and write config.json"
+---
+
+"""
     context_block = ""
     if CONTEXT_PATH.exists():
         context_block = (
@@ -415,54 +420,7 @@ def build_plain_prompt(findings):
             + "\n\n"
         )
 
-    return _PREAMBLE + context_block + quality_block + _findings_as_text(findings) + _DECISIONS
-
-
-def build_copilot_prompt(findings):
-    header = """\
----
-mode: agent
-description: "Flow metrics — interpret board structure and write config.json"
----
-
-"""
-    preamble = """\
-You are helping configure a flow metrics tool for an Azure DevOps Kanban board.
-
-The tool calculates cycle time, lead time, flow efficiency, and blocked time.
-Before it can compute metrics, four configuration decisions must be made.
-
-Board structure and card rules: #file:output/data/context.json
-Data quality findings: #file:output/data/data_quality_report.json
-
-The script `src/ai_configure_board.py` also performed an automated analysis.
-Its findings are embedded below.
-
-"""
-    return header + preamble + _findings_as_text(findings) + _DECISIONS
-
-
-# ---------------------------------------------------------------------------
-# Mode: copilot
-# ---------------------------------------------------------------------------
-
-
-def write_copilot_prompt(findings):
-    import subprocess
-    PROMPTS_DIR.mkdir(exist_ok=True)
-    content = build_copilot_prompt(findings)
-    PROMPT_MD_PATH.write_text(content, encoding="utf-8")
-    print(f"Written: {PROMPT_MD_PATH}")
-    try:
-        subprocess.Popen(["code", str(PROMPT_MD_PATH)])
-        print("Opened in VS Code — click 'Run in Chat' and select your model.")
-    except FileNotFoundError:
-        print("Could not open VS Code automatically ('code' not on PATH).")
-        print(f"Open manually: {PROMPT_MD_PATH}")
-    print()
-    print("Next steps:")
-    print("  1. In VS Code chat, click 'Run in Chat' and select your model.")
-    print("  2. Save the JSON response as output/data/config.json.")
+    return header + _PREAMBLE + context_block + quality_block + _findings_as_text(findings) + _DECISIONS
 
 
 # ---------------------------------------------------------------------------
@@ -470,21 +428,22 @@ def write_copilot_prompt(findings):
 # ---------------------------------------------------------------------------
 
 
-def write_plain_prompt(findings):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    content = build_plain_prompt(findings)
-    PROMPT_TXT_PATH.write_text(content, encoding="utf-8")
-    print(f"Written: {PROMPT_TXT_PATH}")
+def write_prompt(findings):
+    import subprocess
+    PROMPTS_DIR.mkdir(exist_ok=True)
+    content = build_prompt(findings)
+    PROMPT_MD_PATH.write_text(content, encoding="utf-8")
+    print(f"Written: {PROMPT_MD_PATH}")
+    try:
+        subprocess.Popen(["code", str(PROMPT_MD_PATH)])
+        print("Opened in VS Code — click 'Run in Chat' and select your model.")
+        print("Or paste the file contents into any AI assistant.")
+    except FileNotFoundError:
+        print(f"Open {PROMPT_MD_PATH} in VS Code, or paste its contents into any AI assistant.")
     print()
     print("Next steps:")
-    print("  1. Open output/data/ai_configure_board_prompt.txt.")
-    print("  2. Paste the contents into any AI assistant.")
-    print("  3. Save the JSON response as output/data/config.json.")
-
-
-# ---------------------------------------------------------------------------
-# Mode: openai (stub)
-# ---------------------------------------------------------------------------
+    print("  1. Run the prompt in VS Code chat (or paste into ChatGPT / Claude / etc.).")
+    print("  2. Save the JSON response as output/data/config.json.")
 
 
 def call_openai(findings):
@@ -509,7 +468,7 @@ def call_openai(findings):
         print("Error: OPENAI_API_KEY environment variable is not set.", file=sys.stderr)
         sys.exit(1)
 
-    prompt = build_plain_prompt(findings)
+    prompt = build_prompt(findings)
     body = json.dumps({
         "model": model,
         "messages": [
@@ -578,9 +537,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["copilot", "prompt", "openai"],
-        default="copilot",
-        help="How to deliver the prompt (default: copilot)",
+        choices=["prompt", "openai"],
+        default="prompt",
+        help="How to deliver the prompt (default: prompt)",
     )
     args = parser.parse_args()
 
@@ -595,10 +554,8 @@ def main():
 
     findings = analyse(context, history, work_items)
 
-    if args.mode == "copilot":
-        write_copilot_prompt(findings)
-    elif args.mode == "prompt":
-        write_plain_prompt(findings)
+    if args.mode == "prompt":
+        write_prompt(findings)
     elif args.mode == "openai":
         call_openai(findings)
 

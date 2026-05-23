@@ -2,7 +2,7 @@
 Full pipeline runner.
 
 Usage:
-  python run.py <board-url> [--short-dwell-minutes N] [--ai-mode copilot|prompt|openai|skip]
+  python run.py <board-url> [--short-dwell-minutes N] [--ai-mode prompt|openai|skip]
                             [--window 6m] [--clean] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--yes]
   python run.py --clean   (clean output files only, no board URL required)
 
@@ -24,7 +24,7 @@ If output/data/config.json exists, also runs:
 
 Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 --from / --to: explicit date range YYYY-MM-DD (overrides --window when --from is given)
---ai-mode: copilot (default), prompt, openai, skip
+--ai-mode: prompt (default), openai, skip
   skip omits step 8 (insights) only — board config (step 3) always runs.
 
 --clean  Delete all previously generated output files before running.
@@ -108,16 +108,16 @@ def main():
             sys.exit(1)
 
     # --ai-mode controls both ai_configure_board.py (step 3) and ai_interpret_metrics.py (step 8)
-    ai_mode = "copilot"
+    ai_mode = "prompt"
     if "--ai-mode" in sys.argv:
         idx = sys.argv.index("--ai-mode")
         try:
             ai_mode = sys.argv[idx + 1]
-            if ai_mode not in ("copilot", "prompt", "openai", "skip"):
-                print("Error: --ai-mode must be copilot, prompt, openai, or skip.", file=sys.stderr)
+            if ai_mode not in ("prompt", "openai", "skip"):
+                print("Error: --ai-mode must be prompt, openai, or skip.", file=sys.stderr)
                 sys.exit(1)
         except IndexError:
-            print("Error: --ai-mode requires a value (copilot, prompt, openai, skip).", file=sys.stderr)
+            print("Error: --ai-mode requires a value (prompt, openai, skip).", file=sys.stderr)
             sys.exit(1)
 
     # Forward --window to metrics.py if provided (default: 6m)
@@ -170,7 +170,7 @@ def main():
     print("Available options (Ctrl+C to abort and rerun with different flags):")
     print("  --window         2w | 1m | 3m | 6m | 1y         (default: 6m)")
     print("  --from YYYY-MM-DD [--to YYYY-MM-DD]             (explicit date range, overrides --window)")
-    print("  --ai-mode        copilot | prompt | openai | skip  (default: copilot)")
+    print("  --ai-mode        prompt | openai | skip              (default: prompt)")
     print("  --short-dwell-minutes N                       (flag items moved too quickly)")
     print("  --clean                                       (delete all output files first)")
     print("  --yes                                         (skip all confirmation prompts; pair with --ai-mode openai)")
@@ -194,7 +194,7 @@ def main():
         "Step 2 / 3 — Data quality checks",
     )
     run(
-        [sys.executable, "src/ai_configure_board.py", "--mode", ai_mode if ai_mode != "skip" else "copilot"],
+        [sys.executable, "src/ai_configure_board.py", "--mode", ai_mode if ai_mode != "skip" else "prompt"],
         "Step 3 / 3 — Generate AI interpretation prompt",
     )
 
@@ -206,16 +206,12 @@ def main():
     print("  output/data/excluded_items.json")
     print("  output/data/work_item_rework.json")
 
-    # For modes that require human-in-the-loop (copilot / prompt), always pause so
-    # the user can run the prompt and save the AI's JSON response as config.json
-    # before the pipeline continues to metrics.
-    if ai_mode in ("copilot", "prompt"):
+    # For prompt mode (human-in-the-loop), pause so the user can run the prompt
+    # and save the AI's JSON response as config.json before metrics continue.
+    if ai_mode == "prompt":
         print()
         print("Next steps:")
-        if interpret_mode == "copilot":
-            print("  1. Run the prompt that just opened in VS Code Copilot chat.")
-        else:
-            print("  1. Paste output/data/ai_configure_board_prompt.txt into your AI assistant.")
+        print("  1. Run the prompt that opened in VS Code chat, or paste the file into any AI assistant.")
         print("  2. Save the JSON response as output/data/config.json.")
         print()
         try:
@@ -270,13 +266,10 @@ def main():
         f"Step 8 / 9 — Generate AI chart insights ({insights_mode})",
     )
 
-    if insights_mode in ("copilot", "prompt"):
+    if insights_mode == "prompt":
         print()
         print("Next steps:")
-        if insights_mode == "copilot":
-            print("  1. Run the prompt that just opened in VS Code Copilot chat.")
-        else:
-            print("  1. Paste output/data/ai_interpret_metrics_prompt.txt into your AI assistant.")
+        print("  1. Run the prompt that opened in VS Code chat, or paste the file into any AI assistant.")
         print("  2. The agent will save output/data/insights.json automatically.")
         print()
         try:
