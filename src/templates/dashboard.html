@@ -1090,12 +1090,12 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       }
       chart._zoomControls = controls;
 
-      // Capture original scale limits so reset is exact
-      // Use chart.config.options (raw config) not chart.options (read-only resolver proxy in CJ4)
+      // Capture the actual rendered (computed) scale range so reset is pixel-exact.
+      // Use chart.scales[id].min/max (runtime values) not the config options
+      // (which may be undefined for auto-scaled axes).
       chart._origScaleLimits = {};
       Object.keys(chart.scales).forEach(id => {
-        const cfg = (chart.config.options.scales || {})[id] || {};
-        chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
+        chart._origScaleLimits[id] = { min: chart.scales[id].min, max: chart.scales[id].max };
       });
 
       const isScatter  = chart.config.type === 'scatter' || chart.config.type === 'bubble';
@@ -1120,11 +1120,12 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       }
 
       function resetZoom() {
+        const cOpts = chart.config.options;
         Object.entries(chart._origScaleLimits || {}).forEach(([id, orig]) => {
-          const cfg = (chart.config.options.scales || {})[id];
-          if (!cfg) return;
-          if (orig.min === undefined) delete cfg.min; else cfg.min = orig.min;
-          if (orig.max === undefined) delete cfg.max; else cfg.max = orig.max;
+          if (!cOpts.scales)      cOpts.scales = {};
+          if (!cOpts.scales[id])  cOpts.scales[id] = {};
+          cOpts.scales[id].min = orig.min;
+          cOpts.scales[id].max = orig.max;
         });
         chart.update('none');
         wrap.classList.remove('is-zoomed');
