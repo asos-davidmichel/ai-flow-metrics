@@ -1091,27 +1091,29 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       chart._zoomControls = controls;
 
       // Capture original scale limits so reset is exact
+      // Use chart.config.options (raw config) not chart.options (read-only resolver proxy in CJ4)
       chart._origScaleLimits = {};
       Object.keys(chart.scales).forEach(id => {
-        const cfg = (chart.options.scales || {})[id] || {};
+        const cfg = (chart.config.options.scales || {})[id] || {};
         chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
       });
 
       const isScatter  = chart.config.type === 'scatter' || chart.config.type === 'bubble';
-      const isHorizBar = chart.options.indexAxis === 'y';
+      const isHorizBar = chart.config.options.indexAxis === 'y';
 
       function applyZoom(factor) {
         let changed = false;
         Object.entries(chart.scales).forEach(([id, scale]) => {
-          if (!isScatter && !isHorizBar &&  scale.isHorizontal()) return;
-          if (!isScatter &&  isHorizBar && !scale.isHorizontal()) return;
+          if (!isScatter && !isHorizBar && scale.axis === 'x') return;
+          if (!isScatter &&  isHorizBar && scale.axis === 'y') return;
           if (scale.type === 'category') return;
           const mid = (scale.min + scale.max) / 2;
           const newHalf = (scale.max - scale.min) / 2 * factor;
-          chart.options.scales = chart.options.scales || {};
-          chart.options.scales[id] = chart.options.scales[id] || {};
-          chart.options.scales[id].min = mid - newHalf;
-          chart.options.scales[id].max = mid + newHalf;
+          const cOpts = chart.config.options;
+          if (!cOpts.scales)      cOpts.scales = {};
+          if (!cOpts.scales[id])  cOpts.scales[id] = {};
+          cOpts.scales[id].min = mid - newHalf;
+          cOpts.scales[id].max = mid + newHalf;
           changed = true;
         });
         if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); }
@@ -1119,7 +1121,7 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 
       function resetZoom() {
         Object.entries(chart._origScaleLimits || {}).forEach(([id, orig]) => {
-          const cfg = (chart.options.scales || {})[id];
+          const cfg = (chart.config.options.scales || {})[id];
           if (!cfg) return;
           if (orig.min === undefined) delete cfg.min; else cfg.min = orig.min;
           if (orig.max === undefined) delete cfg.max; else cfg.max = orig.max;
