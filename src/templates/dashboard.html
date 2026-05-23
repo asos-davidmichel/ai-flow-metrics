@@ -39,13 +39,22 @@
     }
     .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 0; color: #4a5568; }
     .chart-wrap { position: relative; height: 380px; }
-    .zoom-reset-btn {
-      position: absolute; top: 6px; right: 8px; z-index: 10; display: none;
-      padding: 2px 8px; font-size: 11px; cursor: pointer; line-height: 1.6;
-      background: rgba(255,255,255,0.9); border: 1px solid #cbd5e0;
+    .zoom-controls {
+      position: absolute; top: 6px; right: 8px; z-index: 10;
+      display: flex; gap: 2px;
+      opacity: 0; transition: opacity 0.15s; pointer-events: none;
+    }
+    .chart-wrap:hover .zoom-controls,
+    .chart-wrap.is-zoomed .zoom-controls { opacity: 1; pointer-events: auto; }
+    .zoom-btn, .zoom-reset-btn {
+      padding: 1px 7px; cursor: pointer; line-height: 1.6;
+      background: rgba(255,255,255,0.92); border: 1px solid #cbd5e0;
       border-radius: 4px; color: #4a5568;
     }
-    .zoom-reset-btn:hover { background: #e2e8f0; }
+    .zoom-btn { font-size: 15px; font-weight: 600; }
+    .zoom-reset-btn { font-size: 11px; display: none; }
+    .zoom-btn:hover, .zoom-reset-btn:hover { background: #e2e8f0; }
+    .is-zoomed .zoom-reset-btn { display: block; }
     .meta { font-size: 13px; color: #718096; line-height: 2; }
     .meta strong { color: #4a5568; }
     .tag {
@@ -1051,7 +1060,7 @@
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 
-// ── Manual wheel zoom + per-chart reset button ────────────────────
+// ── Wheel zoom + +/− buttons + reset ───────────────────────────────────
 (function () {
   const NO_ZOOM_TYPES = new Set(['pie', 'doughnut', 'polarArea']);
   const NO_ZOOM_IDS   = new Set(['wipLevelDistChart']);
@@ -1064,41 +1073,34 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       const wrap = chart.canvas.closest('.chart-wrap');
       if (!wrap) return;
 
-      let btn = wrap.querySelector('.zoom-reset-btn');
-      if (!btn) {
-        btn = document.createElement('button');
-        btn.className = 'zoom-reset-btn';
-        btn.textContent = '\u21ba Reset';
-        wrap.appendChild(btn);
-      }
-      btn.style.display = 'none';
-      chart._zoomResetBtn = btn;
+      wrap.classList.remove('is-zoomed'); // clean state on init / rebuild
 
-      // Capture original scale limits for clean reset
+      // Inject control bar once per wrap; rebind handlers on rebuild
+      let controls = wrap.querySelector('.zoom-controls');
+      if (!controls) {
+        controls = document.createElement('div');
+        controls.className = 'zoom-controls';
+        ['\u002b', '\u2212', '\u21ba\u00a0Reset'].forEach((label, i) => {
+          const btn = document.createElement('button');
+          btn.className = i < 2 ? 'zoom-btn' : 'zoom-reset-btn';
+          btn.textContent = label;
+          controls.appendChild(btn);
+        });
+        wrap.appendChild(controls);
+      }
+      chart._zoomControls = controls;
+
+      // Capture original scale limits so reset is exact
       chart._origScaleLimits = {};
       Object.keys(chart.scales).forEach(id => {
         const cfg = (chart.options.scales || {})[id] || {};
         chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
       });
 
-      btn.onclick = () => {
-        Object.entries(chart._origScaleLimits || {}).forEach(([id, orig]) => {
-          const cfg = (chart.options.scales || {})[id];
-          if (!cfg) return;
-          if (orig.min === undefined) delete cfg.min; else cfg.min = orig.min;
-          if (orig.max === undefined) delete cfg.max; else cfg.max = orig.max;
-        });
-        chart.update('none');
-        btn.style.display = 'none';
-      };
-
-      // xy for scatter/bubble; x-only for horizontal bar; y-only otherwise
       const isScatter  = chart.config.type === 'scatter' || chart.config.type === 'bubble';
       const isHorizBar = chart.options.indexAxis === 'y';
 
-      const onWheel = (e) => {
-        e.preventDefault();
-        const factor = e.deltaY < 0 ? 0.82 : (1 / 0.82);
+      function applyZoom(factor) {
         let changed = false;
         Object.entries(chart.scales).forEach(([id, scale]) => {
           if (!isScatter && !isHorizBar &&  scale.isHorizontal()) return;
@@ -1112,8 +1114,25 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
           chart.options.scales[id].max = mid + newHalf;
           changed = true;
         });
-        if (changed) { chart.update('none'); btn.style.display = ''; }
-      };
+        if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); }
+      }
+
+      function resetZoom() {
+        Object.entries(chart._origScaleLimits || {}).forEach(([id, orig]) => {
+          const cfg = (chart.options.scales || {})[id];
+          if (!cfg) return;
+          if (orig.min === undefined) delete cfg.min; else cfg.min = orig.min;
+          if (orig.max === undefined) delete cfg.max; else cfg.max = orig.max;
+        });
+        chart.update('none');
+        wrap.classList.remove('is-zoomed');
+      }
+
+      controls.children[0].onclick = () => applyZoom(0.75);       // zoom in
+      controls.children[1].onclick = () => applyZoom(1 / 0.75);   // zoom out
+      controls.children[2].onclick = resetZoom;
+
+      const onWheel = (e) => { e.preventDefault(); applyZoom(e.deltaY < 0 ? 0.82 : (1 / 0.82)); };
       chart.canvas.addEventListener('wheel', onWheel, { passive: false });
       chart._zoomWheelHandler = onWheel;
     },
