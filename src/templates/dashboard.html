@@ -962,12 +962,19 @@
   <!-- ── Blockers tab ─────────────────────────────────────────────── -->
   <div id="tab-blockers" class="tab-panel">
 
-    <!-- Row 0: Blocked by Signal pie (only rendered if ≥2 signals) -->
+    <!-- Row 0: Blocked by Signal pie + Days Lost side by side (shown when ≥1 signal) -->
     <div id="blockedBySignalRow" style="display:none">
-      <div class="card" style="max-width:520px;">
-        <div class="card-header"><h2>Blocked Items by Signal</h2></div>
-        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Number of items currently carrying each blocked signal tag, across all board columns.</p>
-        <div class="chart-wrap" style="height:240px;"><canvas id="blockedBySignalChart"></canvas></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+        <div id="blockedBySignalPieCard" class="card" style="display:none">
+          <div class="card-header"><h2>Blocked Items by Signal</h2></div>
+          <p style="font-size:13px;color:#718096;margin-bottom:12px;">Number of items currently carrying each blocked signal tag, across all board columns.</p>
+          <div class="chart-wrap" style="height:280px;"><canvas id="blockedBySignalChart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Days Lost to Blocked Signals</h2></div>
+          <p id="dl-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">How many days of an item&rsquo;s in-progress time was spent on a blocked signal vs freely flowing.</p>
+          <div class="chart-wrap" style="height:280px;"><canvas id="daysLostBlockedChart"></canvas></div>
+        </div>
       </div>
     </div>
 
@@ -997,13 +1004,6 @@
         <p style="font-size:13px;color:#718096;margin-bottom:12px;">Active items sorted by days since last update.</p>
         <div class="chart-wrap" style="height:360px;"><canvas id="staleWorkChart"></canvas></div>
       </div>
-    </div>
-
-    <!-- Row 3: Days Lost (full width) -->
-    <div class="card">
-      <div class="card-header"><h2>Days Lost to Blocked Signals</h2></div>
-      <p id="dl-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">How many days of an item&rsquo;s in-progress time was spent on a blocked signal vs freely flowing.</p>
-      <div class="chart-wrap" style="height:320px;"><canvas id="daysLostBlockedChart"></canvas></div>
     </div>
 
   </div><!-- /tab-blockers -->
@@ -4065,9 +4065,12 @@ function updateChart() {
     };
   }
 
-  // ── Chart 0: Blocked by Signal (Pie) — only when ≥2 signals ──────────
-  if (SIGNALS.length >= 2) {
+  // ── Chart 0: Show row when ≥1 signal; show pie when ≥2 signals ─────────
+  if (SIGNALS.length >= 1) {
     document.getElementById('blockedBySignalRow').style.display = '';
+  }
+  if (SIGNALS.length >= 2) {
+    document.getElementById('blockedBySignalPieCard').style.display = '';
     const sigCounts = SIGNALS.map(sig =>
       wi.filter(item => {
         const itemTags = parseTags(typeof item.tags === 'string' ? item.tags : (item.tags || []).join(';'));
@@ -4324,6 +4327,7 @@ function updateChart() {
       return {
         ...i,
         style: typeStyles[i.type] || {},
+        primarySig: getItemSignal(i.tags),
         daysBlocked,
         daysNotBlocked,
       };
@@ -4332,14 +4336,25 @@ function updateChart() {
     .slice(0, 10);
 
   const lostItemsFn = () => lostItems;
+  // One stacked dataset per signal colour, plus grey "not blocked"
+  const lostSigDatasets = SIGNALS
+    .filter(sig => lostItems.some(i => i.primarySig === sig))
+    .map(sig => ({
+      label: sig.label,
+      data: lostItems.map(i => i.primarySig === sig ? i.daysBlocked : 0),
+      backgroundColor: sig.color,
+      borderRadius: 3,
+      stack: 'days',
+    }));
+  const lostDatasets = [
+    ...lostSigDatasets,
+    { label: 'Not blocked', data: lostItems.map(i => i.daysNotBlocked), backgroundColor: '#cbd5e0', borderRadius: 3, stack: 'days' },
+  ];
   new Chart(document.getElementById('daysLostBlockedChart'), {
     type: 'bar',
     data: {
       labels: lostItems.map(i => `#${i.id}`),
-      datasets: [
-        { label: 'Days blocked',     data: lostItems.map(i => i.daysBlocked),    backgroundColor: '#ed8936', borderRadius: 3, stack: 'days' },
-        { label: 'Days not blocked', data: lostItems.map(i => i.daysNotBlocked), backgroundColor: '#cbd5e0', borderRadius: 3, stack: 'days' },
-      ],
+      datasets: lostDatasets,
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false,
@@ -4351,9 +4366,11 @@ function updateChart() {
           const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
           const item = lostItems[idx]; if (!item) return;
           const url = adoBase ? `${adoBase}/${item.id}` : '';
+          const sigColor = item.primarySig ? item.primarySig.color : '#ed8936';
+          const sigLabel = item.primarySig ? item.primarySig.label : 'Blocked';
           sharedTooltip.show(
             ttItemRow(item.style, url, item.id, item.title||'', item.daysBlocked + item.daysNotBlocked) +
-            `<div class="tt-total" style="color:#ed8936">Blocked: ${item.daysBlocked}d</div>` +
+            `<div class="tt-total" style="color:${sigColor}">${sigLabel}: ${item.daysBlocked}d</div>` +
             `<div class="tt-total" style="color:#718096">Not blocked: ${item.daysNotBlocked}d</div>` +
             TT_HINT, c
           );
