@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Flow Metrics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -39,6 +40,13 @@
     }
     .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 0; color: #4a5568; }
     .chart-wrap { position: relative; height: 380px; }
+    .zoom-reset-btn {
+      position: absolute; top: 6px; right: 8px; z-index: 10; display: none;
+      padding: 2px 8px; font-size: 11px; cursor: pointer; line-height: 1.6;
+      background: rgba(255,255,255,0.9); border: 1px solid #cbd5e0;
+      border-radius: 4px; color: #4a5568;
+    }
+    .zoom-reset-btn:hover { background: #e2e8f0; }
     .meta { font-size: 13px; color: #718096; line-height: 2; }
     .meta strong { color: #4a5568; }
     .tag {
@@ -1044,6 +1052,35 @@
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 
+// ── Zoom plugin: wheel zoom + per-chart reset button ─────────────────
+Chart.defaults.plugins.zoom = {
+  zoom: {
+    wheel: { enabled: true },
+    mode: 'y',
+    onZoomComplete({ chart }) {
+      if (chart._zoomResetBtn) chart._zoomResetBtn.style.display = '';
+    },
+  },
+};
+Chart.register({
+  id: 'zoomResetBtn',
+  afterInit(chart) {
+    const wrap = chart.canvas.closest('.chart-wrap');
+    if (!wrap) return;
+    // Reuse existing button if chart is being rebuilt in the same wrap
+    let btn = wrap.querySelector('.zoom-reset-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.className = 'zoom-reset-btn';
+      btn.textContent = '\u21ba Reset';
+      wrap.appendChild(btn);
+    }
+    btn.onclick = () => { chart.resetZoom(); btn.style.display = 'none'; };
+    btn.style.display = 'none';
+    chart._zoomResetBtn = btn;
+  },
+});
+
 // ── Global filter: runs before any chart code ────────────────────────
 // Loads exclusion rules from localStorage, builds excludedIds, then
 // patches every dashboard.* array so all charts see filtered data.
@@ -1641,6 +1678,7 @@ function updateChart() {
       plugins: {
         legend: { display: false },
         tooltip: { enabled: false, external: ctExternalTooltip },
+        zoom: { zoom: { mode: 'xy' } },
       },
       scales: {
         x: {
@@ -1895,7 +1933,7 @@ function updateChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false, external: ltExternalTooltip } },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: ltExternalTooltip }, zoom: { zoom: { mode: 'xy' } } },
       scales: {
         x: { type: 'linear', min: ltMinMs, max: ltMaxMs, title: { display: true, text: 'Completion date' }, ticks: { maxTicksLimit: 8, callback: val => fmtMs(val) }, grid: { display: false } },
         y: { title: { display: true, text: 'Lead time (days)' }, beginAtZero: true },
@@ -3269,6 +3307,7 @@ function updateChart() {
       plugins: {
         legend: { display: false },
         tooltip: { enabled: false },
+        zoom: { zoom: { wheel: { enabled: false } } },
       },
       scales: {
         x: {
@@ -3631,6 +3670,7 @@ function updateChart() {
         plugins: {
           legend: { display: false },
           tooltip: { enabled: false, external: wipScatterTooltip },
+          zoom: { zoom: { mode: 'xy' } },
         },
         scales: {
           x: { type: 'linear', min: xMin, max: xMax, ticks: { display: false }, grid: { color: '#e2e8f0' } },
