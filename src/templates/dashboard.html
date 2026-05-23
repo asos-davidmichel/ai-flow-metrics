@@ -3194,8 +3194,27 @@ function updateChart() {
   if (!colNames.length) return;
 
   const wipLimitMap   = Object.fromEntries(inProgCols.map(c => [c.name, c.wip_limit || 0]));
+
+  // For split columns ADO reports item.column as the bare name (e.g. "Review")
+  // and item.column_done as true/false to indicate (Done) vs (Doing).
+  // Build a reverse map: bare name → { doing: "Review (Doing)", done: "Review (Done)" }
+  const splitBaseMap = {};
+  inProgCols.forEach(c => {
+    if (!c.is_split) return;
+    const base = c.name.replace(/ \(Do(?:ing|ne)\)$/, '');
+    if (!splitBaseMap[base]) splitBaseMap[base] = {};
+    if (c.name.endsWith('(Doing)')) splitBaseMap[base].doing = c.name;
+    if (c.name.endsWith('(Done)'))  splitBaseMap[base].done  = c.name;
+  });
+
   const currentWipMap = Object.fromEntries(colNames.map(c => [c, 0]));
-  wi.forEach(item => { if (currentWipMap.hasOwnProperty(item.column)) currentWipMap[item.column]++; });
+  wi.forEach(item => {
+    let col = item.column;
+    if (splitBaseMap[col]) {
+      col = item.column_done ? splitBaseMap[col].done : splitBaseMap[col].doing;
+    }
+    if (currentWipMap.hasOwnProperty(col)) currentWipMap[col]++;
+  });
 
   // Analysis window
   const winStartMs = ct.window?.start ? new Date(ct.window.start).getTime()
