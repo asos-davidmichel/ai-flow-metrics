@@ -4482,6 +4482,15 @@ function updateChart() {
   const activeCols  = new Set(flowCfg.active_columns  || []);
   const waitingCols = new Set(flowCfg.waiting_columns || []);
 
+  // Auto-include any split "(Done)" sub-columns as waiting if not explicitly classified
+  ticItems.forEach(ti => {
+    Object.keys(ti.column_hours || {}).forEach(col => {
+      if (col.endsWith(' (Done)') && !activeCols.has(col) && !waitingCols.has(col)) {
+        waitingCols.add(col);
+      }
+    });
+  });
+
   // Show column categorisation
   const colsEl = document.getElementById('flowEffCols');
   if (activeCols.size || waitingCols.size) {
@@ -5319,7 +5328,8 @@ if (_savedTab) {
 
     if (cfg.historical_column_mapping && Object.keys(cfg.historical_column_mapping).length) {
       html += '<div class="cfg-block" style="grid-column:1/-1">';
-      html += '<div class="cfg-block-title">🗺️ Column Aliases</div>';
+      html += '<div class="cfg-block-title">🗺️ Historical Column Mapping</div>';
+      html += '<p style="font-size:12px;color:#718096;margin:0 0 10px;">Old column names from past board configurations mapped to their current equivalents. Used when computing metrics for items with history that predates a column rename.</p>';
       const _aliasPalette = [
         {bg:'#ebf4ff',color:'#2b6cb0'},{bg:'#faf5ff',color:'#6b21a8'},
         {bg:'#f0fff4',color:'#276749'},{bg:'#fffaf0',color:'#c05621'},
@@ -5369,7 +5379,13 @@ if (_savedTab) {
       html += '<div class="excl-table">';
       excl.forEach(item => {
         html += `<div class="excl-row"><span class="excl-id">#${item.id}</span>`;
-        if (item.reasons?.length) html += `<span class="excl-reason">${item.reasons.map(r => escapeHtml(r)).join(' · ')}</span>`;
+        const _EXCL_REASON_LABELS = {
+          missing_board_entry_date:  'Missing board entry date',
+          empty_column_history:      'No column history recorded',
+          snapshot_history_mismatch: 'Snapshot / history mismatch',
+          unknown_swimlane:          'Unknown swimlane',
+        };
+        if (item.reasons?.length) html += `<span class="excl-reason" title="${item.reasons.join(', ')}">${item.reasons.map(r => escapeHtml(_EXCL_REASON_LABELS[r] || r)).join(' · ')}</span>`;
         html += '</div>';
       });
       html += '</div>';

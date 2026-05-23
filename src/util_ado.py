@@ -378,6 +378,46 @@ def _history_to_spans(changes, field):
     return spans
 
 
+def fetch_work_item_type_styles(org, project, work_item_types, headers):
+    """
+    Fetch color and icon metadata for the given work item types from the ADO API.
+
+    Returns a dict keyed by type name:
+      {
+        "Bug": {"color": "#CC293D", "icon_id": "icon_insect"},
+        "Product Backlog Item": {"color": "#009CCC", "icon_id": "icon_backlog"},
+        ...
+      }
+
+    Types that cannot be fetched are omitted without error.
+    """
+    url = (
+        f"https://dev.azure.com/{org}/{requests.utils.quote(project)}"
+        f"/_apis/wit/workitemtypes?api-version={API_VERSION}"
+    )
+    try:
+        data = _get(url, headers)
+    except ADOError:
+        return {}
+
+    styles = {}
+    all_types = {t["name"]: t for t in data.get("value", [])}
+    for wit_name in work_item_types:
+        entry = all_types.get(wit_name)
+        if not entry:
+            continue
+        raw_color = entry.get("color") or ""
+        # ADO returns color without the # prefix
+        color = f"#{raw_color}" if raw_color and not raw_color.startswith("#") else raw_color
+        icon = entry.get("icon", {})
+        styles[wit_name] = {
+            "color": color or "#718096",
+            "icon_id": icon.get("id", ""),
+            "icon_url": icon.get("url", ""),
+        }
+    return styles
+
+
 def _build_compound_column_spans(changes, split_columns):
     """
     Build column history spans, expanding split columns into "(Doing)"/"(Done)" sub-columns.

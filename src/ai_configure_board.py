@@ -341,7 +341,7 @@ def write_prompt(findings):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
 ---
-mode: agent
+agent: agent
 description: "Flow metrics — interpret board structure and write config.json"
 ---
 
@@ -351,14 +351,13 @@ description: "Flow metrics — interpret board structure and write config.json"
     print(f"Written: {PROMPT_MD_PATH}")
     try:
         subprocess.Popen(["code", str(PROMPT_MD_PATH)])
-        print("Opened in VS Code — click 'Run in Chat' and select your model.")
-        print("Or paste the file contents into any AI assistant.")
+        print(f"Opened: {PROMPT_MD_PATH}")
     except FileNotFoundError:
-        print(f"Open {PROMPT_MD_PATH} in VS Code, or paste its contents into any AI assistant.")
+        pass
     print()
     print("Next steps:")
-    print("  1. Run the prompt in VS Code chat (or paste into ChatGPT / Claude / etc.).")
-    print("  2. Save the JSON response as output/data/config.json.")
+    print("  1. Open output/data/ai_configure_board.prompt.md in any AI assistant and run it.")
+    print("  2. The agent will save output/data/config.json automatically.")
 
 
 def call_openai(findings):

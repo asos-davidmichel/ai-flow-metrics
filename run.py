@@ -212,8 +212,8 @@ def main():
     if ai_mode == "prompt":
         print()
         print("Next steps:")
-        print("  1. Run the prompt that opened in VS Code chat, or paste the file into any AI assistant.")
-        print("  2. Save the JSON response as output/data/config.json.")
+        print("  1. Open output/data/ai_configure_board.prompt.md in any AI assistant and run it.")
+        print("  2. The agent will save output/data/config.json automatically.")
         print()
         try:
             input("Press Enter when config.json is ready to continue to metrics and dashboard...")
@@ -270,7 +270,7 @@ def main():
     if insights_mode == "prompt":
         print()
         print("Next steps:")
-        print("  1. Run the prompt that opened in VS Code chat, or paste the file into any AI assistant.")
+        print("  1. Open output/data/ai_interpret_metrics.prompt.md in any AI assistant and run it.")
         print("  2. The agent will save output/data/insights.json automatically.")
         print()
         try:

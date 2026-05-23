@@ -42,9 +42,9 @@ If there are no unknown columns, return an empty object {}.
 Classify each inProgress column as "active" (value-adding work happening) or "waiting"
 (queue, handoff, or blocked state). Use column names and dwell patterns to guide your choice.
 incoming and outgoing columns are always "waiting" — do not include them in your response.
-For split columns, the "(Done)" sub-column is always waiting (items queue there between stages)
-and is already excluded — do not include it. Only classify the "(Doing)" sub-columns and any
-non-split inProgress columns listed above.
+For split columns, the "(Done)" sub-column is always a waiting state (items queue there between
+stages) — include it in waiting_columns. Only classify the "(Doing)" sub-columns and any
+non-split inProgress columns listed above as active.
 
 ### 6. Blocked time detection
 List ALL signals this team uses to indicate blocked or waiting items.

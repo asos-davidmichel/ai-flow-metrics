@@ -304,6 +304,12 @@ def summarise_flow_efficiency(tic, cfg):
         return None
 
     tic_items = tic.get("items", [])
+
+    # Auto-include any split "(Done)" sub-columns as waiting if not explicitly classified
+    for item in tic_items:
+        for col in item.get("column_hours", {}):
+            if col.endswith(" (Done)") and col not in active_cols and col not in waiting_cols:
+                waiting_cols.add(col)
     effs = []
     for ti in tic_items:
         ch = ti.get("column_hours", {})
@@ -1458,7 +1464,7 @@ def write_prompt(summary):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
 ---
-mode: agent
+agent: agent
 description: "Flow metrics — generate chart insights and leadership overview"
 ---
 
@@ -1473,10 +1479,11 @@ in 3-5 bullet points.
     print(f"Written: {PROMPT_MD_PATH}")
     try:
         subprocess.Popen(["code", str(PROMPT_MD_PATH)])
-        print("Opened in VS Code — click 'Run in Chat' and select your model.")
-        print("Or paste the file contents into any AI assistant.")
+        print(f"Opened: {PROMPT_MD_PATH}")
     except FileNotFoundError:
-        print(f"Open {PROMPT_MD_PATH} in VS Code, or paste its contents into any AI assistant.")
+        pass
+    print("Open the prompt file in any AI assistant and run it.")
+    print("The agent will save output/data/insights.json when done.")
 
 
 def call_openai(summary):
