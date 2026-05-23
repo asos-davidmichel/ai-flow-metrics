@@ -99,7 +99,7 @@ bug_net_flow — Is the team resolving more bugs than it creates each week, or f
 
 bug_distribution — Which columns hold the most open bugs? What does the concentration of bugs in New (untriaged) vs in-progress columns reveal about how bugs are being managed? What is the risk if bugs accumulate in review or QA?
 
-cfd — What does the shape of the cumulative flow bands reveal about flow smoothness? Is work accumulating between any two columns (widening bands)? Does the CFD confirm or contradict the bottleneck identified in time_in_columns?
+cfd — What does the shape of the cumulative flow bands reveal about flow smoothness? Is work accumulating between any two columns (widening bands)? Does the CFD confirm or contradict the bottleneck identified in time_in_columns? Note: the CFD cohort_definition field explains what population the arrival and departure rates cover — the CFD arrival rate tracks all new board entries (including Backlog), while net_flow arrival rate tracks items entering the first in-progress column. Do not flag this difference as a data quality issue.
 
 wip_level_distribution — Which columns spend the most time at or above their WIP limit? Which columns are most often empty (WIP = 0), suggesting they are not a constraint? Does the distribution suggest WIP limits are well-calibrated or too loose? Are there columns where the mode WIP level is consistently above the limit, indicating a structural violation rather than an occasional one?
 

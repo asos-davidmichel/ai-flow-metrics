@@ -725,6 +725,7 @@ def summarise_cfd(ct, ctx, wih):
         "chart": "cfd",
         "weeks_in_window": n_weeks,
         "cohort_size": len(progressions),
+        "cohort_definition": "Items whose first column history event (any column, including Backlog) falls within the analysis window",
         "arrival_rate_per_week": arrival_rate,
         "departure_rate_per_week": departure_rate,
         "accumulation_signal": (
