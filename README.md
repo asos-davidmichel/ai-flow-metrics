@@ -122,13 +122,7 @@ Steps 4–6 require `output/data/config.json` to exist.
 | `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
 | `--ai-mode MODE` | `prompt` | AI mode for both board configuration and chart insights — see [AI modes](#ai-modes) below. `skip` omits the insights step only. |
 
-**Fully automated run (no human interaction):**
-```bash
-# Requires OPENAI_API_KEY (and optionally OPENAI_BASE_URL, OPENAI_MODEL)
-python run.py https://dev.azure.com/... --ai-mode auto --yes
-```
-
-**Default interactive run:**
+**Example:**
 ```bash
 python run.py https://dev.azure.com/org/project/_boards/... --window 3m --clean
 ```
@@ -154,7 +148,32 @@ Two scripts generate AI prompts. Both support a `--mode` flag.
 | `OPENAI_MODEL` | `gpt-4o` | Model name (e.g. `gpt-4o`, `claude-sonnet-4-5`). |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for any OpenAI-compatible endpoint. |
 
-**Compatible endpoints:**
+**Examples:**
+
+```powershell
+# ChatGPT (OpenAI)
+$env:OPENAI_API_KEY = "sk-..."
+$env:OPENAI_MODEL   = "gpt-4o"
+python run.py <board-url> --ai-mode auto --yes
+```
+
+```powershell
+# Claude via GitHub Models (free with a GitHub account)
+$env:OPENAI_API_KEY  = "<your-github-pat>"
+$env:OPENAI_BASE_URL = "https://models.inference.ai.azure.com"
+$env:OPENAI_MODEL    = "claude-sonnet-4-5"
+python run.py <board-url> --ai-mode auto --yes
+```
+
+```bash
+# Claude via GitHub Models (macOS / Linux)
+export OPENAI_API_KEY="<your-github-pat>"
+export OPENAI_BASE_URL="https://models.inference.ai.azure.com"
+export OPENAI_MODEL="claude-sonnet-4-5"
+python run.py <board-url> --ai-mode auto --yes
+```
+
+**All compatible endpoints:**
 
 | Provider | `OPENAI_BASE_URL` | Auth |
 |----------|-------------------|------|
