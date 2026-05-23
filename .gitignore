@@ -4,6 +4,3 @@ __pycache__/
 
 # All generated output — fetched data, metrics, dashboard, AI prompts
 output/
-
-# AI prompt files generated into src/prompts/ folder (copilot mode)
-src/prompts/ai_configure_board.prompt.md

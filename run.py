@@ -46,6 +46,7 @@ GENERATED_FILES = [
     Path("output/data/config.json"),
     Path("output/data/insights.json"),
     Path("output/data/interpret_metrics_prompt.txt"),
+    Path("output/data/ai_configure_board.prompt.md"),
     Path("output/data/ai_interpret_metrics.prompt.md"),
     Path("output/metrics/cycle_time.json"),
     Path("output/metrics/lead_time.json"),
