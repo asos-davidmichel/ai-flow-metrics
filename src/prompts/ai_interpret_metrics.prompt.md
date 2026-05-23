@@ -41,7 +41,7 @@ Return a single valid JSON object with the following keys. No markdown fences. N
 An object with one key per chart. Supported keys:
 cycle_time, lead_time, throughput, time_in_columns, flow_efficiency,
 work_start_efficiency, wip, wip_over_time, wip_age_distribution,
-wip_age_by_column, blockers, blockers_by_column, blocker_timeline,
+wip_age_by_column, blockers, blocked_by_signal, blockers_by_column, blocker_timeline,
 days_lost_to_blockers, stale_work, net_flow, arrival_departure,
 bugs, bug_intake, bug_pct, bug_net_flow, bug_distribution, cfd,
 wip_level_distribution
@@ -74,6 +74,8 @@ wip_age_distribution — What does the age breakdown of in-progress items reveal
 wip_age_by_column — Which columns hold the oldest active items? Is age concentrated downstream (review, QA, release) or spread across all stages? What does the spread between median and P85 per column reveal about where ageing is a systemic problem vs. an outlier problem?
 
 blockers — What is the systemic cost of blocking? Are blockers concentrated in specific columns? What does the pattern suggest about how the team manages dependencies?
+
+blocked_by_signal — Which signal type accounts for the most blocked items? Is blocking dominated by a single signal category (e.g. hard-blocked vs. waiting for something) or spread across multiple? What does the relative distribution reveal about the nature of the impediments? If any signal has 0 items, note that. Use blockers.blocked_by_signal.
 
 blockers_by_column — Which columns have the most blocked items? What does the concentration of blocked items in pre-development stages (New, Ready for Dev) vs. downstream stages (In Review, QA) reveal about whether blocking is a demand-side or delivery-side problem? Use blockers.blocked_by_column.
 

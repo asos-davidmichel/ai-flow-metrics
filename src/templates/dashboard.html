@@ -962,6 +962,15 @@
   <!-- ── Blockers tab ─────────────────────────────────────────────── -->
   <div id="tab-blockers" class="tab-panel">
 
+    <!-- Row 0: Blocked by Signal pie (only rendered if ≥2 signals) -->
+    <div id="blockedBySignalRow" style="display:none">
+      <div class="card" style="max-width:520px;">
+        <div class="card-header"><h2>Blocked Items by Signal</h2></div>
+        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Number of items currently carrying each blocked signal tag, across all board columns.</p>
+        <div class="chart-wrap" style="height:240px;"><canvas id="blockedBySignalChart"></canvas></div>
+      </div>
+    </div>
+
     <!-- Row 1: Blocker Timeline + Blocked by column side by side -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
       <div class="card">
@@ -4056,6 +4065,43 @@ function updateChart() {
     };
   }
 
+  // ── Chart 0: Blocked by Signal (Pie) — only when ≥2 signals ──────────
+  if (SIGNALS.length >= 2) {
+    document.getElementById('blockedBySignalRow').style.display = '';
+    const sigCounts = SIGNALS.map(sig =>
+      wi.filter(item => {
+        const itemTags = parseTags(typeof item.tags === 'string' ? item.tags : (item.tags || []).join(';'));
+        return sig.tags.some(t => itemTags.includes(t));
+      }).length
+    );
+    new Chart(document.getElementById('blockedBySignalChart'), {
+      type: 'pie',
+      data: {
+        labels: SIGNALS.map((s, i) => `${s.label} (${sigCounts[i]})`),
+        datasets: [{
+          data: sigCounts,
+          backgroundColor: SIGNALS.map(s => s.color),
+          borderColor: '#fff',
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: { usePointStyle: true, pointStyle: 'rect', boxWidth: 12, padding: 14, font: { size: 12 } },
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.parsed} item${ctx.parsed !== 1 ? 's' : ''}`,
+            },
+          },
+        },
+      },
+    });
+  }
+
   // ── Chart 1: Blocker Timeline ──────────────────────────────────────
   function weekMonMs(ms) {
     const d = new Date(ms);
@@ -5033,6 +5079,7 @@ if (_savedTab) {
     { key: 'wip_over_time',         primary: 'dailyWipChart',        secondary: [],               primaryLabel: 'Daily WIP over time' },
     { key: 'wip_age_distribution',   primary: 'wipAgeStackedChart',   secondary: [],               primaryLabel: 'Daily WIP × Work Item Age' },
     { key: 'wip_age_by_column',     primary: 'wipAgeScatterChart',   secondary: [],               primaryLabel: 'WIP age by column' },
+    { key: 'blocked_by_signal',     primary: 'blockedBySignalChart', secondary: [],                                                                              primaryLabel: 'Blocked items by signal' },
     { key: 'blockers',              primary: 'currentBlockedChart',  secondary: [],                                                                              primaryLabel: 'Current Blocked Items' },
     { key: 'blocker_timeline',      primary: 'blockerTimelineChart', secondary: [],                                                                              primaryLabel: 'Blocker timeline' },
     { key: 'blockers_by_column',    primary: 'blockedByColumnChart', secondary: [],                                                                              primaryLabel: 'Blocked items by column' },

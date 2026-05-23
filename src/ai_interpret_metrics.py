@@ -477,12 +477,20 @@ def summarise_blockers(wi, wih, ctx, ct, cfg=None):
         if days > max_days:
             max_days = days
 
+    # Count all items (any column/state) carrying each signal tag
+    def item_has_sig(item, sig):
+        item_tags = [t.strip().lower() for t in (item.get("tags") or []) if t.strip()]
+        return any(t in item_tags for t in sig["tags"])
+
+    by_signal = {sig["label"]: sum(1 for i in wi if item_has_sig(i, sig)) for sig in signals}
+
     return {
         "chart": "blockers",
         "currently_blocked_count": len(active_blocked),
         "total_days_lost_to_blocking": _round(total_days_lost),
         "longest_single_block_days": _round(max_days),
         "blocked_by_column": dict(by_col),
+        "blocked_by_signal": by_signal,
     }
 
 

@@ -31,6 +31,7 @@ Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 --yes    Skip all confirmation prompts (useful with --ai-mode auto).
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -67,6 +68,21 @@ def clean_output():
             print(f"  {p}")
     else:
         print("Nothing to clean — output files not found.")
+
+
+def open_prompt_file(path: Path):
+    """Open a generated prompt file in VS Code (if running inside VS Code's terminal)
+    or with the OS default application otherwise."""
+    resolved = path.resolve()
+    if os.environ.get("TERM_PROGRAM") == "vscode":
+        # VS Code integrated terminal — open as a new editor tab
+        subprocess.run(["code", str(resolved)], check=False)
+    elif sys.platform == "win32":
+        os.startfile(resolved)
+    elif sys.platform == "darwin":
+        subprocess.run(["open", str(resolved)], check=False)
+    else:
+        subprocess.run(["xdg-open", str(resolved)], check=False)
 
 
 def run(cmd, description):
@@ -210,6 +226,8 @@ def main():
     # For prompt mode (human-in-the-loop), pause so the user can run the prompt
     # and save the AI's JSON response as config.json before metrics continue.
     if ai_mode == "prompt":
+        configure_prompt_path = Path("output/data/ai_configure_board.prompt.md")
+        open_prompt_file(configure_prompt_path)
         print()
         print("Next steps:")
         print("  1. Open output/data/ai_configure_board.prompt.md in any AI assistant and run it.")
@@ -268,6 +286,8 @@ def main():
     )
 
     if insights_mode == "prompt":
+        interpret_prompt_path = Path("output/data/ai_interpret_metrics.prompt.md")
+        open_prompt_file(interpret_prompt_path)
         print()
         print("Next steps:")
         print("  1. Open output/data/ai_interpret_metrics.prompt.md in any AI assistant and run it.")
