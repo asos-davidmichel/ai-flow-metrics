@@ -1080,7 +1080,7 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       if (!controls) {
         controls = document.createElement('div');
         controls.className = 'zoom-controls';
-        ['\u25c4', '\u002b', '\u2212', '\u25ba', '\u21ba\u00a0Reset'].forEach((label, i) => {
+        ['\u25b2', '\u002b', '\u2212', '\u25bc', '\u21ba\u00a0Reset'].forEach((label, i) => {
           const btn = document.createElement('button');
           btn.className = i === 4 ? 'zoom-reset-btn' : 'zoom-btn';
           btn.textContent = label;
@@ -1122,10 +1122,11 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 
       function applyPan(fraction) {
         ensureOrigLimits();
-        // Pan the most natural axis: x if the chart has a linear x-axis, otherwise y.
-        const hasLinearX = Object.values(chart.scales)
-          .some(s => s.axis === 'x' && s.type !== 'category');
-        const panAxis = hasLinearX ? 'x' : 'y';
+        // Pan the y-axis (value range) so the user can scroll up/down after zooming.
+        // For horizontal bar charts (y is category) fall back to x.
+        const hasLinearY = Object.values(chart.scales)
+          .some(s => s.axis === 'y' && s.type !== 'category');
+        const panAxis = hasLinearY ? 'y' : 'x';
         let changed = false;
         Object.entries(chart.scales).forEach(([id, scale]) => {
           if (scale.axis !== panAxis || scale.type === 'category') return;
@@ -1153,10 +1154,10 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
         wrap.classList.remove('is-zoomed');
       }
 
-      controls.children[0].onclick = () => applyPan(-0.25);       // pan ◀
+      controls.children[0].onclick = () => applyPan(0.25);        // pan ▲ (higher values)
       controls.children[1].onclick = () => applyZoom(0.75);        // zoom in
       controls.children[2].onclick = () => applyZoom(1 / 0.75);    // zoom out
-      controls.children[3].onclick = () => applyPan(0.25);         // pan ▶
+      controls.children[3].onclick = () => applyPan(-0.25);        // pan ▼ (lower values)
       controls.children[4].onclick = resetZoom;
 
       const onWheel = (e) => { e.preventDefault(); applyZoom(e.deltaY < 0 ? 0.82 : (1 / 0.82)); };
