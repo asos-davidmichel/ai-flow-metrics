@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -1161,6 +1161,7 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
   window._filterState = { rules, excludedIds, excludedCount: excludedIds.size, totalCount };
   window._FILTER_KEY = FILTER_KEY;
 })();
+
 // ────────────────────────────────────────────────────────────────────
 
 const data = dashboard.time_in_columns;
@@ -1743,6 +1744,7 @@ function updateChart() {
     rollingChart.data.datasets[1].data = rolling.trend;
     rollingChart.update();
   }
+
 })();
 
 // ====================================================================
@@ -1950,6 +1952,7 @@ function updateChart() {
     ltRollingChart.data.datasets[1].data = rolling.trend;
     ltRollingChart.update();
   }
+
 })();
 
 // ====================================================================
