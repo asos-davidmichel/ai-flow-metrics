@@ -4,7 +4,7 @@ Full pipeline runner.
 Usage:
   python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai]
                             [--insights-mode copilot|prompt|openai|skip] [--window 6m] [--clean]
-                            [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+                            [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--yes]
   python run.py --clean   (clean output files only, no board URL required)
 
 Runs:
@@ -28,6 +28,7 @@ Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 --insights-mode: copilot (default), prompt, openai, skip
 
 --clean  Delete all previously generated output files before running.
+--yes    Skip all confirmation prompts (useful with --interpret-mode openai --insights-mode openai).
 """
 
 import subprocess
@@ -182,10 +183,14 @@ def main():
     print("  --interpret-mode copilot | prompt | openai    (default: copilot)")
     print("  --short-dwell-minutes N                       (flag items moved too quickly)")
     print("  --clean                                       (delete all output files first)")
+    print("  --yes                                         (skip all confirmation prompts)")
     print()
 
+    yes = "--yes" in sys.argv or "-y" in sys.argv
+
     try:
-        input("Press Enter to start, or Ctrl+C to abort...")
+        if not yes:
+            input("Press Enter to start, or Ctrl+C to abort...")
     except KeyboardInterrupt:
         print("\nAborted.")
         sys.exit(0)

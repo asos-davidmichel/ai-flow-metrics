@@ -15,7 +15,7 @@ Reads:
 Writes (depending on --mode):
   src/prompts/ai_configure_board.prompt.md      (--mode copilot)  open in VS Code chat, pick your model
   output/data/ai_configure_board_prompt.txt (--mode prompt)   paste into any AI assistant
-  output/data/config.json                   (--mode openai)   direct API call (not yet implemented)
+  output/data/config.json                   (--mode openai)   direct OpenAI API call
 
 After copilot/prompt mode: paste the AI's JSON response directly into output/data/config.json.
 The metrics script requires config.json.
@@ -494,22 +494,68 @@ def call_openai(findings):
     Required environment variables:
       OPENAI_API_KEY — your OpenAI API key
       OPENAI_MODEL   — model to use (default: gpt-4o)
-
-    Not yet implemented. To implement:
-      1. requests is already a dependency — no additional packages needed.
-      2. POST to https://api.openai.com/v1/chat/completions.
-         Headers: {"Authorization": "Bearer <key>", "Content-Type": "application/json"}
-         Body: {"model": model, "messages": [{"role": "user", "content": prompt}]}
-      3. Parse JSON from response["choices"][0]["message"]["content"].
-      4. Write parsed dict to CONFIG_PATH.
     """
-    import os
-    if not os.environ.get("OPENAI_API_KEY"):
+    import os, urllib.request
+    api_key = os.environ.get("OPENAI_API_KEY")
+    model   = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    if not api_key:
         print("Error: OPENAI_API_KEY environment variable is not set.", file=sys.stderr)
         sys.exit(1)
-    print("Error: --mode openai is not yet implemented.", file=sys.stderr)
-    print("Use --mode copilot or --mode prompt instead.", file=sys.stderr)
-    sys.exit(1)
+
+    prompt = build_plain_prompt(findings)
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a JSON configuration generator for a flow metrics tool. "
+                    "Return ONLY a valid JSON object as your response — no explanation, "
+                    "no markdown fences, no preamble. The JSON will be written directly "
+                    "to config.json by the calling script."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    print(f"Calling OpenAI ({model}) to configure board…")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read())
+    except Exception as e:
+        print(f"Error calling OpenAI API: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    content = result["choices"][0]["message"]["content"].strip()
+    # Strip markdown fences if present
+    if content.startswith("```"):
+        content = "\n".join(content.split("\n")[1:])
+        if content.endswith("```"):
+            content = content[:-3].rstrip()
+
+    try:
+        config = json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"Warning: could not parse AI response as JSON: {e}", file=sys.stderr)
+        raw_path = DATA_DIR / "config_raw.txt"
+        raw_path.write_text(content, encoding="utf-8")
+        print(f"Raw response saved to {raw_path}")
+        sys.exit(1)
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    print(f"Written: {CONFIG_PATH}")
 
 
 # ---------------------------------------------------------------------------
