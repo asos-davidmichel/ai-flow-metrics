@@ -957,6 +957,13 @@
 
     </div><!-- /row3 grid -->
 
+    <!-- Row 3: Stale Work (full width) -->
+    <div class="card">
+      <div class="card-header"><h2>Stale Work</h2></div>
+      <p style="font-size:13px;color:#718096;margin-bottom:12px;">Active items sorted by days since last update.</p>
+      <div class="chart-wrap" style="height:360px;"><canvas id="staleWorkChart"></canvas></div>
+    </div>
+
   </div><!-- /tab-wip -->
 
   <!-- ── Blockers tab ─────────────────────────────────────────────── -->
@@ -992,18 +999,11 @@
       </div>
     </div>
 
-    <!-- Row 2: Current Blocked + Stale Work side by side -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
-      <div class="card">
-        <div class="card-header"><h2>Currently Impeded Items</h2></div>
-        <p id="cb-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">Active items with a blocked signal, sorted by how long it has been active.</p>
-        <div class="chart-wrap" style="height:360px;"><canvas id="currentBlockedChart"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="card-header"><h2>Stale Work</h2></div>
-        <p style="font-size:13px;color:#718096;margin-bottom:12px;">Active items sorted by days since last update.</p>
-        <div class="chart-wrap" style="height:360px;"><canvas id="staleWorkChart"></canvas></div>
-      </div>
+    <!-- Row 2: Currently Impeded Items (full width) -->
+    <div class="card">
+      <div class="card-header"><h2>Currently Impeded Items</h2></div>
+      <p id="cb-subtitle" style="font-size:13px;color:#718096;margin-bottom:12px;">Active items with a blocked signal, sorted by how long it has been active.</p>
+      <div class="chart-wrap" style="height:360px;"><canvas id="currentBlockedChart"></canvas></div>
     </div>
 
   </div><!-- /tab-blockers -->
