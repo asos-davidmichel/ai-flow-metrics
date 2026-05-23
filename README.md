@@ -120,13 +120,12 @@ Steps 4–6 require `output/data/config.json` to exist.
 | `--clean` | off | Delete all generated output files before running. |
 | `--yes` | off | Skip all confirmation prompts (required for fully automated runs). |
 | `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
-| `--interpret-mode MODE` | `copilot` | AI mode for board configuration — see [AI modes](#ai-modes) below. |
-| `--insights-mode MODE` | `copilot` | AI mode for chart insights — see [AI modes](#ai-modes) below. |
+| `--ai-mode MODE` | `copilot` | AI mode for both board configuration and chart insights — see [AI modes](#ai-modes) below. `skip` omits the insights step only. |
 
 **Fully automated run (no human interaction):**
 ```bash
 # Requires OPENAI_API_KEY (and optionally OPENAI_BASE_URL, OPENAI_MODEL)
-python run.py https://dev.azure.com/... --interpret-mode openai --insights-mode openai --yes
+python run.py https://dev.azure.com/... --ai-mode openai --yes
 ```
 
 **Default interactive run:**
@@ -185,9 +184,7 @@ python src/ai_interpret_metrics.py --mode openai     # calls API directly → wr
 python src/ai_interpret_metrics.py --dump-summary    # print the anonymised metrics JSON sent to the AI
 ```
 
-After running in `copilot` or `prompt` mode, save the AI response to `output/data/insights.json` — the dashboard picks it up automatically on the next `python src/create_dashboard.py`.
-
-After running in `openai` mode, `insights.json` is written automatically.
+When using `run.py`, both steps share the single `--ai-mode` flag.
 
 <img src="docs/screenshot_insight.png" width="450" alt="Chart insight box">
 

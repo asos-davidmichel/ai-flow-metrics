@@ -2,9 +2,8 @@
 Full pipeline runner.
 
 Usage:
-  python run.py <board-url> [--short-dwell-minutes N] [--interpret-mode copilot|prompt|openai]
-                            [--insights-mode copilot|prompt|openai|skip] [--window 6m] [--clean]
-                            [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--yes]
+  python run.py <board-url> [--short-dwell-minutes N] [--ai-mode copilot|prompt|openai|skip]
+                            [--window 6m] [--clean] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--yes]
   python run.py --clean   (clean output files only, no board URL required)
 
 Runs:
@@ -20,15 +19,16 @@ If output/data/config.json exists, also runs:
   6. calc_lead_time.py       — calculate lead time → output/metrics/lead_time.json
   7. create_dashboard.py     — generate dashboard → output/dashboard.html
   8. ai_interpret_metrics.py — generate AI chart insights → output/data/insights.json
-                               (skipped when --insights-mode skip)
+                               (skipped when --ai-mode skip)
   9. create_dashboard.py     — re-generate dashboard with insights embedded
 
 Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 --from / --to: explicit date range YYYY-MM-DD (overrides --window when --from is given)
---insights-mode: copilot (default), prompt, openai, skip
+--ai-mode: copilot (default), prompt, openai, skip
+  skip omits step 8 (insights) only — board config (step 3) always runs.
 
 --clean  Delete all previously generated output files before running.
---yes    Skip all confirmation prompts (useful with --interpret-mode openai --insights-mode openai).
+--yes    Skip all confirmation prompts (useful with --ai-mode openai).
 """
 
 import subprocess
@@ -107,14 +107,17 @@ def main():
             print("Error: --short-dwell-minutes requires an integer value.", file=sys.stderr)
             sys.exit(1)
 
-    # Forward --interpret-mode to ai_configure_board.py if provided (default: copilot)
-    interpret_mode = "copilot"
-    if "--interpret-mode" in sys.argv:
-        idx = sys.argv.index("--interpret-mode")
+    # --ai-mode controls both ai_configure_board.py (step 3) and ai_interpret_metrics.py (step 8)
+    ai_mode = "copilot"
+    if "--ai-mode" in sys.argv:
+        idx = sys.argv.index("--ai-mode")
         try:
-            interpret_mode = sys.argv[idx + 1]
+            ai_mode = sys.argv[idx + 1]
+            if ai_mode not in ("copilot", "prompt", "openai", "skip"):
+                print("Error: --ai-mode must be copilot, prompt, openai, or skip.", file=sys.stderr)
+                sys.exit(1)
         except IndexError:
-            print("Error: --interpret-mode requires a value (copilot, prompt, openai).", file=sys.stderr)
+            print("Error: --ai-mode requires a value (copilot, prompt, openai, skip).", file=sys.stderr)
             sys.exit(1)
 
     # Forward --window to metrics.py if provided (default: 6m)
@@ -145,18 +148,7 @@ def main():
             print("Error: --to requires a YYYY-MM-DD value.", file=sys.stderr)
             sys.exit(1)
 
-    # --insights-mode controls step 8 (ai_interpret_metrics); default copilot, skip to omit
-    insights_mode = "copilot"
-    if "--insights-mode" in sys.argv:
-        idx = sys.argv.index("--insights-mode")
-        try:
-            insights_mode = sys.argv[idx + 1]
-            if insights_mode not in ("copilot", "prompt", "openai", "skip"):
-                print("Error: --insights-mode must be copilot, prompt, openai, or skip.", file=sys.stderr)
-                sys.exit(1)
-        except IndexError:
-            print("Error: --insights-mode requires a value (copilot, prompt, openai, skip).", file=sys.stderr)
-            sys.exit(1)
+    insights_mode = ai_mode  # same mode for both AI steps
 
     config_path = Path("output/data/config.json")
     config_exists = config_path.exists()
@@ -165,8 +157,7 @@ def main():
     print("Run configuration")
     print("-" * 40)
     print(f"  Board URL       : {board_url}")
-    print(f"  Interpret mode  : {interpret_mode}")
-    print(f"  Insights mode   : {insights_mode}")
+    print(f"  AI mode         : {ai_mode}")
     if date_from:
         range_label = f"{date_from} → {date_to or 'today'}"
         print(f"  Metrics window  : {range_label} (--from/--to)")
@@ -179,11 +170,10 @@ def main():
     print("Available options (Ctrl+C to abort and rerun with different flags):")
     print("  --window         2w | 1m | 3m | 6m | 1y         (default: 6m)")
     print("  --from YYYY-MM-DD [--to YYYY-MM-DD]             (explicit date range, overrides --window)")
-    print("  --insights-mode  copilot | prompt | openai | skip  (default: copilot)")
-    print("  --interpret-mode copilot | prompt | openai    (default: copilot)")
+    print("  --ai-mode        copilot | prompt | openai | skip  (default: copilot)")
     print("  --short-dwell-minutes N                       (flag items moved too quickly)")
     print("  --clean                                       (delete all output files first)")
-    print("  --yes                                         (skip all confirmation prompts)")
+    print("  --yes                                         (skip all confirmation prompts; pair with --ai-mode openai)")
     print()
 
     yes = "--yes" in sys.argv or "-y" in sys.argv
@@ -204,7 +194,7 @@ def main():
         "Step 2 / 3 — Data quality checks",
     )
     run(
-        [sys.executable, "src/ai_configure_board.py", "--mode", interpret_mode],
+        [sys.executable, "src/ai_configure_board.py", "--mode", ai_mode if ai_mode != "skip" else "copilot"],
         "Step 3 / 3 — Generate AI interpretation prompt",
     )
 
@@ -219,7 +209,7 @@ def main():
     # For modes that require human-in-the-loop (copilot / prompt), always pause so
     # the user can run the prompt and save the AI's JSON response as config.json
     # before the pipeline continues to metrics.
-    if interpret_mode in ("copilot", "prompt"):
+    if ai_mode in ("copilot", "prompt"):
         print()
         print("Next steps:")
         if interpret_mode == "copilot":
