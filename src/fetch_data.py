@@ -225,14 +225,36 @@ def main():
             "url": selected["url"],
         },
         "columns": [
-            {
-                "id": c.get("id"),
-                "name": c["name"],
-                "column_type": c.get("columnType"),
-                "wip_limit": c.get("itemLimit") or 0,
-                "is_split": bool(c.get("isSplit", False)),
-            }
+            entry
             for c in columns
+            for entry in (
+                [
+                    {
+                        "id": c.get("id"),
+                        "name": f"{c['name']} (Doing)",
+                        "column_type": c.get("columnType"),
+                        "wip_limit": c.get("itemLimit") or 0,
+                        "is_split": True,
+                    },
+                    {
+                        "id": c.get("id"),
+                        "name": f"{c['name']} (Done)",
+                        "column_type": c.get("columnType"),
+                        "wip_limit": 0,
+                        "is_split": True,
+                    },
+                ]
+                if c.get("isSplit", False)
+                else [
+                    {
+                        "id": c.get("id"),
+                        "name": c["name"],
+                        "column_type": c.get("columnType"),
+                        "wip_limit": c.get("itemLimit") or 0,
+                        "is_split": False,
+                    }
+                ]
+            )
         ],
         "work_item_types": work_item_types,
         "work_item_type_styles": work_item_type_styles,
@@ -272,11 +294,23 @@ def main():
     print(f"Work items saved to: {items_path}")
 
     print(f"\nFetching history for {len(ids)} items (one request per item)...")
-    board_column_names = [c["name"] for c in columns]
+    # Build the expanded column name list used for board_entry_date detection and
+    # regression tracking. Split columns appear as "Col (Doing)" then "Col (Done)".
+    split_columns = {c["name"] for c in columns if c.get("isSplit", False)}
+    board_column_names = []
+    for c in columns:
+        if c["name"] in split_columns:
+            board_column_names.append(f"{c['name']} (Doing)")
+            board_column_names.append(f"{c['name']} (Done)")
+        else:
+            board_column_names.append(c["name"])
     history = []
     for i, item_id in enumerate(ids, start=1):
         try:
-            record = fetch_work_item_history(org, project, item_id, board_column_names, headers)
+            record = fetch_work_item_history(
+                org, project, item_id, board_column_names, headers,
+                split_columns=split_columns,
+            )
             history.append(record)
         except ADOError as e:
             print(f"  Warning: could not fetch history for {item_id}: {e}", file=sys.stderr)

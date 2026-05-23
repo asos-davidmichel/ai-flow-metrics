@@ -129,6 +129,7 @@ def analyse(context, history, work_items=None):
             "name": col["name"],
             "column_type": col["column_type"],
             "wip_limit": col["wip_limit"],
+            "is_split": col.get("is_split", False),
             "dwell": _dwell_stats(col_dwells.get(col["name"], [])),
         })
 
@@ -178,8 +179,16 @@ def analyse(context, history, work_items=None):
         c["name"] for c in context["columns"]
         if c["column_type"] in ("incoming", "outgoing")
     ]
+    # "(Done)" sub-columns of split columns are always waiting: items sit there as a
+    # completed queue waiting for the next stage to pull them, not being actively worked.
+    waiting_deterministic += [
+        c["name"] for c in context["columns"]
+        if c.get("is_split") and c["name"].endswith(" (Done)")
+    ]
     needs_classification = [
-        c for c in columns_info if c["column_type"] == "inProgress"
+        c for c in columns_info
+        if c["column_type"] == "inProgress"
+        and not (c.get("is_split") and c["name"].endswith(" (Done)"))
     ]
 
     # 6. Unknown historical swimlanes
@@ -260,7 +269,9 @@ If there are no unknown columns, return an empty object {}.
 Classify each inProgress column as "active" (value-adding work happening) or "waiting"
 (queue, handoff, or blocked state). Use column names and dwell patterns to guide your choice.
 incoming and outgoing columns are always "waiting" — do not include them in your response.
-Only classify the inProgress columns listed above.
+For split columns, the "(Done)" sub-column is always waiting (items queue there between stages)
+and is already excluded — do not include it. Only classify the "(Doing)" sub-columns and any
+non-split inProgress columns listed above.
 
 ### 6. Blocked time detection
 List ALL signals this team uses to indicate blocked or waiting items.
@@ -333,13 +344,19 @@ def _findings_as_text(findings):
     lines.append("")
 
     lines.append("## Columns")
-    lines.append("| Name | Type | WIP limit | Dwell (n, avg, median) |")
-    lines.append("|------|------|-----------|------------------------|")
+    lines.append("| Name | Type | WIP limit | Split | Dwell (n, avg, median) |")
+    lines.append("|------|------|-----------|-------|------------------------|")
     for col in findings["columns"]:
         d = col["dwell"]
         dwell = f"n={d['n']}, avg={d['avg_hours']}h, median={d['median_hours']}h" if d else "no data"
-        lines.append(f"| {col['name']} | {col['column_type']} | {col['wip_limit']} | {dwell} |")
+        split_flag = "Doing" if (col.get("is_split") and col["name"].endswith(" (Doing)")) else \
+                     "Done"  if (col.get("is_split") and col["name"].endswith(" (Done)"))  else "-"
+        lines.append(f"| {col['name']} | {col['column_type']} | {col['wip_limit']} | {split_flag} | {dwell} |")
     lines.append("")
+    has_split = any(col.get("is_split") for col in findings["columns"])
+    if has_split:
+        lines.append("_Note: columns marked Doing/Done are sub-columns of split board columns._")
+        lines.append("")
 
     lines.append("## Unknown historical columns (no longer on current board)")
     if findings["unknown_historical_columns"]:

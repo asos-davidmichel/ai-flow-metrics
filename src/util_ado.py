@@ -378,7 +378,54 @@ def _history_to_spans(changes, field):
     return spans
 
 
-def fetch_work_item_type_styles(org, project, work_item_types, headers):
+def _build_compound_column_spans(changes, split_columns):
+    """
+    Build column history spans, expanding split columns into "(Doing)"/"(Done)" sub-columns.
+
+    split_columns: set of base column names whose board column has isSplit=True.
+
+    Merges System.BoardColumn and System.BoardColumnDone change events by timestamp.
+    At each revision, if both change together they are treated atomically (column move
+    resets done to False unless the same revision also sets it explicitly).
+    """
+    col_events  = [(c["changed_at"], c["new_value"])       for c in changes if c["field"] == "System.BoardColumn"]
+    done_events = [(c["changed_at"], bool(c["new_value"])) for c in changes if c["field"] == "System.BoardColumnDone"]
+
+    # Merge by timestamp; each entry records what changed at that point
+    updates: dict = {}
+    for ts, col in col_events:
+        updates.setdefault(ts, {})["col"] = col
+    for ts, done in done_events:
+        updates.setdefault(ts, {})["done"] = done
+
+    def _name(col, done):
+        if col in split_columns:
+            return f"{col} (Done)" if done else f"{col} (Doing)"
+        return col
+
+    cur_col  = None
+    cur_done = False
+    transitions = []   # list of (ts, effective_col_name)
+
+    for ts in sorted(updates):
+        u = updates[ts]
+        if "col" in u:
+            cur_col  = u["col"]
+            # Column change resets done to False unless the same revision also sets it
+            cur_done = u.get("done", False)
+        else:
+            cur_done = u["done"]
+        transitions.append((ts, _name(cur_col, cur_done)))
+
+    spans = []
+    for i, (ts, name) in enumerate(transitions):
+        left = transitions[i + 1][0] if i + 1 < len(transitions) else None
+        if name:  # skip if col was somehow None
+            spans.append({"value": name, "entered": ts, "left": left})
+
+    return spans
+
+
     """
     Fetch color and icon metadata for the given work item types from the ADO API.
 
@@ -418,12 +465,14 @@ def fetch_work_item_type_styles(org, project, work_item_types, headers):
     return styles
 
 
-def fetch_work_item_history(org, project, item_id, board_column_names, headers):
+def fetch_work_item_history(org, project, item_id, board_column_names, headers,
+                            split_columns=None):
     """
     Fetch revision history for a single work item.
-    board_column_names: ordered list of real board column names (from context.json),
-                        used to detect regressions and distinguish board columns from
-                        the virtual 'Backlog' pseudo-state.
+    board_column_names: ordered list of expanded board column names (from context.json),
+                        including "Col (Doing)" / "Col (Done)" for split columns.
+    split_columns: set of base column names that have isSplit=True on the board.
+                   Used to expand history spans into sub-column names.
     Returns a dict with board_entry_date, column_history, state_history, tag_history, regressions.
     """
     url = (
@@ -435,12 +484,13 @@ def fetch_work_item_history(org, project, item_id, board_column_names, headers):
 
     tracked = [
         "System.BoardColumn",
+        "System.BoardColumnDone",
         "System.State",
         "System.Tags",
     ]
     changes = _build_history(updates, tracked)
 
-    column_history = _history_to_spans(changes, "System.BoardColumn")
+    column_history = _build_compound_column_spans(changes, split_columns or set())
     state_history = _history_to_spans(changes, "System.State")
     tag_history = [c for c in changes if c["field"] == "System.Tags"]
 
