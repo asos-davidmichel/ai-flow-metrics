@@ -1208,9 +1208,7 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       controls.children[3].onclick = () => applyPan(-0.25);        // pan ▼ (lower values)
       controls.children[4].onclick = resetZoom;
 
-      const onWheel = (e) => { e.preventDefault(); applyZoom(e.deltaY < 0 ? 0.82 : (1 / 0.82)); };
-      chart.canvas.addEventListener('wheel', onWheel, { passive: false });
-      chart._zoomWheelHandler = onWheel;
+      chart._zoomWheelHandler = null;
 
       // Flag for deferred restore: charts on hidden tabs have 0×0 canvas at init,
       // so we defer the localStorage restore until the chart actually renders.
