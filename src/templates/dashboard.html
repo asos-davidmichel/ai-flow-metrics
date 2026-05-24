@@ -1061,10 +1061,63 @@
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 
-// ── Wheel zoom + +/− buttons + reset ───────────────────────────────────
+// ── Wheel zoom + +/− buttons + reset  (zoom/pan state persisted in localStorage) ──
 (function () {
   const NO_ZOOM_TYPES = new Set(['pie', 'doughnut', 'polarArea']);
   const NO_ZOOM_IDS   = new Set([]);
+
+  // Namespace storage keys by team+project so multiple dashboards don't clash.
+  const _ctx  = dashboard.context || {};
+  const _ns   = `cz_${(_ctx.team    || '').replace(/\W/g, '_')}_${(_ctx.project || '').replace(/\W/g, '_')}`;
+
+  function _zoomKey(chart) { return `${_ns}__${chart.canvas.id}`; }
+
+  // Lazily snapshot original scale config limits (before any zoom is applied).
+  // Must be called at first zoom/pan rather than at afterInit because charts on
+  // hidden tabs have a 0×0 canvas and empty scales at initialisation time.
+  function _ensureOrigLimits(chart) {
+    if (chart._origScaleLimits) return;
+    chart._origScaleLimits = {};
+    Object.keys(chart.scales).forEach(id => {
+      const cfg = (chart.config.options.scales || {})[id] || {};
+      chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
+    });
+  }
+
+  // Persist the current visible range of every non-category scale to localStorage.
+  function _saveZoomState(chart) {
+    const state = {};
+    Object.entries(chart.scales).forEach(([id, scale]) => {
+      if (scale.type !== 'category') state[id] = { min: scale.min, max: scale.max };
+    });
+    try { localStorage.setItem(_zoomKey(chart), JSON.stringify(state)); } catch (e) {}
+  }
+
+  // Remove any saved zoom state for this chart.
+  function _clearZoomState(chart) {
+    try { localStorage.removeItem(_zoomKey(chart)); } catch (e) {}
+  }
+
+  // Apply a previously saved zoom state.  Returns true if anything was applied.
+  function _restoreZoomState(chart, wrap) {
+    let raw;
+    try { raw = localStorage.getItem(_zoomKey(chart)); } catch (e) {}
+    if (!raw) return false;
+    let state;
+    try { state = JSON.parse(raw); } catch (e) { return false; }
+    _ensureOrigLimits(chart);
+    let changed = false;
+    Object.entries(state).forEach(([id, { min, max }]) => {
+      const cOpts = chart.config.options;
+      if (!cOpts.scales)      cOpts.scales = {};
+      if (!cOpts.scales[id])  cOpts.scales[id] = {};
+      cOpts.scales[id].min = min;
+      cOpts.scales[id].max = max;
+      changed = true;
+    });
+    if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); }
+    return changed;
+  }
 
   Chart.register({
     id: 'chartZoom',
@@ -1090,22 +1143,10 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
         wrap.appendChild(controls);
       }
       chart._zoomControls = controls;
-
-      // _origScaleLimits is captured lazily on first zoom (not here at afterInit),
-      // because charts on hidden tabs have a 0×0 canvas and empty scales at init time.
       chart._origScaleLimits = null;
 
-      function ensureOrigLimits() {
-        if (chart._origScaleLimits) return;
-        chart._origScaleLimits = {};
-        Object.keys(chart.scales).forEach(id => {
-          const cfg = (chart.config.options.scales || {})[id] || {};
-          chart._origScaleLimits[id] = { min: cfg.min, max: cfg.max };
-        });
-      }
-
       function applyZoom(factor) {
-        ensureOrigLimits();
+        _ensureOrigLimits(chart);
         // Only zoom the value axis: y for normal charts, x for horizontal bar.
         // Anchor at scale.min so zooming in always keeps the bottom visible.
         const isHorizBar = chart.config.type === 'bar' &&
@@ -1123,11 +1164,11 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
           cOpts.scales[id].max = scale.min + span;
           changed = true;
         });
-        if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); }
+        if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); _saveZoomState(chart); }
       }
 
       function applyPan(fraction) {
-        ensureOrigLimits();
+        _ensureOrigLimits(chart);
         // Pan the y-axis (value range) so the user can scroll up/down after zooming.
         // For horizontal bar charts (y is category) fall back to x.
         const hasLinearY = Object.values(chart.scales)
@@ -1144,7 +1185,7 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
           cOpts.scales[id].max = scale.max + delta;
           changed = true;
         });
-        if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); }
+        if (changed) { chart.update('none'); wrap.classList.add('is-zoomed'); _saveZoomState(chart); }
       }
 
       function resetZoom() {
@@ -1156,6 +1197,7 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
           if (orig.max === undefined) delete scaleCfg.max; else scaleCfg.max = orig.max;
         });
         chart._origScaleLimits = null;   // clear so next zoom cycle re-snapshots
+        _clearZoomState(chart);
         chart.update('none');
         wrap.classList.remove('is-zoomed');
       }
@@ -1169,7 +1211,23 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
       const onWheel = (e) => { e.preventDefault(); applyZoom(e.deltaY < 0 ? 0.82 : (1 / 0.82)); };
       chart.canvas.addEventListener('wheel', onWheel, { passive: false });
       chart._zoomWheelHandler = onWheel;
+
+      // Flag for deferred restore: charts on hidden tabs have 0×0 canvas at init,
+      // so we defer the localStorage restore until the chart actually renders.
+      let raw;
+      try { raw = localStorage.getItem(_zoomKey(chart)); } catch (e) {}
+      if (raw) chart._zoomRestorePending = true;
     },
+
+    // Restore saved zoom on first real render (canvas has non-zero dimensions).
+    afterRender(chart) {
+      if (!chart._zoomRestorePending) return;
+      if (chart.canvas.width === 0) return;   // still on a hidden tab — try next render
+      chart._zoomRestorePending = false;
+      const wrap = chart.canvas.closest('.chart-wrap');
+      if (wrap) _restoreZoomState(chart, wrap);
+    },
+
     beforeDestroy(chart) {
       if (chart._zoomWheelHandler) {
         chart.canvas.removeEventListener('wheel', chart._zoomWheelHandler);
