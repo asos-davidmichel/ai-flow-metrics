@@ -32,6 +32,7 @@ Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -74,15 +75,20 @@ def open_prompt_file(path: Path):
     """Open a generated prompt file in VS Code (if running inside VS Code's terminal)
     or with the OS default application otherwise."""
     resolved = path.resolve()
-    if os.environ.get("TERM_PROGRAM") == "vscode":
-        # VS Code integrated terminal — open as a new editor tab
-        subprocess.run(["code", str(resolved)], check=False)
-    elif sys.platform == "win32":
-        os.startfile(resolved)
-    elif sys.platform == "darwin":
-        subprocess.run(["open", str(resolved)], check=False)
-    else:
-        subprocess.run(["xdg-open", str(resolved)], check=False)
+    opened = False
+    if os.environ.get("TERM_PROGRAM") == "vscode" and shutil.which("code"):
+        try:
+            subprocess.run(["code", str(resolved)], check=False, shell=(sys.platform == "win32"))
+            opened = True
+        except FileNotFoundError:
+            pass
+    if not opened:
+        if sys.platform == "win32":
+            os.startfile(resolved)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", str(resolved)], check=False)
+        else:
+            subprocess.run(["xdg-open", str(resolved)], check=False)
 
 
 def run(cmd, description):
