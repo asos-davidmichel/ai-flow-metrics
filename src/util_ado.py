@@ -346,7 +346,14 @@ def _build_history(updates, tracked_fields):
     """
     changes = []
     for update in updates:
-        changed_at = update.get("revisedDate") or update.get("fields", {}).get(
+        revised = update.get("revisedDate") or ""
+        # ADO uses "9999-01-01T00:00:00Z" as a sentinel for the current (latest)
+        # revision. Treat it as absent and fall back to the actual System.ChangedDate
+        # so column history spans get correct timestamps rather than a far-future date
+        # that would make completed items look perpetually in-progress.
+        if revised.startswith("9999"):
+            revised = ""
+        changed_at = revised or update.get("fields", {}).get(
             "System.ChangedDate", {}).get("newValue")
         fields = update.get("fields", {})
         for field in tracked_fields:
