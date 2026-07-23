@@ -781,7 +781,10 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;">
           <div>
             <div class="card-header">
-              <div><h2>Cycle time &mdash; scatter</h2></div>
+              <div>
+                <h2>Cycle time &mdash; scatter</h2>
+                <div id="ctExclusionNote" style="display:none;font-size:12px;color:#a0aec0;margin:2px 0 0;"></div>
+              </div>
               <div id="ctToggles" class="type-toggles"></div>
             </div>
             <div class="chart-wrap" style="height:340px;">
@@ -1454,7 +1457,7 @@ function ttItemRow(style, url, id, title, days) {
     ttIcon(style) +
     `<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${id}</a>` +
     `<span class="tt-item-title">${escapeHtml(short)}</span>` +
-    `<span class="tt-item-days">${days}d</span>` +
+    `<span class="tt-item-days">${days != null ? days + 'd' : '—'}</span>` +
     '</div>';
 }
 const TT_HINT = '<div class="tt-hint">Hover to keep open &middot; click to open in ADO</div>';
@@ -1701,6 +1704,26 @@ function updateChart() {
   const ctAllTypes = Object.keys(ctTypeStyles);
   const ctActiveTypes = new Set(ctAllTypes);
 
+  // Identify items that completed in the window but have no measurable cycle time
+  // (clock start predates available ADO history)
+  const ctItemIds = new Set(ctItems.map(i => i.id));
+  const excludedTpItems = (ct.throughput_items || []).filter(i => !ctItemIds.has(i.id));
+  if (excludedTpItems.length > 0) {
+    const totalCompletions = ctItems.length + excludedTpItems.length;
+    const pct = Math.round(ctItems.length / totalCompletions * 100);
+    const note = document.getElementById('ctExclusionNote');
+    if (note) {
+      note.textContent = `Cycle time measured for ${ctItems.length} of ${totalCompletions} completions (${pct}%) — ${excludedTpItems.length} items excluded (clock start predates available ADO history; shown as ▲ at y=0)`;
+      note.style.display = '';
+    }
+  }
+  // Ghost data points for excluded items — plotted at y=0 on the scatter chart
+  const ghostData = excludedTpItems.map(i => ({
+    x: new Date(i.completed_at).getTime(),
+    y: 0,
+    _ghostItem: i,
+  }));
+
   // Axis boundaries derived from actual completion dates (shared by both charts)
   const _completedMs = ctItems.map(i => new Date(i.completed_at).getTime());
   const _pad = 7 * 24 * 3600 * 1000; // one week padding each side
@@ -1783,13 +1806,16 @@ function updateChart() {
   }
 
   // --- External tooltip for scatter ---
-  function buildCtTooltip(item) {
-    const style = ctTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
-    const completed = new Date(item.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  function buildCtTooltip(items) {
+    if (!Array.isArray(items)) items = [items];
+    const completed = new Date(items[0].completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     return (
       `<div class="tt-total">Completed: ${escapeHtml(completed)}</div>` +
       '<div class="tt-items">' +
-      ttItemRow(style, ct.ado_url_base + '/' + item.id, item.id, item.title, item.cycle_time_days) +
+      items.map(item => {
+        const style = ctTypeStyles[item.type] || { color: '#718096', abbr: String(item.type || '?').slice(0, 4) };
+        return ttItemRow(style, ct.ado_url_base + '/' + item.id, item.id, item.title, item.cycle_time_days);
+      }).join('') +
       '</div>' +
       TT_HINT
     );
@@ -1797,9 +1823,63 @@ function updateChart() {
 
   function ctExternalTooltip(context) {
     if (context.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
-    const raw = context.tooltip.dataPoints[0].raw;
+    const dp = context.tooltip.dataPoints[0];
+    if (!dp) { sharedTooltip.hide(); return; }
+    const raw = dp.raw;
+
+    // Ghost item (no cycle time history) — collect all ghost items at same date position
+    if (raw._ghostItem) {
+      const chart = context.chart;
+      const px = chart.scales.x.getPixelForValue(raw.x);
+      const THRESHOLD_PX = 8;
+      const seen = new Set();
+      const ghosts = [];
+      chart.data.datasets.forEach(ds => {
+        if (!ds._ghost) return;
+        (ds.data || []).forEach(pt => {
+          if (!pt._ghostItem || seen.has(pt._ghostItem.id)) return;
+          if (Math.abs(chart.scales.x.getPixelForValue(pt.x) - px) <= THRESHOLD_PX) {
+            ghosts.push(pt._ghostItem);
+            seen.add(pt._ghostItem.id);
+          }
+        });
+      });
+      const items = ghosts.length > 0 ? ghosts : [raw._ghostItem];
+      const completed = new Date(items[0].completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      let html =
+        `<div class="tt-total">Completed: ${escapeHtml(completed)} &mdash; cycle time not measurable</div>` +
+        '<div class="tt-items">';
+      items.forEach(item => {
+        const style = ctTypeStyles[item.type] || { color: '#a0aec0', abbr: String(item.type || '?').slice(0, 4) };
+        html += ttItemRow(style, ct.ado_url_base + '/' + item.id, item.id, item.title || '', null);
+      });
+      html += '</div><div class="tt-hint" style="color:#a0aec0;">Clock start predates available ADO history &middot; click to open in ADO</div>';
+      sharedTooltip.show(html, context);
+      return;
+    }
+
     if (!raw._item) { sharedTooltip.hide(); return; } // reference line — no tooltip
-    sharedTooltip.show(buildCtTooltip(raw._item), context);
+
+    // Collect all normal items visually collocated with the hovered point (within 8px in both axes)
+    const chart = context.chart;
+    const px = chart.scales.x.getPixelForValue(raw.x);
+    const py = chart.scales.y.getPixelForValue(raw.y);
+    const THRESHOLD_PX = 8;
+    const seen = new Set();
+    const collocated = [];
+    chart.data.datasets.forEach(ds => {
+      if (ds._ref || ds._ghost) return;
+      (ds.data || []).forEach(pt => {
+        if (!pt._item || seen.has(pt._item.id)) return;
+        const ptX = chart.scales.x.getPixelForValue(pt.x);
+        const ptY = chart.scales.y.getPixelForValue(pt.y);
+        if (Math.abs(ptX - px) <= THRESHOLD_PX && Math.abs(ptY - py) <= THRESHOLD_PX) {
+          collocated.push(pt._item);
+          seen.add(pt._item.id);
+        }
+      });
+    });
+    sharedTooltip.show(buildCtTooltip(collocated.length > 0 ? collocated : [raw._item]), context);
   }
 
   // --- Scatter chart ---
@@ -1821,6 +1901,18 @@ function updateChart() {
             pointHoverRadius: 8,
           };
         }),
+        // Ghost dataset: items that completed in window but have no measurable cycle time
+        ...(ghostData.length > 0 ? [{
+          label: 'No CT history',
+          _ghost: true,
+          data: ghostData,
+          backgroundColor: 'rgba(160,174,192,0.25)',
+          borderColor: 'rgba(160,174,192,0.7)',
+          borderWidth: 1.5,
+          pointRadius: 4,
+          pointHoverRadius: 7,
+          pointStyle: 'triangle',
+        }] : []),
         ...refLineDatasets(ctItems),
       ],
     },
@@ -1941,7 +2033,9 @@ function updateChart() {
     ctAllTypes.forEach((type, idx) => {
       scatterChart.setDatasetVisibility(idx, ctActiveTypes.has(type));
     });
-    scatterChart.data.datasets.splice(ctAllTypes.length); // remove old ref lines
+    // Preserve the ghost dataset (index ctAllTypes.length) when re-splicing ref lines
+    const ghostDatasetCount = ghostData.length > 0 ? 1 : 0;
+    scatterChart.data.datasets.splice(ctAllTypes.length + ghostDatasetCount); // remove old ref lines
     refLineDatasets(activeItemsForRef()).forEach(ds => scatterChart.data.datasets.push(ds));
     scatterChart.update();
 
