@@ -2288,7 +2288,8 @@ function updateChart() {
     });
     return weeksInRange(items, ct.window?.start, ct.window?.end).map(w => {
       const its = buckets[w];
-      if (!its) return { week_start: w, n: 0, mean_completed_ms: null, items: [] };
+      // Empty weeks use the week's midpoint (Wednesday) as x so they render as y=0 on the chart
+      if (!its) return { week_start: w, n: 0, mean_completed_ms: new Date(w + 'T00:00:00Z').getTime() + 3.5 * 24 * 3600 * 1000, items: [] };
       const meanMs = its.reduce((s, i) => s + new Date(i.completed_at).getTime(), 0) / its.length;
       return { week_start: w, n: its.length, mean_completed_ms: meanMs, items: its };
     });
@@ -2298,7 +2299,7 @@ function updateChart() {
 
   // Linear regression on counts
   function tpLinReg(weekly) {
-    const valid = weekly.filter(w => w.mean_completed_ms !== null).map(w => ({ x: w.mean_completed_ms, y: w.n }));
+    const valid = weekly.map(w => ({ x: w.mean_completed_ms, y: w.n }));
     const n = valid.length;
     if (n < 2) return null;
     const meanX = valid.reduce((s, p) => s + p.x, 0) / n;
@@ -2312,8 +2313,8 @@ function updateChart() {
   }
 
   const tpPredict = tpLinReg(tpWeekly);
-  const tpCounts = tpWeekly.filter(w => w.mean_completed_ms !== null).map(w => ({ x: w.mean_completed_ms, y: w.n, _week: w }));
-  const tpTrend  = tpWeekly.filter(w => w.mean_completed_ms !== null).map(w => {
+  const tpCounts = tpWeekly.map(w => ({ x: w.mean_completed_ms, y: w.n, _week: w }));
+  const tpTrend  = tpWeekly.map(w => {
     const y = tpPredict ? tpPredict(w.mean_completed_ms) : null;
     return y !== null ? { x: w.mean_completed_ms, y } : null;
   }).filter(p => p !== null);
