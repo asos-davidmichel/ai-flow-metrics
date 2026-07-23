@@ -50,51 +50,19 @@ python src/create_dashboard.py
 
 ```mermaid
 flowchart TD
-  ADO[("☁ Azure DevOps\n(board URL + PAT)")]:::external
+  fetch["1 · Fetch ticket data\n`run.py <ADO board URL>`"]:::script
+  aiconf{{"2 · AI prompt\nUnderstand board & team configuration"}}:::humanai
+  review["3 · Human review\nCheck config · iterate as needed"]:::human
+  calc["4 · Calculate flow metrics\n`run.py`"]:::script
+  dash["5 · Create dashboard\n`create_dashboard.py`"]:::script
+  insights{{"6 · AI prompt\nInsights · recommendations · interpretation"}}:::humanai
 
-  subgraph main["Main pipeline — steps 1–7"]
-    fetch["1 · fetch_data.py\n📄 context.json · work_items.json · work_item_history.json"]:::script
-    check["2 · check_data.py\n📄 data_quality_report.json · excluded_items.json · work_item_rework.json"]:::script
-    aiconf["3 · ai_configure_board.py"]:::script
-    aiconfprompt{{"🤖✎ Run AI prompt\n→ save response as config.json"}}:::humanai
-    autoconf["OpenAI-compatible API\nauto-writes config.json"]:::autoai
-    calccol["4 · calc_columns.py  →  📄 time_in_columns.json"]:::script
-    calcct["5 · calc_cycle_time.py  →  📄 cycle_time.json"]:::script
-    calclt["6 · calc_lead_time.py  →  📄 lead_time.json"]:::script
-    dash["7 · create_dashboard.py  →  📄 dashboard.html"]:::script
-    out(["🌐 dashboard.html (basic)"]):::output
+  fetch --> aiconf --> review -->|"config ok"| calc --> dash --> insights
 
-    fetch --> check --> aiconf
-    aiconf -->|"--mode copilot / prompt"| aiconfprompt --> calccol
-    aiconf -->|"--mode auto"| autoconf --> calccol
-    calccol --> calcct --> calclt --> dash --> out
-  end
-
-  subgraph opt["Optional — AI chart insights (step 8 + re-run 7)"]
-    aimetrics["8 · ai_interpret_metrics.py"]:::script
-    savemetrics{{"🤖✎ Run AI prompt\n→ save response as insights.json"}}:::humanai
-    autoinsights["OpenAI-compatible API\nauto-writes insights.json"]:::autoai
-    insights[/"insights.json"/]:::file
-    redash["re-run 7 · create_dashboard.py  →  📄 dashboard.html"]:::script
-    out2(["🌐 dashboard.html (with AI insights)"]):::output
-
-    aimetrics -->|"--mode copilot / prompt"| savemetrics --> insights
-    aimetrics -->|"--mode auto"| autoinsights --> insights
-    insights --> redash --> out2
-  end
-
-  ADO -->|"reads via REST API"| fetch
-  out -->|"then optionally"| aimetrics
-
-  classDef script  fill:#667eea,color:#fff,stroke:#4c51bf
-  classDef humanai fill:#9f7aea,color:#fff,stroke:#6b46c1
-  classDef autoai  fill:#48bb78,color:#fff,stroke:#276749
-  classDef external fill:#e2e8f0,color:#2d3748,stroke:#a0aec0
-  classDef file    fill:#f7fafc,color:#4a5568,stroke:#cbd5e0
-  classDef output  fill:#fefcbf,color:#744210,stroke:#d69e2e
+  classDef script   fill:#667eea,color:#fff,stroke:#4c51bf
+  classDef humanai  fill:#9f7aea,color:#fff,stroke:#6b46c1
+  classDef human    fill:#e2e8f0,color:#2d3748,stroke:#a0aec0
 ```
-
-> 🟦 Automated script &nbsp;·&nbsp; 🟣 Human-in-the-loop with AI &nbsp;·&nbsp; 🟩 Fully automated AI &nbsp;·&nbsp; ⬜ External system
 
 | Step | Script | What it does |
 |------|--------|--------------|
