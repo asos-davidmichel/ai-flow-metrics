@@ -1474,9 +1474,11 @@ function weekStart(isoStr) {
   mon.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day));
   return mon.toISOString().slice(0, 10);
 }
-function weeksInRange(items) {
-  if (!items.length) return [];
+function weeksInRange(items, windowStart, windowEnd) {
   const ws = items.map(i => weekStart(i.completed_at));
+  if (windowStart) ws.push(weekStart(windowStart));
+  if (windowEnd)   ws.push(weekStart(windowEnd));
+  if (!ws.length) return [];
   const first = ws.reduce((a, b) => a < b ? a : b);
   const last  = ws.reduce((a, b) => a > b ? a : b);
   const result = [];
@@ -1724,11 +1726,11 @@ function updateChart() {
     _ghostItem: i,
   }));
 
-  // Axis boundaries derived from actual completion dates (shared by both charts)
+  // Axis boundaries: use analysis window bounds so charts span the full window
   const _completedMs = ctItems.map(i => new Date(i.completed_at).getTime());
   const _pad = 7 * 24 * 3600 * 1000; // one week padding each side
-  const dataMinMs = Math.min(..._completedMs) - _pad;
-  const dataMaxMs = Math.max(..._completedMs) + _pad;
+  const dataMinMs = (ct.window?.start ? new Date(ct.window.start).getTime() : Math.min(..._completedMs)) - _pad;
+  const dataMaxMs = (ct.window?.end   ? new Date(ct.window.end).getTime()   : Math.max(..._completedMs)) + _pad;
 
   // Summary subtitle
   const ov = ct.overall || {};
@@ -1945,7 +1947,7 @@ function updateChart() {
       const w = weekStart(item.completed_at);
       (buckets[w] = buckets[w] || []).push(item);
     });
-    return weeksInRange(items).map(w => {
+    return weeksInRange(items, ct.window?.start, ct.window?.end).map(w => {
       const its = buckets[w];
       if (!its) return { week_start: w, n: 0, mean_days: null, mean_completed_ms: null };
       const meanMs = its.reduce((s, i) => s + new Date(i.completed_at).getTime(), 0) / its.length;
@@ -2065,8 +2067,8 @@ function updateChart() {
 
   const _ltMs = ltItems.map(i => new Date(i.completed_at).getTime());
   const _ltPad = 7 * 24 * 3600 * 1000;
-  const ltMinMs = Math.min(..._ltMs) - _ltPad;
-  const ltMaxMs = Math.max(..._ltMs) + _ltPad;
+  const ltMinMs = (lt.window?.start ? new Date(lt.window.start).getTime() : Math.min(..._ltMs)) - _ltPad;
+  const ltMaxMs = (lt.window?.end   ? new Date(lt.window.end).getTime()   : Math.max(..._ltMs)) + _ltPad;
 
   // Type toggles (both scatter and rolling cards)
   const ltToggleContainers = [
@@ -2194,7 +2196,7 @@ function updateChart() {
       const w = weekStart(item.completed_at);
       (buckets[w] = buckets[w] || []).push(item);
     });
-    return weeksInRange(items).map(w => {
+    return weeksInRange(items, lt.window?.start, lt.window?.end).map(w => {
       const its = buckets[w];
       if (!its) return { week_start: w, n: 0, mean_days: null, mean_completed_ms: null, items: [] };
       const meanMs   = its.reduce((s, i) => s + new Date(i.completed_at).getTime(), 0) / its.length;
@@ -2275,8 +2277,8 @@ function updateChart() {
     : ct.items;
   const _tpMs  = allItems.map(i => new Date(i.completed_at).getTime());
   const _tpPad = 7 * 24 * 3600 * 1000;
-  const tpMinMs = Math.min(..._tpMs) - _tpPad;
-  const tpMaxMs = Math.max(..._tpMs) + _tpPad;
+  const tpMinMs = (ct.window?.start ? new Date(ct.window.start).getTime() : Math.min(..._tpMs)) - _tpPad;
+  const tpMaxMs = (ct.window?.end   ? new Date(ct.window.end).getTime()   : Math.max(..._tpMs)) + _tpPad;
 
   function tpComputeWeekly(items) {
     const buckets = {};
@@ -2284,7 +2286,7 @@ function updateChart() {
       const w = weekStart(item.completed_at);
       (buckets[w] = buckets[w] || []).push(item);
     });
-    return weeksInRange(items).map(w => {
+    return weeksInRange(items, ct.window?.start, ct.window?.end).map(w => {
       const its = buckets[w];
       if (!its) return { week_start: w, n: 0, mean_completed_ms: null, items: [] };
       const meanMs = its.reduce((s, i) => s + new Date(i.completed_at).getTime(), 0) / its.length;
