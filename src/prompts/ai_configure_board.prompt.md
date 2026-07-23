@@ -16,9 +16,12 @@ Analyse the board data below and return a JSON object that resolves all four dec
 
 ### 1. Lead time clock start
 Lead time = customer/request perspective (from intake to done).
-Choose ONE of:
-- `{"type": "date_field", "value": "created_date"}` — clock starts when the work item was created in ADO
-- `{"type": "column", "value": "<incoming column name>"}` — clock starts when the item first appeared on the board
+Default: use the incoming column (when the item first appeared on the board).
+Only use `created_date` if there is a clear reason the board does not reliably capture the true request date
+(e.g. items are bulk-imported long after creation, or the board is used for a subset of a larger intake process).
+
+- `{"type": "column", "value": "<incoming column name>"}` — **preferred default** — clock starts when the item first appeared on the board
+- `{"type": "date_field", "value": "created_date"}` — fallback — clock starts when the work item was created in ADO
 
 ### 2. Cycle time clock start
 Cycle time = team processing perspective (from active work start to done).
