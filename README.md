@@ -74,7 +74,8 @@ flowchart TD
 | 5 | `src/calc_cycle_time.py` | Calculates cycle time and throughput → `output/metrics/cycle_time.json` |
 | 6 | `src/calc_lead_time.py` | Calculates lead time → `output/metrics/lead_time.json` |
 | 7 | `src/create_dashboard.py` | Renders everything into `output/dashboard.html` |
-| 8 *(optional)* | `src/ai_interpret_metrics.py` | Generates AI chart insights → `output/data/insights.json`; re-run step 7 to embed them |
+| 8 *(optional)* | `src/ai_interpret_metrics.py` | Generates AI chart insights → `output/data/insights.json` |
+| 9 *(optional)* | `src/create_dashboard.py` | Re-renders dashboard with insights embedded into each chart |
 
 Steps 4–6 require `output/data/config.json` to exist.
 
@@ -189,10 +190,14 @@ output/
     context.json              Board structure, columns, work item type styles
     work_items.json           Current state of all work items
     work_item_history.json    Full column + tag change history
+    work_item_rework.json     Items that moved backwards through columns
+    data_quality_report.json  Data quality check results
+    excluded_items.json       Items excluded from metrics (missing history etc.)
     config.json               Your confirmed flow metric configuration
     insights.json             AI-generated chart insights (optional)
   metrics/
     cycle_time.json
+    lead_time.json
     time_in_columns.json
 ```
 
