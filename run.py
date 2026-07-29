@@ -45,6 +45,7 @@ GENERATED_FILES = [
     Path("output/data/work_item_rework.json"),
     Path("output/data/data_quality_report.json"),
     Path("output/data/excluded_items.json"),
+    Path("output/data/blocked_signals.json"),
     Path("output/data/config.json"),
     Path("output/data/insights.json"),
     Path("output/data/interpret_metrics_prompt.txt"),
