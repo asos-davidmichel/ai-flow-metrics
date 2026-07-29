@@ -26,14 +26,11 @@ Step 9  Re-generate dashboard with insights
 
 ## Step 3 — Configure board (AI pause)
 
-When the pipeline pauses at step 3:
+When the pipeline pauses at step 3, act immediately — do not wait for the user to ask:
 
-1. **Read** `output/data/ai_configure_board.prompt.md` — this file already has all board context embedded.
-2. **Run a subagent** with the full file contents. The subagent will write `output/data/config.json`.
-3. **Show the user the resulting config** — clock starts/ends, active/waiting column classification, and blocker signals — for review.
-4. **Wait for the user to explicitly approve** before sending Enter to the terminal to continue.
-
-Do not guess config values. Do not continue without user review.
+1. **Run a subagent** with the full path `output/data/ai_configure_board.prompt.md` — tell it to read the file and write `output/data/config.json`. Do not read the file yourself first.
+2. **Show the user the resulting config** — clock starts/ends, active/waiting column classification, and blocker signals — for review.
+3. **Wait for the user to explicitly approve** before sending Enter to the terminal to continue.
 
 ---
 
