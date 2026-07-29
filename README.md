@@ -27,20 +27,8 @@ A Python + Chart.js tool that fetches work item data from **Azure DevOps**, calc
 ## Prerequisites
 
 - Python 3.10+
-- An Azure DevOps **Personal Access Token** with read access to the board
+- An Azure DevOps **[Personal Access Token](https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=Windows)** with read access to the board
 - Set the environment variable: `ADO_PAT=<your-token>`
-
----
-
-## Quickstart
-
-```bash
-# First run — fetch data and generate the dashboard
-python run.py https://dev.azure.com/your-org/your-project/_boards/board/t/your-team/...
-
-# Subsequent runs (data already fetched, just regenerate the dashboard)
-python src/create_dashboard.py
-```
 
 ---
 
@@ -93,9 +81,21 @@ Steps 4–6 require `output/data/config.json` to exist.
 | `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
 | `--ai-mode MODE` | `prompt` | `prompt` (default) or `skip`. `skip` omits step 8 (insights) and re-generates the dashboard without them. |
 
-**Example:**
-```bash
-python run.py https://dev.azure.com/org/project/_boards/... --window 3m --clean
+**Examples:**
+
+```powershell
+# Standard run — last 6 months
+python run.py https://dev.azure.com/org/project/_boards/... --window 6m
+```
+
+```powershell
+# Clean slate before running — removes all previously generated output files
+python run.py https://dev.azure.com/org/project/_boards/... --window 6m --clean
+```
+
+```powershell
+# Specific date range
+python run.py https://dev.azure.com/org/project/_boards/... --from 2025-01-01 --to 2025-06-30
 ```
 
 ---
@@ -153,27 +153,3 @@ output/
 
 ---
 
-## Configuration (`config.json`)
-
-Key fields:
-
-```json
-{
-  "cycle_time": {
-    "clock_start": { "type": "column", "value": "Ready for Dev" },
-    "clock_end":   { "type": "column", "value": "Closed" }
-  },
-  "flow_efficiency": {
-    "active_columns":  ["In Development", "In Review", "QA"],
-    "waiting_columns": ["Ready for Dev", "External Review", "Ready for QA", "Ready for release"]
-  },
-  "blocked_time": {
-    "signals": [
-      { "mechanism": "tag", "tags": ["Blocked", "Blocked by BAG", "Blocked by PLP"], "label": "Blocked",           "color": "#f06673" },
-      { "mechanism": "tag", "tags": ["Waiting - Internal"],                           "label": "Waiting Internal", "color": "#ffe0c1" }
-    ]
-  }
-}
-```
-
-`config.json` is produced by running `ai_configure_board.py`. The AI detects blocked signals from card rules and actual tags in use, and can merge tag variants into a single signal (e.g. "Blocked by BAG" + "Blocked by PLP" → one "Blocked" entry). Each signal has a `label` (shown in charts) and a `color` (from the card rule background colour).
