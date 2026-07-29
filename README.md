@@ -91,7 +91,7 @@ Steps 4–6 require `output/data/config.json` to exist.
 | `--clean` | off | Delete all generated output files before running. |
 | `--yes` | off | Skip all confirmation prompts (required for fully automated runs). |
 | `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
-| `--ai-mode MODE` | `prompt` | AI mode for both board configuration and chart insights — see [AI modes](#ai-modes) below. `skip` omits the insights step only. |
+| `--ai-mode MODE` | `prompt` | `prompt` (default) or `skip`. `skip` omits step 8 (insights) and re-generates the dashboard without them. |
 
 **Example:**
 ```bash
@@ -102,63 +102,14 @@ python run.py https://dev.azure.com/org/project/_boards/... --window 3m --clean
 
 ## AI interpretation
 
-Two scripts generate AI prompts. Both support a `--mode` flag.
-
-### AI modes
-
-| Mode | What happens |
-|------|--------------|
-| `prompt` *(default)* | Writes a `.prompt.md` file with the full prompt (including inline data). Opens it in VS Code Copilot automatically if `code` is on PATH — or paste the file contents into any AI assistant. |
-| `auto` | Calls any OpenAI-compatible API directly and writes the output automatically. Configure via env vars — works with OpenAI, Claude (via compatible endpoint), GitHub Models, Azure OpenAI, etc. Requires `OPENAI_API_KEY`. |
-
-**Environment variables for `auto` mode:**
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | *(required)* | API key — OpenAI key, GitHub PAT, Azure key, etc. |
-| `OPENAI_MODEL` | `gpt-4o` | Model name (e.g. `gpt-4o`, `claude-sonnet-4-5`). |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for any OpenAI-compatible endpoint. |
-
-**Examples:**
-
-```powershell
-# ChatGPT (OpenAI)
-$env:OPENAI_API_KEY = "sk-..."
-$env:OPENAI_MODEL   = "gpt-4o"
-python run.py <board-url> --ai-mode auto --yes
-```
-
-```powershell
-# Claude via GitHub Models (free with a GitHub account)
-$env:OPENAI_API_KEY  = "<your-github-pat>"
-$env:OPENAI_BASE_URL = "https://models.inference.ai.azure.com"
-$env:OPENAI_MODEL    = "claude-sonnet-4-5"
-python run.py <board-url> --ai-mode auto --yes
-```
-
-```bash
-# Claude via GitHub Models (macOS / Linux)
-export OPENAI_API_KEY="<your-github-pat>"
-export OPENAI_BASE_URL="https://models.inference.ai.azure.com"
-export OPENAI_MODEL="claude-sonnet-4-5"
-python run.py <board-url> --ai-mode auto --yes
-```
-
-**All compatible endpoints:**
-
-| Provider | `OPENAI_BASE_URL` | Auth |
-|----------|-------------------|------|
-| OpenAI | `https://api.openai.com/v1` *(default)* | OpenAI API key |
-| GitHub Models | `https://models.inference.ai.azure.com` | GitHub PAT |
-| Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` | Azure key |
+Two scripts generate `.prompt.md` files that open automatically in VS Code Copilot (or can be pasted into any AI assistant). The AI reads the file and writes the output JSON directly.
 
 ### Board configuration
 
 Proposes column classification, flow efficiency rules, and blocker tag signals. Run this before setting up `config.json`.
 
 ```bash
-python src/ai_configure_board.py                     # prompt mode (default)
-python src/ai_configure_board.py --mode auto        # calls API directly → writes config.json
+python src/ai_configure_board.py
 ```
 
 ### Metrics interpretation
@@ -166,12 +117,9 @@ python src/ai_configure_board.py --mode auto        # calls API directly → wri
 Generates chart-by-chart insights and a leadership narrative that are embedded in the dashboard.
 
 ```bash
-python src/ai_interpret_metrics.py                   # prompt mode (default)
-python src/ai_interpret_metrics.py --mode auto       # calls API directly → writes insights.json
+python src/ai_interpret_metrics.py
 python src/ai_interpret_metrics.py --dump-summary    # print the anonymised metrics JSON sent to the AI
 ```
-
-When using `run.py`, both steps share the single `--ai-mode` flag.
 
 <img src="docs/screenshot_insight.png" width="450" alt="Chart insight box">
 

@@ -12,17 +12,14 @@ Reads:
   output/data/work_item_history.json
   output/data/data_quality_report.json
 
-Writes (depending on --mode):
-  output/data/ai_configure_board.prompt.md  (--mode prompt)   open in VS Code chat or paste into any AI
-  output/data/config.json                   (--mode auto)    direct API call (requires OPENAI_API_KEY)
+Writes:
+  output/data/ai_configure_board.prompt.md  open in VS Code chat or paste into any AI
 
-After prompt mode: paste the AI's JSON response directly into output/data/config.json.
-The metrics script requires config.json.
+After running: the agent saves output/data/config.json automatically.
+The metrics scripts require config.json.
 
 Usage:
   python src/ai_configure_board.py
-  python src/ai_configure_board.py --mode prompt
-  python src/ai_configure_board.py --mode auto
 """
 
 import json
@@ -360,103 +357,12 @@ description: "Flow metrics — interpret board structure and write config.json"
     print("  2. The agent will save output/data/config.json automatically.")
 
 
-def call_openai(findings):
-    """
-    Call an OpenAI-compatible Chat Completions API to produce config.json directly.
-
-    Required environment variables:
-      OPENAI_API_KEY  — API key (OpenAI key, GitHub PAT, Azure key, etc.)
-    Optional:
-      OPENAI_MODEL    — model name (default: gpt-4o)
-      OPENAI_BASE_URL — base URL for the API (default: https://api.openai.com/v1)
-                        Examples:
-                          GitHub Models:  https://models.inference.ai.azure.com
-                          Azure OpenAI:   https://<resource>.openai.azure.com/openai/deployments/<deployment>
-    """
-    import os, urllib.request
-    api_key  = os.environ.get("OPENAI_API_KEY")
-    model    = os.environ.get("OPENAI_MODEL", "gpt-4o")
-    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    endpoint = f"{base_url}/chat/completions"
-    if not api_key:
-        print("Error: OPENAI_API_KEY environment variable is not set.", file=sys.stderr)
-        sys.exit(1)
-
-    prompt = build_prompt(findings)
-    body = json.dumps({
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a JSON configuration generator for a flow metrics tool. "
-                    "Return ONLY a valid JSON object as your response — no explanation, "
-                    "no markdown fences, no preamble. The JSON will be written directly "
-                    "to config.json by the calling script."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.1,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        endpoint,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    print(f"Calling {endpoint} ({model}) to configure board…")
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            result = json.loads(resp.read())
-    except Exception as e:
-        print(f"Error calling OpenAI API: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    content = result["choices"][0]["message"]["content"].strip()
-    # Strip markdown fences if present
-    if content.startswith("```"):
-        content = "\n".join(content.split("\n")[1:])
-        if content.endswith("```"):
-            content = content[:-3].rstrip()
-
-    try:
-        config = json.loads(content)
-    except json.JSONDecodeError as e:
-        print(f"Warning: could not parse AI response as JSON: {e}", file=sys.stderr)
-        raw_path = DATA_DIR / "config_raw.txt"
-        raw_path.write_text(content, encoding="utf-8")
-        print(f"Raw response saved to {raw_path}")
-        sys.exit(1)
-
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
-    print(f"Written: {CONFIG_PATH}")
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 
 def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Generate an AI interpretation prompt to configure flow metrics."
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["prompt", "auto"],
-        default="prompt",
-        help="How to deliver the prompt (default: prompt)",
-    )
-    args = parser.parse_args()
-
     if CONFIG_PATH.exists():
         print(f"Skipping: {CONFIG_PATH} already exists. Delete it to regenerate.")
         sys.exit(0)
@@ -467,11 +373,7 @@ def main():
     work_items = json.loads(WORK_ITEMS_PATH.read_text(encoding="utf-8")) if WORK_ITEMS_PATH.exists() else None
 
     findings = analyse(context, history, work_items)
-
-    if args.mode == "prompt":
-        write_prompt(findings)
-    elif args.mode == "auto":
-        call_openai(findings)
+    write_prompt(findings)
 
 
 if __name__ == "__main__":

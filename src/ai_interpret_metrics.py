@@ -11,14 +11,12 @@ Reads:
   output/data/work_items.json
   output/data/work_item_history.json
 
-Writes (depending on --mode):
-  output/data/ai_interpret_metrics.prompt.md  (--mode prompt)   open in VS Code chat or paste into any AI
-  output/data/insights.json                   (--mode openai)   direct API call (requires OPENAI_API_KEY)
+Writes:
+  output/data/ai_interpret_metrics.prompt.md  open in VS Code chat or paste into any AI
 
 Usage:
   python src/ai_interpret_metrics.py
-  python src/ai_interpret_metrics.py --mode prompt
-  python src/ai_interpret_metrics.py --mode auto
+  python src/ai_interpret_metrics.py --dump-summary
 """
 
 import json
@@ -1490,61 +1488,6 @@ in 3-5 bullet points.
     print("The agent will save output/data/insights.json when done.")
 
 
-def call_openai(summary):
-    import os, urllib.request
-    api_key  = os.environ.get("OPENAI_API_KEY")
-    model    = os.environ.get("OPENAI_MODEL", "gpt-4o")
-    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    endpoint = f"{base_url}/chat/completions"
-    if not api_key:
-        print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
-        sys.exit(1)
-
-    prompt = build_prompt_text(summary)
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        endpoint,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    print(f"Calling {endpoint} ({model})…")
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            result = json.loads(resp.read())
-    except Exception as e:
-        print(f"Error calling OpenAI API: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    content = result["choices"][0]["message"]["content"].strip()
-    # Strip markdown fences if present
-    if content.startswith("```"):
-        content = "\n".join(content.split("\n")[1:])
-        if content.endswith("```"):
-            content = content[:-3]
-
-    try:
-        insights = json.loads(content)
-    except json.JSONDecodeError as e:
-        print(f"Warning: could not parse AI response as JSON: {e}", file=sys.stderr)
-        print("Raw response saved to output/data/insights_raw.txt")
-        (DATA_DIR / "insights_raw.txt").write_text(content, encoding="utf-8")
-        sys.exit(1)
-
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    INSIGHTS_PATH.write_text(json.dumps(insights, indent=2), encoding="utf-8")
-    print(f"Written: {INSIGHTS_PATH}")
-    print("Run python src/dashboard.py to inject insights into the dashboard.")
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -1552,11 +1495,7 @@ def call_openai(summary):
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-        description="Generate AI prompts or call OpenAI to produce chart insights."
-    )
-    parser.add_argument(
-        "--mode", choices=["prompt", "auto"], default="prompt",
-        help="How to deliver the prompt (default: prompt)",
+        description="Generate an AI prompt to produce chart insights."
     )
     parser.add_argument(
         "--dump-summary", action="store_true",
@@ -1564,20 +1503,13 @@ def main():
     )
     args = parser.parse_args()
 
-    if not args.dump_summary and args.mode == "auto" and INSIGHTS_PATH.exists():
-        print(f"Skipping: {INSIGHTS_PATH} already exists. Delete it to regenerate.")
-        sys.exit(0)
-
     summary = build_summary()
 
     if args.dump_summary:
         print(json.dumps(summary, indent=2))
         return
 
-    if args.mode == "prompt":
-        write_prompt(summary)
-    elif args.mode == "auto":
-        call_openai(summary)
+    write_prompt(summary)
 
 
 if __name__ == "__main__":

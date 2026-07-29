@@ -2,7 +2,7 @@
 Full pipeline runner.
 
 Usage:
-  python run.py <board-url> [--short-dwell-minutes N] [--ai-mode prompt|openai|skip]
+  python run.py <board-url> [--short-dwell-minutes N] [--ai-mode prompt|skip]
                             [--window 6m] [--clean] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--yes]
   python run.py --clean   (clean output files only, no board URL required)
 
@@ -24,11 +24,11 @@ If output/data/config.json exists, also runs:
 
 Window values for --window: 1m, 3m, 6m, 1y (default: 6m)
 --from / --to: explicit date range YYYY-MM-DD (overrides --window when --from is given)
---ai-mode: prompt (default), auto, skip
+--ai-mode: prompt (default), skip
   skip omits step 8 (insights) only — board config (step 3) always runs.
 
 --clean  Delete all previously generated output files before running.
---yes    Skip all confirmation prompts (useful with --ai-mode auto).
+--yes    Skip all confirmation prompts.
 """
 
 import os
@@ -137,11 +137,11 @@ def main():
         idx = sys.argv.index("--ai-mode")
         try:
             ai_mode = sys.argv[idx + 1]
-            if ai_mode not in ("prompt", "auto", "skip"):
-                print("Error: --ai-mode must be prompt, auto, or skip.", file=sys.stderr)
+            if ai_mode not in ("prompt", "skip"):
+                print("Error: --ai-mode must be prompt or skip.", file=sys.stderr)
                 sys.exit(1)
         except IndexError:
-            print("Error: --ai-mode requires a value (prompt, auto, skip).", file=sys.stderr)
+            print("Error: --ai-mode requires a value (prompt, skip).", file=sys.stderr)
             sys.exit(1)
 
     # Forward --window to metrics.py if provided (default: 6m)
@@ -194,7 +194,7 @@ def main():
     print("Available options (Ctrl+C to abort and rerun with different flags):")
     print("  --window         2w | 1m | 3m | 6m | 1y         (default: 6m)")
     print("  --from YYYY-MM-DD [--to YYYY-MM-DD]             (explicit date range, overrides --window)")
-    print("  --ai-mode        prompt | auto | skip                (default: prompt)")
+    print("  --ai-mode        prompt | skip                       (default: prompt)")
     print("  --short-dwell-minutes N                       (flag items moved too quickly)")
     print("  --clean                                       (delete all output files first)")
     print("  --yes                                         (skip all confirmation prompts; pair with --ai-mode auto)")
@@ -218,7 +218,7 @@ def main():
         "Step 2 / 3 — Data quality checks",
     )
     run(
-        [sys.executable, "src/ai_configure_board.py", "--mode", ai_mode if ai_mode != "skip" else "prompt"],
+        [sys.executable, "src/ai_configure_board.py"],
         "Step 3 / 3 — Generate AI interpretation prompt",
     )
 
@@ -288,8 +288,8 @@ def main():
         return
 
     run(
-        [sys.executable, "src/ai_interpret_metrics.py", "--mode", insights_mode],
-        f"Step 8 / 9 — Generate AI chart insights ({insights_mode})",
+        [sys.executable, "src/ai_interpret_metrics.py"],
+        "Step 8 / 9 — Generate AI chart insights",
     )
 
     if insights_mode == "prompt":
