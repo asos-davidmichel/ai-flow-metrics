@@ -106,7 +106,38 @@ Two scripts generate `.prompt.md` files that open automatically in VS Code Copil
 
 ### Board configuration
 
-Proposes column classification, flow efficiency rules, and blocker tag signals. Run this before setting up `config.json`.
+Analyses the board's column structure, historical column names, tag usage, and card rules to propose a `config.json`. The AI makes four types of decision:
+
+- **Clock start/end** — which columns mark the start of lead time (intake) and cycle time (active work), and where the clock stops (e.g. Done)
+- **Historical column mapping** — old column names that no longer exist on the board are mapped to their current equivalents so history is consistent
+- **Flow efficiency** — which columns count as *active* (work is happening) vs *waiting* (work is queued), used to calculate the ratio of value-add time
+- **Blocker signals** — tags or swimlanes that indicate an item is blocked or on hold, with a label and colour for the charts
+
+Example output:
+
+```json
+{
+  "lead_time":  { "clock_start": { "type": "column", "value": "Upcoming" },    "clock_end": { "type": "column", "value": "Done" } },
+  "cycle_time": { "clock_start": { "type": "column", "value": "Refinement" },  "clock_end": { "type": "column", "value": "Done" } },
+  "historical_column_mapping": {
+    "In Progress": "In Development",
+    "Ready for Dev": "Ready",
+    "Closed": "Done"
+  },
+  "flow_efficiency": {
+    "active_columns":  ["Refinement", "In Development", "In Review", "In Testing"],
+    "waiting_columns": ["Ready"]
+  },
+  "blocked_time": {
+    "signals": [
+      { "mechanism": "tag", "tags": ["Blocked"],  "label": "Blocked",  "color": "#f06673" },
+      { "mechanism": "tag", "tags": ["OnHold"],   "label": "On Hold",  "color": null }
+    ]
+  }
+}
+```
+
+`config.json` persists between runs — if the board structure hasn't changed you can skip step 3 and reuse the existing file.
 
 ```bash
 python src/ai_configure_board.py
