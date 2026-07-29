@@ -50,14 +50,16 @@ python src/create_dashboard.py
 
 ```mermaid
 flowchart TD
-  fetch["1 · Fetch ticket data\n`run.py <ADO board URL>`"]:::script
-  aiconf{{"2 · AI prompt\nUnderstand board & team configuration"}}:::humanai
-  review["3 · Human review\nCheck config · iterate as needed"]:::human
-  calc["4 · Calculate flow metrics\n`run.py`"]:::script
-  dash["5 · Create dashboard\n`create_dashboard.py`"]:::script
-  insights{{"6 · AI prompt\nInsights · recommendations · interpretation"}}:::humanai
+  fetch["1 · Fetch ticket data\n`fetch_data.py`"]:::script
+  check["2 · Data quality checks\n`check_data.py`"]:::script
+  aiconf{{"3 · Generate configure-board prompt\n`ai_configure_board.py`"}}:::humanai
+  review["· Human + AI review\nRun prompt → approve config.json"]:::human
+  calc["4–6 · Calculate flow metrics\ncalc_columns · calc_cycle_time · calc_lead_time"]:::script
+  dash["7 · Create dashboard\n`create_dashboard.py`"]:::script
+  insights{{"8 · Generate insights prompt\n`ai_interpret_metrics.py`"}}:::humanai
+  redash["9 · Re-generate dashboard with insights\n`create_dashboard.py`"]:::script
 
-  fetch --> aiconf --> review -->|"config ok"| calc --> dash --> insights
+  fetch --> check --> aiconf --> review -->|"config ok"| calc --> dash --> insights --> redash
 
   classDef script   fill:#667eea,color:#fff,stroke:#4c51bf
   classDef humanai  fill:#9f7aea,color:#fff,stroke:#6b46c1
