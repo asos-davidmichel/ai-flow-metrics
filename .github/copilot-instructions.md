@@ -7,7 +7,7 @@ Read the README for full technical documentation. This file covers agent-specifi
 
 ## Pipeline overview
 
-`run.py` is a 9-step pipeline with two AI-assisted pause points (steps 3 and 8).
+`aiflowmetrics.py` is a 9-step pipeline split into two commands with two AI-assisted pause points (steps 3 and 8).
 The pipeline pauses and waits for a human (or Copilot) to run an AI prompt and write the output JSON before continuing.
 
 ```
@@ -69,7 +69,7 @@ Start-Process "output\dashboard.html"
 
 | File | Purpose |
 |------|---------|
-| `run.py` | Full pipeline orchestrator |
+| `aiflowmetrics.py` | Pipeline orchestrator (`configure` and `metrics` subcommands) |
 | `src/fetch_data.py` | Fetches board + work item history from ADO |
 | `src/ai_configure_board.py` | Generates configure-board AI prompt |
 | `src/ai_interpret_metrics.py` | Generates interpret-metrics AI prompt |

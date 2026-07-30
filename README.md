@@ -34,7 +34,7 @@ A Python + Chart.js tool that fetches work item data from **Azure DevOps**, calc
 
 ## Pipeline steps
 
-`run.py` orchestrates the full pipeline. You can also run each step individually.
+`aiflowmetrics.py` runs the pipeline in two separate commands. You can also run each step individually.
 
 ```mermaid
 flowchart TD
@@ -69,33 +69,53 @@ flowchart TD
 
 Steps 4–6 require `output/data/config.json` to exist.
 
-### `run.py` options
+### `configure` command
+
+```
+python aiflowmetrics.py configure <board-url> [options]
+```
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--window 6m` | `6m` | Analysis window for metrics. Accepts `2w`, `1m`, `3m`, `6m`, `1y`. |
+| `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
+| `--yes` | off | Skip confirmation prompts. |
+| `--clean` | off | Delete all generated output files before running. |
+
+### `metrics` command
+
+```
+python aiflowmetrics.py metrics <config-file> [options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--window` | `6m` | Analysis window: `2w`, `1m`, `3m`, `6m`, `1y`. |
 | `--from YYYY-MM-DD` | — | Explicit window start date (overrides `--window`). |
 | `--to YYYY-MM-DD` | today | Explicit window end date (used with `--from`). |
-| `--clean` | off | Delete all generated output files before running. |
-| `--yes` | off | Skip all confirmation prompts (required for fully automated runs). |
-| `--short-dwell-minutes N` | `60` | Flag column visits shorter than N minutes as suspicious in the data quality report. |
-| `--ai-mode MODE` | `prompt` | `prompt` (default) or `skip`. `skip` omits step 8 (insights) and re-generates the dashboard without them. |
+| `--ai-mode` | `prompt` | `prompt` (default) or `skip`. `skip` omits step 8 (insights). |
+| `--yes` | off | Skip confirmation prompts. |
+| `--clean` | off | Delete metrics and dashboard output files before running (keeps config). |
 
 **Examples:**
 
 ```powershell
-# Standard run — last 6 months
-python run.py https://dev.azure.com/org/project/_boards/... --window 6m
+# Configure — fetch data and generate board config prompt
+python aiflowmetrics.py configure https://dev.azure.com/org/project/_boards/...
 ```
 
 ```powershell
-# Clean slate before running — removes all previously generated output files
-python run.py https://dev.azure.com/org/project/_boards/... --window 6m --clean
+# Metrics — last 6 months
+python aiflowmetrics.py metrics output/data/config.json --window 6m
 ```
 
 ```powershell
-# Specific date range
-python run.py https://dev.azure.com/org/project/_boards/... --from 2025-01-01 --to 2025-06-30
+# Metrics — clean slate before running
+python aiflowmetrics.py metrics output/data/config.json --window 6m --clean
+```
+
+```powershell
+# Metrics — specific date range
+python aiflowmetrics.py metrics output/data/config.json --from 2025-01-01 --to 2025-06-30
 ```
 
 ---
@@ -141,6 +161,11 @@ Example output:
 
 ```bash
 python src/ai_configure_board.py
+```
+
+Once `config.json` is saved, run metrics with:
+```powershell
+python aiflowmetrics.py metrics output/data/config.json
 ```
 
 ### Metrics interpretation
