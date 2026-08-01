@@ -1066,7 +1066,7 @@
     <!-- Row 1: Work Start Efficiency histogram + sidebar -->
     <div class="card">
       <div class="card-header"><h2>Work Start Efficiency (Cycle / Lead Time)</h2></div>
-      <p style="font-size:13px;color:#718096;margin-bottom:12px;">How much of an item&rsquo;s lead time was actual cycle time? Higher % = work started sooner after it was created.</p>
+      <p id="startEffDesc" style="font-size:13px;color:#718096;margin-bottom:12px;"></p>
       <div style="display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start;">
         <div class="chart-wrap" style="height:300px;"><canvas id="startEfficiencyChart"></canvas></div>
         <div id="startEfficiencySidebar" style="font-size:13px;"></div>
@@ -4877,6 +4877,17 @@ function updateChart() {
   const ticItems = tic.items || [];
 
   // ── Chart 1: Work Start Efficiency (CT / LT) ───────────────────────
+  (function () {
+    const cs = cfg.lead_time?.clock_start;
+    const startPhrase = !cs || cs.type === 'created'
+      ? 'it was created'
+      : cs.type === 'column'
+        ? `it entered <strong>${escapeHtml(cs.value)}</strong>`
+        : `<strong>${escapeHtml(cs.value || cs.type)}</strong>`;
+    const el = document.getElementById('startEffDesc');
+    if (el) el.innerHTML = `How much of an item\u2019s lead time was actual cycle time? Higher % = work started sooner after ${startPhrase}.`;
+  })();
+
   const ltMap  = new Map(ltItems.map(i => [i.id, i]));
   const ctMap  = new Map(ctItems.map(i => [i.id, i]));
   const ticMap = new Map(ticItems.map(i => [i.id, i]));
