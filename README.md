@@ -159,13 +159,8 @@ Example output:
 
 `config.json` persists between runs — if the board structure hasn't changed you can skip step 3 and reuse the existing file.
 
-```bash
-python src/ai_configure_board.py
-```
-
-Once `config.json` is saved, run metrics with:
 ```powershell
-python aiflowmetrics.py metrics output/data/config.json
+python aiflowmetrics.py configure https://dev.azure.com/org/project/_boards/...
 ```
 
 ### Metrics interpretation
