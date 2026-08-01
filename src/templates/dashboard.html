@@ -698,6 +698,15 @@
     .info-side-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
     .info-side-grid .card { margin-bottom: 0; }
     @media (max-width: 900px) { .info-side-grid { grid-template-columns: 1fr; } }
+    /* ── Flow efficiency interactive charts ── */
+    .fe-toggle-row{display:flex;align-items:center;gap:10px;font-size:12.5px;color:#718096;margin-bottom:6px;flex-wrap:wrap}
+    .fe-lbl{cursor:pointer;transition:color .15s}
+    .fe-lbl.active{color:#2d3748;font-weight:600}
+    .fe-switch{width:40px;height:22px;border-radius:11px;background:#CBD5E0;border:none;cursor:pointer;padding:0;position:relative;flex:none;transition:background .2s;outline:none;vertical-align:middle}
+    .fe-switch:focus-visible{box-shadow:0 0 0 3px rgba(56,178,172,.4)}
+    .fe-switch.on{background:#38b2ac}
+    .fe-knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .2s;pointer-events:none}
+    .fe-switch.on .fe-knob{left:20px}
   </style>
 </head>
 <body>
@@ -1065,16 +1074,65 @@
       <div id="startEffStats" style="margin-top:10px;font-size:12px;"></div>
     </div>
 
-    <!-- Row 2: Flow Efficiency histogram + sidebar -->
+    <!-- Flow Efficiency — 3-component interactive view -->
     <div class="card">
-      <div class="card-header"><h2>Flow Efficiency within Cycle Time</h2></div>
-      <p style="font-size:13px;color:#718096;margin-bottom:4px;">What proportion of cycle time was spent in <strong>active</strong> columns vs <strong>waiting</strong> columns?</p>
-      <div id="flowEffCols" style="font-size:12px;color:#718096;margin-bottom:12px;"></div>
-      <div style="display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start;">
-        <div class="chart-wrap" style="height:300px;"><canvas id="flowEfficiencyChart"></canvas></div>
-        <div id="flowEfficiencySidebar" style="font-size:13px;"></div>
+      <div class="card-header">
+        <h2>Flow Efficiency</h2>
+        <span id="feBandBadge" style="font-size:12px;color:#718096;background:#F7FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:3px 10px;white-space:nowrap;"></span>
       </div>
-      <div id="flowEffStats" style="margin-top:10px;font-size:12px;"></div>
+
+      <!-- Component 1: Efficiency mix -->
+      <div style="margin-bottom:28px;">
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <span style="font-size:14px;font-weight:600;color:#4a5568;">Efficiency mix</span>
+          <span id="feBandSubBadge" style="font-size:12px;color:#A0AEC0;"></span>
+        </div>
+        <div class="fe-toggle-row">
+          <span class="fe-lbl active" id="fe_lbl_equal">Equal-width</span>
+          <button class="fe-switch" id="fe_sw_width" role="switch" aria-checked="false" aria-label="Toggle time-weighted bar widths"><span class="fe-knob"></span></button>
+          <span class="fe-lbl" id="fe_lbl_mekko">By days (time-weighted)</span>
+        </div>
+        <div class="fe-toggle-row" id="fe_row_active">
+          <span class="fe-lbl active" id="fe_lbl_a_combined">Active: combined</span>
+          <button class="fe-switch" id="fe_sw_active" role="switch" aria-checked="false" aria-label="Split active columns"><span class="fe-knob"></span></button>
+          <span class="fe-lbl" id="fe_lbl_a_split">Active: split</span>
+        </div>
+        <div class="fe-toggle-row" id="fe_row_waiting">
+          <span class="fe-lbl active" id="fe_lbl_w_combined">Waiting: combined</span>
+          <button class="fe-switch" id="fe_sw_waiting" role="switch" aria-checked="false" aria-label="Split waiting columns"><span class="fe-knob"></span></button>
+          <span class="fe-lbl" id="fe_lbl_w_split">Waiting: split</span>
+        </div>
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-top:10px;">
+          <div style="flex:1;min-width:0;"><canvas id="feMixCanvas" style="display:block;"></canvas></div>
+          <div id="feMixSidebar" style="width:148px;flex:none;"></div>
+        </div>
+        <div id="feMixLegend" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#718096;align-items:center;"></div>
+      </div>
+
+      <!-- Components 2 & 3: side by side -->
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start;">
+
+        <!-- Component 2: Efficiency vs cycle time scatter -->
+        <div style="min-width:0;">
+          <div style="font-size:14px;font-weight:600;color:#4a5568;margin-bottom:4px;">Efficiency vs. cycle time</div>
+          <p style="font-size:13px;color:#718096;margin:0 0 10px;">Drag either dashed line to define a band — items inside are highlighted in the chart above.</p>
+          <div class="chart-wrap" style="height:300px;"><canvas id="feScatterCanvas"></canvas></div>
+          <div id="feScatterLegend" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#718096;align-items:center;"></div>
+        </div>
+
+        <!-- Component 3: Cycle vs lead efficiency -->
+        <div id="feAlignSection" style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+            <span style="font-size:14px;font-weight:600;color:#4a5568;">Cycle vs. lead time efficiency</span>
+            <span id="feAlignR"   style="font-size:12px;color:#718096;background:#F7FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:2px 10px;">r = —</span>
+            <span id="feAlignGap" style="font-size:12px;color:#718096;background:#F7FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:2px 10px;">avg gap —</span>
+          </div>
+          <p style="font-size:13px;color:#718096;margin:0 0 10px;">Each dot is one item. Dots on the diagonal have identical cycle and lead efficiency. The further below, the more pre-cycle wait time is dragging lead efficiency down.</p>
+          <div class="chart-wrap" style="height:300px;"><canvas id="feAlignCanvas"></canvas></div>
+          <div id="feAlignLegend" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#718096;align-items:center;"></div>
+        </div>
+
+      </div>
     </div>
 
   </div><!-- /tab-efficiency -->
@@ -4927,122 +4985,574 @@ function updateChart() {
     `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${mean1}%</span>` +
     `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85_1}%</span>`;
 
-  // ── Chart 2: Flow Efficiency within Cycle Time ────────────────────
-  const flowCfg     = cfg.flow_efficiency || {};
-  const activeCols  = new Set(flowCfg.active_columns  || []);
-  const waitingCols = new Set(flowCfg.waiting_columns || []);
+  // ── Flow Efficiency — 3-component interactive view ────────────────
 
-  // Auto-include any split "(Done)" sub-columns as waiting if not explicitly classified
+  // 1) Data preparation
+  const feFlowCfg = cfg.flow_efficiency || {};
+  const feACols   = [...(feFlowCfg.active_columns  || [])]; // ordered active column names
+  const feWCols   = [...(feFlowCfg.waiting_columns || [])]; // ordered waiting column names
+  const feASet    = new Set(feACols);
+  const feWSet    = new Set(feWCols);
+
+  // Include split "(Done)" sub-columns as waiting
   ticItems.forEach(ti => {
     Object.keys(ti.column_hours || {}).forEach(col => {
-      if (col.endsWith(' (Done)') && !activeCols.has(col) && !waitingCols.has(col)) {
-        waitingCols.add(col);
+      if (col.endsWith(' (Done)') && !feASet.has(col) && !feWSet.has(col)) {
+        feWSet.add(col); feWCols.push(col);
       }
     });
   });
 
-  // Show column categorisation
-  const colsEl = document.getElementById('flowEffCols');
-  if (activeCols.size || waitingCols.size) {
-    colsEl.innerHTML =
-      `<span style="color:#38a169;font-weight:600;">Active:</span> ${[...activeCols].map(c=>`<span style="background:#c6f6d5;border-radius:4px;padding:1px 6px;">${escapeHtml(c)}</span>`).join(' ')} &nbsp;` +
-      `<span style="color:#c05621;font-weight:600;">Waiting:</span> ${[...waitingCols].map(c=>`<span style="background:#feebc8;border-radius:4px;padding:1px 6px;">${escapeHtml(c)}</span>`).join(' ')}`;
-  }
-
-  const flowEffItems = [];
+  // Build per-item data sorted by cycleEfficiencyPct ascending
+  const feData = [];
   ticItems.forEach(ti => {
     const ch = ti.column_hours || {};
-    const activeH  = [...activeCols].reduce((s, c) => s + (ch[c] || 0), 0);
-    const waitingH = [...waitingCols].reduce((s, c) => s + (ch[c] || 0), 0);
-    const totalH   = activeH + waitingH;
-    if (totalH <= 0) return;
-    const eff = Math.round(activeH / totalH * 1000) / 10;
-    flowEffItems.push({ id: ti.id, title: ti.title, type: ti.type, eff, activeH: Math.round(activeH*10)/10, totalH: Math.round(totalH*10)/10, completedAt: ctMap.get(ti.id)?.completed_at || null });
+    const aByCol = {}, wByCol = {};
+    feACols.forEach(c => { aByCol[c] = (ch[c] || 0) / 24; }); // hours → days
+    feWCols.forEach(c => { wByCol[c] = (ch[c] || 0) / 24; });
+    const activeDays  = feACols.reduce((s, c) => s + aByCol[c], 0);
+    const waitingDays = feWCols.reduce((s, c) => s + wByCol[c], 0);
+    const totalDays   = activeDays + waitingDays;
+    if (totalDays <= 0) return;
+    const cycleEff = activeDays / totalDays * 100;
+    const ltItem   = ltMap.get(ti.id);
+    const leadDays = ltItem?.lead_time_days ?? null;
+    feData.push({
+      id: ti.id, title: ti.title, type: ti.type,
+      cycleEfficiencyPct: cycleEff,
+      cycleActiveDays:    activeDays,
+      cycleTimeDays:      totalDays,
+      aByCol, wByCol,
+      leadTimeDays:       leadDays,
+      leadEfficiencyPct:  (leadDays && leadDays > 0) ? (activeDays / leadDays * 100) : null,
+    });
   });
+  feData.sort((a, b) => a.cycleEfficiencyPct - b.cycleEfficiencyPct);
 
-  const sortedF = [...flowEffItems].sort((a, b) => a.eff - b.eff);
-  const valsF   = sortedF.map(i => i.eff);
-  const meanF   = valsF.length ? Math.round(valsF.reduce((s,v)=>s+v,0)/valsF.length*10)/10 : 0;
-  const p50F    = valsF.length ? valsF[Math.floor(valsF.length*0.5)] : 0;
-  const p85F    = valsF.length ? valsF[Math.floor(valsF.length*0.85)] : 0;
+  // Dataset stats (full, not band-filtered)
+  const feN        = feData.length;
+  const feItemMean = feN ? feData.reduce((s, i) => s + i.cycleEfficiencyPct, 0) / feN : 0;
+  const feTotAct   = feData.reduce((s, i) => s + i.cycleActiveDays, 0);
+  const feTotAll   = feData.reduce((s, i) => s + i.cycleTimeDays,   0);
+  const feTimeMean = feTotAll > 0 ? feTotAct / feTotAll * 100 : 0;
 
-  const bucketsF = [];
-  for (let lo = 0; lo < 100; lo += bucketSize) {
-    const hi = Math.min(lo + bucketSize, 100);
-    const label = `${lo}\u2013${hi}%`;
-    const items = flowEffItems.filter(i => i.eff >= lo && (hi === 100 ? i.eff <= hi : i.eff < hi));
-    bucketsF.push({ label, lo, hi, items });
+  // Colour generation helpers
+  function feH2rgb(h) { const n = parseInt(h.slice(1), 16); return [(n>>16)&255, (n>>8)&255, n&255]; }
+  function feBlend(h1, h2, t) {
+    const [r1,g1,b1] = feH2rgb(h1), [r2,g2,b2] = feH2rgb(h2);
+    return `rgb(${Math.round(r1+(r2-r1)*t)},${Math.round(g1+(g2-g1)*t)},${Math.round(b1+(b2-b1)*t)})`;
+  }
+  function feGradient(n, l, d) {
+    if (n === 0) return [];
+    if (n === 1) return [feBlend(l, d, 0.55)];
+    return Array.from({length:n}, (_, i) => feBlend(l, d, i/(n-1)));
+  }
+  // Active: light-teal → dark-teal; Waiting: light-amber → dark-orange
+  const feAColors = feGradient(feACols.length, '#b2f5ea', '#234e52');
+  const feWColors = feGradient(feWCols.length, '#fef3c7', '#92400e');
+  const FE_A1 = feAColors.length ? feAColors[feAColors.length-1] : '#234e52';
+  const FE_W1 = feWColors.length ? feWColors[feWColors.length-1] : '#92400e';
+
+  // Update split-labels with actual column names, hide toggles for single columns
+  (function () {
+    const el1 = document.getElementById('fe_lbl_a_split');
+    const el2 = document.getElementById('fe_lbl_w_split');
+    if (el1) el1.textContent = feACols.length > 1 ? `Split — ${feACols.join(' / ')}` : (feACols[0] || 'Active');
+    if (el2) el2.textContent = feWCols.length > 1 ? `Split — ${feWCols.join(' / ')}` : (feWCols[0] || 'Waiting');
+    if (feACols.length <= 1) document.getElementById('fe_row_active')?.remove();
+    if (feWCols.length <= 1) document.getElementById('fe_row_waiting')?.remove();
+  })();
+
+  // ── Component 1: Efficiency Mix canvas ──────────────────────────────
+  const MIX_H  = 300, MIX_ML = 32, MIX_MR = 4, MIX_MT = 8, MIX_MB = 22;
+  const mixCanvas = document.getElementById('feMixCanvas');
+  const mixCtx    = mixCanvas ? mixCanvas.getContext('2d') : null;
+
+  let feBandLow = 10, feBandHigh = 90;
+  let feWidthMode = 'equal', feAMode = 'combined', feWMode = 'combined';
+
+  // Animation state
+  let mixFrom = null, mixTo = null, mixRaf = null, mixT0 = null;
+  const MIX_DUR = 420;
+  function feEase(t) { return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+  function feLerp(a, b, t) { return a + (b-a)*t; }
+  function mixW() { return mixCanvas?.parentElement?.clientWidth || 700; }
+
+  function mixResize() {
+    if (!mixCanvas) return;
+    const pr = window.devicePixelRatio || 1, w = mixW();
+    mixCanvas.width = w*pr; mixCanvas.height = MIX_H*pr;
+    mixCanvas.style.width = w+'px'; mixCanvas.style.height = MIX_H+'px';
   }
 
-  const sidebarEl2 = document.getElementById('flowEfficiencySidebar');
-  const worstF = sortedF.slice(0, 3);
-  const bestF  = sortedF.slice(-3).reverse();
-  sidebarEl2.innerHTML =
-    `<div style="color:#718096;font-size:12px;margin-bottom:10px;">Using ${flowEffItems.length} items</div>` +
-    `<div style="color:#e53e3e;font-weight:700;margin-bottom:6px;">Worst (lowest %)</div>` +
-    worstF.map(i => sidebarItem(i, '#e53e3e')).join('') +
-    `<div style="color:#38a169;font-weight:700;margin:12px 0 6px;">Best (highest %)</div>` +
-    bestF.map(i => sidebarItem(i, '#38a169')).join('');
+  // Compute x-layout (one entry per filtered item)
+  function mixXLay(items, mode) {
+    const pw = mixW() - MIX_ML - MIX_MR;
+    if (!items.length) return [];
+    if (mode === 'equal') {
+      const bw = pw / items.length;
+      return items.map((_, j) => ({ x: MIX_ML + j*bw, w: bw }));
+    }
+    const tot = items.reduce((s, i) => s + i.cycleTimeDays, 0) || 1;
+    let cum = MIX_ML;
+    return items.map(i => { const w = Math.max(i.cycleTimeDays/tot*pw, .4); const x = cum; cum += w; return {x, w}; });
+  }
 
-  new Chart(document.getElementById('flowEfficiencyChart'), {
-    type: 'bar',
-    data: {
-      labels: bucketsF.map(b => b.label),
-      datasets: [{ label: 'Items', data: bucketsF.map(b => b.items.length), backgroundColor: '#9f7aea', borderRadius: 3 }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { enabled: false, external: c => {
-          if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
-          const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
-          const bkt = bucketsF[idx]; if (!bkt) return;
-          let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(bkt.label)} &mdash; ${bkt.items.length} items</div>`;
-          bkt.items.forEach(item => {
-            const url = adoBase ? `${adoBase}/${item.id}` : '';
-            html += ttItemRow(typeStyles[item.type]||{}, url, item.id, item.title||'', Math.round(item.eff));
-          });
-          sharedTooltip.show(html + TT_HINT, c);
-        }},
-      },
-      scales: {
-        x: { grid: { display: false }, title: { display: true, text: 'Efficiency % bucket', color: '#718096', font: { size: 11 } } },
-        y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#e2e8f0' }, title: { display: true, text: 'Items', color: '#718096', font: { size: 11 } } },
-      },
-    },
-    plugins: [{
-      id: 'flowEffStatLines',
-      afterDraw(chart) {
-        const { ctx: c2, scales, chartArea } = chart;
-        const h = chartArea.bottom - chartArea.top;
-        const yPositions = [chartArea.top + 12, chartArea.top + h * 0.45, chartArea.bottom - 8];
-        [[p50F, '#38b2ac', 'P50 '+p50F+'%'], [meanF, '#718096', 'Mean '+meanF+'%'], [p85F, '#9f7aea', 'P85 '+p85F+'%']].forEach(([val, colour, lbl], i) => {
-          const bIdx = bucketsF.findIndex(b => val >= b.lo && val <= b.hi);
-          if (bIdx < 0) return;
-          const x = scales.x.getPixelForValue(bIdx);
-          c2.save();
-          c2.setLineDash([4, 3]);
-          c2.strokeStyle = colour;
-          c2.lineWidth = 1.5;
-          c2.beginPath(); c2.moveTo(x, chartArea.top); c2.lineTo(x, chartArea.bottom); c2.stroke();
-          c2.setLineDash([]);
-          c2.font = 'bold 11px system-ui, sans-serif';
-          c2.textAlign = 'center';
-          c2.strokeStyle = 'white'; c2.lineWidth = 3; c2.lineJoin = 'round';
-          c2.strokeText('\u25CF '+lbl, x, yPositions[i]);
-          c2.fillStyle = colour;
-          c2.fillText('\u25CF '+lbl, x, yPositions[i]);
-          c2.restore();
+  // Compute segments for one item (always feACols.length + feWCols.length slots)
+  function mixSegs(item, aMode, wMode) {
+    const ph   = MIX_H - MIX_MT - MIX_MB;
+    const base = MIX_H - MIX_MB;
+    const aH   = item.cycleActiveDays / item.cycleTimeDays * ph;
+    const wH   = ph - aH;
+    const aTopY = base - aH;
+    const segs = [];
+    // Active slots
+    if (feACols.length > 0) {
+      if (aMode === 'combined') {
+        segs.push({y: aTopY, h: aH, color: FE_A1});
+        for (let k=1; k<feACols.length; k++) segs.push({y: aTopY, h: 0, color: feAColors[k]});
+      } else {
+        let cur = base;
+        feACols.forEach((col, k) => {
+          const h = (item.aByCol[col]||0) / item.cycleTimeDays * ph;
+          cur -= h; segs.push({y: cur, h, color: feAColors[k]});
         });
-      },
-    }],
-  });
+      }
+    }
+    // Waiting slots
+    if (feWCols.length > 0) {
+      if (wMode === 'combined') {
+        segs.push({y: aTopY-wH, h: wH, color: FE_W1});
+        for (let k=1; k<feWCols.length; k++) segs.push({y: aTopY-wH, h: 0, color: feWColors[k]});
+      } else {
+        let cur = aTopY;
+        feWCols.forEach((col, k) => {
+          const h = (item.wByCol[col]||0) / item.cycleTimeDays * ph;
+          cur -= h; segs.push({y: cur, h, color: feWColors[k]});
+        });
+      }
+    }
+    return segs;
+  }
 
-  document.getElementById('flowEffStats').innerHTML =
-    `<span style="margin-right:16px;"><span style="color:#38b2ac;font-weight:700;">&#9632; P50</span> ${p50F}%</span>` +
-    `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${meanF}%</span>` +
-    `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85F}%</span>`;
+  // Full layout for given config
+  function mixLayout(aMode, wMode, wdMode) {
+    const filtered = feData.filter(i => i.cycleEfficiencyPct >= feBandLow && i.cycleEfficiencyPct <= feBandHigh);
+    const xl = mixXLay(filtered, wdMode);
+    return filtered.map((item, j) => ({ id: item.id, ...xl[j], segs: mixSegs(item, aMode, wMode) }));
+  }
+
+  // Draw one animation frame at progress t (0=from, 1=to)
+  function mixDraw(t) {
+    if (!mixCanvas || !mixCtx) return;
+    const pr   = window.devicePixelRatio || 1;
+    const cssW = mixW(), cssH = MIX_H;
+    mixCtx.setTransform(pr, 0, 0, pr, 0, 0);
+    mixCtx.clearRect(0, 0, cssW, cssH);
+
+    // Grid + axis labels
+    const ph   = cssH - MIX_MT - MIX_MB;
+    const base = cssH - MIX_MB;
+    [0, 25, 50, 75, 100].forEach(pct => {
+      const y = base - pct/100*ph;
+      mixCtx.strokeStyle = (pct%50 === 0) ? '#CBD5E0' : '#F0F2F5';
+      mixCtx.lineWidth = 1;
+      mixCtx.setLineDash((pct===0||pct===100) ? [] : [3,3]);
+      mixCtx.beginPath(); mixCtx.moveTo(MIX_ML, y); mixCtx.lineTo(cssW-MIX_MR, y); mixCtx.stroke();
+      mixCtx.setLineDash([]);
+      if (pct%25 === 0) {
+        mixCtx.fillStyle = '#A0AEC0'; mixCtx.font = '10px system-ui,sans-serif'; mixCtx.textAlign = 'right';
+        mixCtx.fillText(pct+'%', MIX_ML-4, y+3.5);
+      }
+    });
+
+    if (!mixFrom || !mixTo) return;
+
+    // Draw bars (interpolated)
+    const len = Math.max(mixFrom.length, mixTo.length);
+    for (let i=0; i<len; i++) {
+      const f = mixFrom[i] || mixTo[i], g = mixTo[i] || mixFrom[i];
+      const x = feLerp(f.x, g.x, t), w = feLerp(f.w, g.w, t);
+      const nS = Math.max(f.segs.length, g.segs.length);
+      for (let s=0; s<nS; s++) {
+        const fs = f.segs[s] || {y: g.segs[s].y+g.segs[s].h, h:0, color: g.segs[s].color};
+        const gs = g.segs[s] || {y: f.segs[s].y+f.segs[s].h, h:0, color: f.segs[s].color};
+        const sy = feLerp(fs.y, gs.y, t), sh = feLerp(fs.h, gs.h, t);
+        if (sh > 0.3) {
+          mixCtx.fillStyle = gs.color;
+          const gap = w > 2 ? 0.3 : 0;
+          mixCtx.fillRect(x+gap, sy, Math.max(0.5, w-2*gap), sh);
+        }
+      }
+    }
+  }
+
+  // Animate to new modes
+  function mixAnimate(newAMode, newWMode, newWdMode) {
+    if (mixRaf) cancelAnimationFrame(mixRaf);
+    const from = mixTo || mixLayout(newAMode, newWMode, newWdMode);
+    feAMode = newAMode; feWMode = newWMode; feWidthMode = newWdMode;
+    mixFrom = from; mixTo = mixLayout(feAMode, feWMode, feWidthMode);
+    mixT0 = null;
+    function step(now) {
+      if (!mixT0) mixT0 = now;
+      const t = feEase(Math.min((now-mixT0)/MIX_DUR, 1));
+      mixDraw(t);
+      if (t < 1) mixRaf = requestAnimationFrame(step);
+    }
+    mixRaf = requestAnimationFrame(step);
+  }
+
+  // Immediate update (band filter changed or resize)
+  function mixSnap() {
+    if (mixRaf) cancelAnimationFrame(mixRaf);
+    mixFrom = mixTo = mixLayout(feAMode, feWMode, feWidthMode);
+    mixDraw(1);
+    feBandBadgeUpdate();
+  }
+
+  // Band badge
+  function feBandBadgeUpdate() {
+    const filtered = feData.filter(i => i.cycleEfficiencyPct >= feBandLow && i.cycleEfficiencyPct <= feBandHigh);
+    const n = filtered.length;
+    const bb = document.getElementById('feBandBadge');
+    if (bb) bb.textContent = `${n} item${n!==1?'s':''} · ${Math.round(feBandLow)}%–${Math.round(feBandHigh)}%`;
+    const sb = document.getElementById('feBandSubBadge');
+    if (sb) sb.textContent = n===feN ? `all ${feN} items` : `${n} of ${feN} items in band`;
+    const sc = document.getElementById('feScatterCount');
+    if (sc) sc.textContent = `${n} inside · ${feN-n} outside`;
+  }
+
+  // Sidebar (dataset stats, highlights the average matching current width mode)
+  function mixSidebarUpdate() {
+    const el = document.getElementById('feMixSidebar');
+    if (!el) return;
+    const iw = feItemMean.toFixed(1), tw = feTimeMean.toFixed(1);
+    const iAct = feWidthMode === 'equal', tAct = feWidthMode === 'mekko';
+    el.innerHTML =
+      `<div style="padding:10px 12px;border-radius:8px;background:${iAct?'#EBF8F7':'#F7FAFC'};border:1px solid ${iAct?'#81E6D9':'#E2E8F0'};margin-bottom:8px;">
+        <div style="font-size:22px;font-weight:700;color:${iAct?'#2C7A7B':'#A0AEC0'}">${iw}%</div>
+        <div style="font-size:11px;color:#718096;margin-top:2px;line-height:1.4;">Item-weighted<br>average</div>
+      </div>`+
+      `<div style="padding:10px 12px;border-radius:8px;background:${tAct?'#FFFFF0':'#F7FAFC'};border:1px solid ${tAct?'#F6AD55':'#E2E8F0'};">
+        <div style="font-size:22px;font-weight:700;color:${tAct?'#92400E':'#A0AEC0'}">${tw}%</div>
+        <div style="font-size:11px;color:#718096;margin-top:2px;line-height:1.4;">Time-weighted<br>average</div>
+      </div>`;
+  }
+
+  // Legend (reflects current split state)
+  function mixLegendUpdate() {
+    const el = document.getElementById('feMixLegend');
+    if (!el) return;
+    const sq = c => `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c};margin-right:4px;vertical-align:middle;"></span>`;
+    let h = '';
+    if (feAMode === 'combined') { h += `<span>${sq(FE_A1)}Active</span>`; }
+    else { feACols.forEach((c, i) => { h += `<span>${sq(feAColors[i])}${escapeHtml(c)}</span>`; }); }
+    if (feWMode === 'combined') { h += `<span>${sq(FE_W1)}Waiting</span>`; }
+    else { feWCols.forEach((c, i) => { h += `<span>${sq(feWColors[i])}${escapeHtml(c)}</span>`; }); }
+    el.innerHTML = h;
+  }
+
+  // Hover tooltip + click-through on mix canvas
+  function mixPointerHandler(e) {
+    if (!mixTo) return;
+    const rect = mixCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const bar  = mixTo.find(b => cssX >= b.x && cssX < b.x + b.w);
+    if (!bar) { sharedTooltip.hide(); mixCanvas.style.cursor = ''; return; }
+    const item = feData.find(i => i.id === bar.id);
+    if (!item) { sharedTooltip.hide(); return; }
+    const url  = adoBase ? `${adoBase}/${item.id}` : '';
+    const ts   = typeStyles[item.type] || {};
+    const lbl  = (item.title||'').length > 55 ? item.title.slice(0,55)+'…' : (item.title||'#'+item.id);
+    const html =
+      `<div class="tt-total">${ttIcon(ts)}<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${item.id}</a> ${escapeHtml(lbl)}</div>`+
+      `<div style="margin-top:5px;font-size:12px;color:#4A5568;">Efficiency: <b>${item.cycleEfficiencyPct.toFixed(1)}%</b></div>`+
+      `<div style="font-size:12px;color:#718096;">Active: ${item.cycleActiveDays.toFixed(1)}d &middot; Waiting: ${(item.cycleTimeDays-item.cycleActiveDays).toFixed(1)}d &middot; Total: ${item.cycleTimeDays.toFixed(1)}d</div>`+
+      TT_HINT;
+    sharedTooltip.show(html, {chart:{canvas:mixCanvas}, tooltip:{caretX:cssX, caretY:rect.height/2}});
+    mixCanvas.style.cursor = url ? 'pointer' : 'default';
+  }
+  if (mixCanvas) {
+    mixCanvas.addEventListener('mousemove',  mixPointerHandler);
+    mixCanvas.addEventListener('mouseleave', () => { sharedTooltip.hide(); mixCanvas.style.cursor = ''; });
+    mixCanvas.addEventListener('click', e => {
+      if (!mixTo || !adoBase) return;
+      const rect = mixCanvas.getBoundingClientRect();
+      const bar  = mixTo.find(b => (e.clientX-rect.left) >= b.x && (e.clientX-rect.left) < b.x+b.w);
+      if (bar) window.open(`${adoBase}/${bar.id}`, '_blank');
+    });
+  }
+
+  // Wire a toggle switch (left label = off/false, right label = on/true)
+  function feWireSwitch(swId, lblOffId, lblOnId, onToggle) {
+    const sw = document.getElementById(swId); if (!sw) return;
+    const lOff = document.getElementById(lblOffId), lOn = document.getElementById(lblOnId);
+    let on = false;
+    function applyUI() {
+      sw.classList.toggle('on', on); sw.setAttribute('aria-checked', String(on));
+      lOff?.classList.toggle('active', !on); lOn?.classList.toggle('active', on);
+    }
+    function toggle() { on = !on; applyUI(); onToggle(on); }
+    sw.addEventListener('click', toggle);
+    lOff?.addEventListener('click', () => { if (on)  toggle(); });
+    lOn?.addEventListener('click',  () => { if (!on) toggle(); });
+    applyUI();
+  }
+
+  // Initialise Component 1
+  if (mixCanvas) {
+    mixResize();
+    mixFrom = mixTo = mixLayout(feAMode, feWMode, feWidthMode);
+    mixDraw(1);
+    mixSidebarUpdate();
+    mixLegendUpdate();
+    feBandBadgeUpdate();
+
+    feWireSwitch('fe_sw_width', 'fe_lbl_equal', 'fe_lbl_mekko', on => {
+      mixAnimate(feAMode, feWMode, on ? 'mekko' : 'equal');
+      mixSidebarUpdate();
+    });
+    feWireSwitch('fe_sw_active', 'fe_lbl_a_combined', 'fe_lbl_a_split', on => {
+      mixAnimate(on ? 'split' : 'combined', feWMode, feWidthMode);
+      mixLegendUpdate();
+    });
+    feWireSwitch('fe_sw_waiting', 'fe_lbl_w_combined', 'fe_lbl_w_split', on => {
+      mixAnimate(feAMode, on ? 'split' : 'combined', feWidthMode);
+      mixLegendUpdate();
+    });
+
+    new ResizeObserver(() => { mixResize(); mixSnap(); }).observe(mixCanvas.parentElement);
+  }
+
+  // ── Component 2: Efficiency vs Cycle-time scatter ───────────────────
+  const FE_IN  = '#6366f1'; // highlight (inside band)
+  const FE_OUT = '#C4CDD5'; // grey (outside band)
+  const feScatterCanvas = document.getElementById('feScatterCanvas');
+  let feScatterChart = null;
+
+  const feScatterPts = feData.map(item => ({
+    x: item.cycleEfficiencyPct, y: item.cycleTimeDays,
+    id: item.id, title: item.title, type: item.type,
+  }));
+
+  function feScatterColors() {
+    return feScatterPts.map(p => (p.x >= feBandLow && p.x <= feBandHigh) ? FE_IN : FE_OUT);
+  }
+
+  // Custom Chart.js plugin: draws draggable threshold lines
+  const feBandPlugin = {
+    id: 'feBand',
+    afterDatasetsDraw(chart) {
+      const {ctx, scales:{x}, chartArea:ca} = chart;
+      [feBandLow, feBandHigh].forEach(val => {
+        const px = x.getPixelForValue(val);
+        ctx.save();
+        ctx.strokeStyle = FE_IN; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(px, ca.top); ctx.lineTo(px, ca.bottom); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(px, ca.top+10, 8, 0, Math.PI*2);
+        ctx.fillStyle = 'white'; ctx.fill();
+        ctx.strokeStyle = FE_IN; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = FE_IN; ctx.font = 'bold 9px system-ui,sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(Math.round(val)+'%', px, ca.top+14);
+        ctx.restore();
+      });
+    },
+  };
+
+  if (feScatterCanvas) {
+    feScatterChart = new Chart(feScatterCanvas, {
+      type: 'scatter',
+      data: { datasets: [{
+        data: feScatterPts,
+        pointBackgroundColor: feScatterColors(),
+        pointBorderColor: 'transparent',
+        pointRadius: 4, pointHoverRadius: 5.5,
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false, external(c) {
+            if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
+            const dp = c.tooltip.dataPoints?.[0]; if (!dp) return;
+            const pt = feScatterPts[dp.dataIndex]; if (!pt) return;
+            const url = adoBase ? `${adoBase}/${pt.id}` : '';
+            const ts  = typeStyles[pt.type] || {};
+            const short = (pt.title||'').length > 55 ? pt.title.slice(0,55)+'…' : (pt.title||'#'+pt.id);
+            sharedTooltip.show(
+              `<div class="tt-total">${ttIcon(ts)}<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${pt.id}</a> ${escapeHtml(short)}</div>`+
+              `<div style="margin-top:5px;font-size:12px;color:#4A5568;">Efficiency: <b>${pt.x.toFixed(1)}%</b> &middot; Cycle time: <b>${pt.y.toFixed(1)}d</b></div>`+
+              TT_HINT, c);
+          }},
+        },
+        scales: {
+          x: { min:0, max:100, grid:{color:'#F0F2F5'}, ticks:{color:'#A0AEC0', callback:v=>v+'%'},
+               title:{display:true, text:'Flow efficiency %', color:'#718096', font:{size:11}} },
+          y: { beginAtZero:true, grid:{color:'#F0F2F5'}, ticks:{color:'#A0AEC0'},
+               title:{display:true, text:'Cycle time (days)', color:'#718096', font:{size:11}} },
+        },
+        onClick(evt, els) {
+          if (!els.length || this._feDragging) return;
+          const pt = feScatterPts[els[0].index];
+          if (pt && adoBase) window.open(`${adoBase}/${pt.id}`, '_blank');
+        },
+      },
+      plugins: [feBandPlugin],
+    });
+
+    // Drag logic for threshold handles
+    let _feDrag = null;
+    function _fePtrToVal(e) {
+      const rect = feScatterCanvas.getBoundingClientRect();
+      return feScatterChart.scales.x.getValueForPixel(e.clientX - rect.left);
+    }
+    function _feSnapV() {
+      const s = feScatterChart.scales.x;
+      return 14 * (s.max - s.min) / Math.max(s.right - s.left, 1);
+    }
+    feScatterCanvas.addEventListener('pointerdown', e => {
+      const v = _fePtrToVal(e), snap = _feSnapV();
+      if (Math.abs(v - feBandLow)  < snap) { _feDrag = 'low';  e.preventDefault(); feScatterCanvas.setPointerCapture(e.pointerId); }
+      else if (Math.abs(v - feBandHigh) < snap) { _feDrag = 'high'; e.preventDefault(); feScatterCanvas.setPointerCapture(e.pointerId); }
+    });
+    feScatterCanvas.addEventListener('pointermove', e => {
+      if (!_feDrag) {
+        const v = _fePtrToVal(e), snap = _feSnapV();
+        feScatterCanvas.style.cursor = (Math.abs(v-feBandLow)<snap || Math.abs(v-feBandHigh)<snap) ? 'ew-resize' : '';
+        return;
+      }
+      let v = Math.max(0, Math.min(100, _fePtrToVal(e)));
+      if (_feDrag === 'low')  feBandLow  = Math.min(v, feBandHigh - 1);
+      else                    feBandHigh = Math.max(v, feBandLow  + 1);
+      feScatterChart.data.datasets[0].pointBackgroundColor = feScatterColors();
+      feScatterChart.update('none');
+      mixSnap();
+      feScatterCanvas.style.cursor = 'ew-resize';
+    });
+    feScatterCanvas.addEventListener('pointerup', e => {
+      _feDrag = null;
+      feScatterCanvas.releasePointerCapture(e.pointerId);
+      feScatterCanvas.style.cursor = '';
+    });
+
+    // Scatter legend
+    const scLeg = document.getElementById('feScatterLegend');
+    if (scLeg) scLeg.innerHTML =
+      `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${FE_IN};margin-right:4px;vertical-align:middle;"></span>Inside band</span>`+
+      `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${FE_OUT};margin-right:4px;vertical-align:middle;"></span>Outside band</span>`+
+      `<span id="feScatterCount" style="font-size:11px;font-weight:500;background:#F7FAFC;border:1px solid #E2E8F0;border-radius:20px;padding:3px 10px;"></span>`;
+    feBandBadgeUpdate(); // populate the count span just created
+  }
+
+  // ── Component 3: Cycle efficiency vs Lead efficiency ────────────────
+  const feAlignData = feData.filter(i => i.leadEfficiencyPct !== null && i.leadEfficiencyPct >= 0 && i.leadEfficiencyPct <= 100);
+  const feAlignEl   = document.getElementById('feAlignSection');
+  if (feAlignEl && feAlignData.length < 4) {
+    feAlignEl.innerHTML = '<p style="font-size:13px;color:#718096;font-style:italic;">Not enough items with both cycle and lead time data to display this chart.</p>';
+  } else if (feAlignEl && feAlignData.length >= 4) {
+    const feGaps  = feAlignData.map(i => i.cycleEfficiencyPct - i.leadEfficiencyPct);
+    const maxGap  = Math.max(...feGaps, 1);
+    const FEA_A   = [44,122,123], FEA_B = [225,85,84]; // teal → red
+    function feAlignColor(gap) {
+      const t = Math.min(Math.max(gap,0)/maxGap, 1);
+      return `rgba(${Math.round(FEA_A[0]+(FEA_B[0]-FEA_A[0])*t)},${Math.round(FEA_A[1]+(FEA_B[1]-FEA_A[1])*t)},${Math.round(FEA_A[2]+(FEA_B[2]-FEA_A[2])*t)},0.78)`;
+    }
+    // Pearson r
+    const _xs = feAlignData.map(i => i.cycleEfficiencyPct), _ys = feAlignData.map(i => i.leadEfficiencyPct);
+    const _xm = _xs.reduce((a,b)=>a+b,0)/_xs.length, _ym = _ys.reduce((a,b)=>a+b,0)/_ys.length;
+    let _num=0, _dx2=0, _dy2=0;
+    for (let i=0; i<_xs.length; i++) { const dx=_xs[i]-_xm, dy=_ys[i]-_ym; _num+=dx*dy; _dx2+=dx*dx; _dy2+=dy*dy; }
+    const rCorr  = _dx2*_dy2>0 ? _num/Math.sqrt(_dx2*_dy2) : 0;
+    const avgGap = feGaps.reduce((a,b)=>a+b,0)/feGaps.length;
+    const el_r   = document.getElementById('feAlignR');
+    const el_gap = document.getElementById('feAlignGap');
+    if (el_r)   el_r.textContent   = `r = ${rCorr.toFixed(2)}`;
+    if (el_gap) el_gap.textContent = `avg gap ${avgGap.toFixed(1)} pp`;
+
+    const alignCanvas = document.getElementById('feAlignCanvas');
+    if (alignCanvas) {
+      new Chart(alignCanvas, {
+        type: 'scatter',
+        data: { datasets: [
+          { // Reference diagonal: lead = cycle
+            type: 'line', data: [{x:0,y:0},{x:100,y:100}],
+            borderColor: '#A0AEC0', borderWidth: 1.5, borderDash: [5,4],
+            pointRadius: 0, fill: false, order: 1,
+          },
+          { // Scatter dots
+            data: feAlignData.map((item, i) => ({
+              x: item.cycleEfficiencyPct, y: item.leadEfficiencyPct,
+              gap: feGaps[i], id: item.id, title: item.title, type: item.type,
+            })),
+            pointBackgroundColor: feAlignData.map((_, i) => feAlignColor(feGaps[i])),
+            pointBorderColor: 'transparent',
+            pointRadius: 4.5, pointHoverRadius: 6, order: 0,
+          },
+        ]},
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false, external(c) {
+              if (c.tooltip.opacity===0) { sharedTooltip.hide(); return; }
+              const dp = c.tooltip.dataPoints?.[0];
+              if (!dp || dp.datasetIndex!==1) { sharedTooltip.hide(); return; }
+              const pt = dp.raw; if (!pt) return;
+              const url = adoBase ? `${adoBase}/${pt.id}` : '';
+              const ts  = typeStyles[pt.type] || {};
+              const short = (pt.title||'').length > 55 ? pt.title.slice(0,55)+'…' : (pt.title||'#'+pt.id);
+              sharedTooltip.show(
+                `<div class="tt-total">${ttIcon(ts)}<a class="tt-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">#${pt.id}</a> ${escapeHtml(short)}</div>`+
+                `<div style="margin-top:5px;font-size:12px;color:#4A5568;">Cycle eff: <b>${pt.x.toFixed(1)}%</b> &middot; Lead eff: <b>${pt.y.toFixed(1)}%</b></div>`+
+                `<div style="font-size:12px;color:#718096;">Gap: <b>${(pt.gap||0).toFixed(1)} pp</b></div>`+
+                TT_HINT, c);
+            }},
+          },
+          scales: {
+            x: { min:0, max:100, grid:{color:'#F0F2F5'}, ticks:{color:'#A0AEC0', callback:v=>v+'%'},
+                 title:{display:true, text:'Cycle time efficiency %', color:'#718096', font:{size:11}} },
+            y: { min:0, max:100, grid:{color:'#F0F2F5'}, ticks:{color:'#A0AEC0', callback:v=>v+'%'},
+                 title:{display:true, text:'Lead time efficiency %', color:'#718096', font:{size:11}} },
+          },
+          onClick(evt, els) {
+            if (!els.length) return;
+            const el = els[0]; if (el.datasetIndex!==1) return;
+            const pt = feAlignData[el.index];
+            if (pt && adoBase) window.open(`${adoBase}/${pt.id}`, '_blank');
+          },
+        },
+        plugins: [{
+          id: 'feAlignDiag',
+          afterDraw(chart) {
+            const {ctx, scales:{x, y}} = chart;
+            const px = x.getPixelForValue(74), py = y.getPixelForValue(74);
+            ctx.save();
+            ctx.translate(px, py); ctx.rotate(-Math.PI/4);
+            ctx.font = 'italic 11px system-ui,sans-serif'; ctx.fillStyle = '#A0AEC0'; ctx.textAlign = 'center';
+            ctx.fillText('lead = cycle', 0, -9);
+            ctx.restore();
+          },
+        }],
+      });
+
+      const aLeg = document.getElementById('feAlignLegend');
+      if (aLeg) aLeg.innerHTML =
+        `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${feAlignColor(0)};margin-right:4px;vertical-align:middle;"></span>Small gap (lead ≈ cycle efficiency)</span>`+
+        `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${feAlignColor(maxGap)};margin-right:4px;vertical-align:middle;"></span>Large gap (more pre-cycle wait)</span>`;
+    }
+  }
+
+  // ── Backward-compat variables used by KPI cards below ──────────────
+  const flowEffItems = feData.map(i => ({
+    id: i.id, title: i.title, type: i.type, eff: i.cycleEfficiencyPct,
+    activeH: i.cycleActiveDays*24, totalH: i.cycleTimeDays*24,
+    completedAt: ctMap.get(i.id)?.completed_at || null,
+  }));
+  const sortedF = [...flowEffItems].sort((a, b) => a.eff - b.eff);
+  const valsF   = sortedF.map(i => i.eff);
+  const meanF   = feItemMean;
 
   // ── Efficiency KPI cards on Overview ──────────────────────────────
   // Helper: split items by window midpoint and return mean of a field
@@ -5469,7 +5979,7 @@ if (_savedTab) {
     { key: 'cycle_time',            primary: 'ctScatterChart',       secondary: [],               primaryLabel: 'Cycle time' },
     { key: 'lead_time',             primary: 'ltScatterChart',       secondary: [],               primaryLabel: 'Lead time' },
     { key: 'time_in_columns',       primary: 'timeInColumnsChart',   secondary: [],                                                                              primaryLabel: 'Time in columns' },
-    { key: 'flow_efficiency',       primary: 'flowEfficiencyChart',  secondary: [],                                                                              primaryLabel: 'Flow efficiency' },
+    { key: 'flow_efficiency',       primary: 'feMixCanvas',          secondary: [],                                                                              primaryLabel: 'Flow efficiency' },
     { key: 'work_start_efficiency', primary: 'startEfficiencyChart', secondary: [],                                                                              primaryLabel: 'Work start efficiency' },
     { key: 'wip',                   primary: 'agingWipChart',        secondary: [],               primaryLabel: 'Aging Work In Progress' },
     { key: 'wip_over_time',         primary: 'dailyWipChart',        secondary: [],               primaryLabel: 'Daily WIP over time' },
