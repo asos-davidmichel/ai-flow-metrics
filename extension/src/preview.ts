@@ -472,6 +472,206 @@ document.getElementById('search').addEventListener('input', filter);`;
     return baseHtml(nonce, 'Work Items', body, filterJs, 'https://tfsprodweu3.visualstudio.com');
 }
 
+function loadSiblingTitlesAndBase(filePath: string): [Record<number, string>, string] {
+    const dir = path.dirname(filePath);
+    const titles: Record<number, string> = {};
+    try {
+        const items = JSON.parse(fs.readFileSync(path.join(dir, 'work_items.json'), 'utf-8'));
+        for (const i of items) { titles[i.id] = i.title; }
+    } catch {}
+    let adoBase = '';
+    try {
+        const ctx = JSON.parse(fs.readFileSync(path.join(dir, 'context.json'), 'utf-8'));
+        adoBase = `https://dev.azure.com/${ctx.org}/${encodeURIComponent(ctx.project)}/_workitems/edit`;
+    } catch {}
+    return [titles, adoBase];
+}
+
+function renderExcludedItems(data: any[], filePath: string, nonce: string): string {
+    const [titles, adoBase] = loadSiblingTitlesAndBase(filePath);
+
+    if (data.length === 0) {
+        const body = `<h1>Excluded Items</h1><p style="color:#69db7c;margin-top:12px">✓ No items excluded from metrics.</p>`;
+        return baseHtml(nonce, 'Excluded Items', body);
+    }
+
+    const rows = data.map((item: any) => {
+        const idCell = adoBase
+            ? `<a href="${esc(adoBase)}/${item.id}" target="_blank">${esc(item.id)}</a>`
+            : esc(item.id);
+        const reasons = (item.reasons ?? []).map((r: string) => `<span class="tag">${esc(r)}</span>`).join(' ');
+        return `<tr>
+            <td>${idCell}${titles[item.id] ? `<br><span style="font-size:0.8em;color:var(--vscode-descriptionForeground)">${esc(titles[item.id])}</span>` : ''}</td>
+            <td>${esc(item.source ?? '')}</td>
+            <td>${reasons}</td>
+        </tr>`;
+    }).join('\n');
+
+    const body = `
+<h1>Excluded Items (${data.length})</h1>
+<div class="meta"><span>These items are omitted from all metric calculations</span></div>
+<table>
+    <thead><tr><th>ID / Title</th><th>Source</th><th>Reasons</th></tr></thead>
+    <tbody>${rows}</tbody>
+</table>`;
+
+    return baseHtml(nonce, 'Excluded Items', body);
+}
+
+function renderRework(data: any[], filePath: string, nonce: string): string {
+    const [titles, adoBase] = loadSiblingTitlesAndBase(filePath);
+
+    const withRework = data.filter((i: any) => {
+        const s = i.rework_summary ?? {};
+        return s.backward_column_moves > 0 || s.reopened_after_done || (s.revisited_columns ?? []).length > 0;
+    });
+
+    const rows = data.map((item: any) => {
+        const s = item.rework_summary ?? {};
+        const hasRework = s.backward_column_moves > 0 || s.reopened_after_done;
+        const id = item.work_item_id;
+        const idCell = adoBase
+            ? `<a href="${esc(adoBase)}/${id}" target="_blank">${esc(id)}</a>`
+            : esc(id);
+        const revisited = (s.revisited_columns ?? []).map((c: string) => `<span class="tag">${esc(c)}</span>`).join(' ');
+        const timeInRevisited = s.time_in_revisited_columns_hours != null
+            ? `${fmtNum(s.time_in_revisited_columns_hours / 24)}d`
+            : '—';
+        return `<tr data-rework="${hasRework ? '1' : '0'}" data-search="${esc(String(id) + ' ' + (titles[id] ?? ''))}">
+            <td>${idCell}${titles[id] ? `<br><span style="font-size:0.8em;color:var(--vscode-descriptionForeground)">${esc(titles[id])}</span>` : ''}</td>
+            <td>${hasRework ? `<span class="badge badge-warn">${esc(s.backward_column_moves)}</span>` : '0'}</td>
+            <td>${s.reopened_after_done ? '<span class="badge badge-warn">Yes</span>' : 'No'}</td>
+            <td>${revisited || '—'}</td>
+            <td>${timeInRevisited}</td>
+        </tr>`;
+    }).join('\n');
+
+    const js = `
+var showAll = false;
+function applyFilters() {
+    const q = document.getElementById('search').value.toLowerCase();
+    document.querySelectorAll('tbody tr').forEach(row => {
+        const matchQ = !q || row.dataset.search.includes(q);
+        const matchR = showAll || row.dataset.rework === '1';
+        row.style.display = matchQ && matchR ? '' : 'none';
+    });
+}
+document.getElementById('search').addEventListener('input', applyFilters);
+document.getElementById('toggle').addEventListener('click', function() {
+    showAll = !showAll;
+    this.textContent = showAll ? 'Show rework only' : 'Show all items';
+    applyFilters();
+});
+applyFilters();`;
+
+    const body = `
+<h1>Work Item Rework</h1>
+<div class="meta">
+    <span>${withRework.length} of ${data.length} items have rework signals</span>
+</div>
+<div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+    <input id="search" type="text" class="search-row" style="flex:1;max-width:320px" placeholder="Filter by ID or title…">
+    <button id="toggle" style="padding:4px 12px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:1px solid var(--vscode-panel-border);border-radius:4px;cursor:pointer">Show all items</button>
+</div>
+<table>
+    <thead><tr><th>ID / Title</th><th>Backward Moves</th><th>Reopened</th><th>Revisited Columns</th><th>Time in Revisited</th></tr></thead>
+    <tbody>${rows}</tbody>
+</table>`;
+
+    return baseHtml(nonce, 'Work Item Rework', body, js);
+}
+
+function renderHistory(data: any[], filePath: string, nonce: string): string {
+    const [titles, adoBase] = loadSiblingTitlesAndBase(filePath);
+
+    const now = Date.now();
+    function dur(entered: string, left: string | null): string {
+        const days = Math.round(((left ? new Date(left).getTime() : now) - new Date(entered).getTime()) / 86400000);
+        if (days < 1) { return '<1d'; }
+        if (days < 30) { return `${days}d`; }
+        if (days < 56) { return `${Math.round(days / 7)}w`; }
+        return `${Math.round(days / 30)}mo`;
+    }
+
+    const rows = data.map((item: any) => {
+        const cols: any[] = item.column_history ?? [];
+        const journey = cols.map((c: any) => esc(c.value)).join(' → ');
+        const regressionCount = (item.regressions ?? []).length;
+        const searchStr = [item.id, titles[item.id] ?? '', ...cols.map((c: any) => c.value)].join(' ').toLowerCase();
+        const idCell = adoBase
+            ? `<a href="${esc(adoBase)}/${item.id}" target="_blank">${esc(item.id)}</a>`
+            : esc(item.id);
+
+        const colRows = cols.map((c: any) =>
+            `<tr><td>${esc(c.value)}</td><td>${fmtDate(c.entered)}</td><td>${c.left ? fmtDate(c.left) : '—'}</td><td>${dur(c.entered, c.left)}${!c.left ? ' <em>ongoing</em>' : ''}</td></tr>`
+        ).join('');
+
+        const stateRows = (item.state_history ?? []).map((s: any) =>
+            `<tr><td>${esc(s.value)}</td><td>${fmtDate(s.entered)}</td><td>${s.left ? fmtDate(s.left) : '—'}</td><td>${dur(s.entered, s.left)}${!s.left ? ' <em>ongoing</em>' : ''}</td></tr>`
+        ).join('');
+
+        const tagRows = (item.tag_history ?? []).map((t: any) =>
+            `<tr><td>${fmtDate(t.changed_at)}</td><td>${esc(t.old_value ?? '')}</td><td>${esc(t.new_value ?? '')}</td></tr>`
+        ).join('');
+
+        return `<tr class="hist-row" data-search="${esc(searchStr)}" data-target="hist-${item.id}">
+            <td>${idCell}${titles[item.id] ? `<br><span class="item-title">${esc(titles[item.id])}</span>` : ''}</td>
+            <td>${fmtDate(item.board_entry_date ?? '')}</td>
+            <td class="journey">${esc(journey) || '—'}</td>
+            <td>${regressionCount > 0 ? `<span class="badge badge-warn">${regressionCount}</span>` : '0'}</td>
+        </tr>
+        <tr class="hist-detail" id="hist-${item.id}" style="display:none">
+            <td colspan="4"><div class="detail-inner">
+                ${colRows ? `<h3>Column History</h3><table class="dtbl"><thead><tr><th>Column</th><th>Entered</th><th>Left</th><th>Duration</th></tr></thead><tbody>${colRows}</tbody></table>` : ''}
+                ${stateRows ? `<h3>State History</h3><table class="dtbl"><thead><tr><th>State</th><th>Entered</th><th>Left</th><th>Duration</th></tr></thead><tbody>${stateRows}</tbody></table>` : ''}
+                ${tagRows ? `<h3>Tag Changes</h3><table class="dtbl"><thead><tr><th>Date</th><th>From</th><th>To</th></tr></thead><tbody>${tagRows}</tbody></table>` : ''}
+            </div></td>
+        </tr>`;
+    }).join('\n');
+
+    const css = `
+.hist-row { cursor: pointer; }
+.hist-detail { display: none; }
+.hist-detail td { padding: 0; background: var(--vscode-textCodeBlock-background); }
+.detail-inner { padding: 12px 16px; }
+.detail-inner h3 { margin: 12px 0 5px; font-size: 0.88em; color: var(--vscode-descriptionForeground); }
+.detail-inner h3:first-child { margin-top: 0; }
+.dtbl { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-bottom: 6px; }
+.dtbl th { text-align: left; padding: 3px 8px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); }
+.dtbl td { padding: 3px 8px; border-bottom: 1px solid var(--vscode-panel-border); }
+.journey { font-size: 0.83em; color: var(--vscode-descriptionForeground); }
+.item-title { font-size: 0.8em; color: var(--vscode-descriptionForeground); }`;
+
+    const js = `
+function filter() {
+    const q = document.getElementById('search').value.toLowerCase();
+    document.querySelectorAll('.hist-row').forEach(row => {
+        const show = !q || row.dataset.search.includes(q);
+        row.style.display = show ? '' : 'none';
+        const det = document.getElementById(row.dataset.target);
+        if (det && !show) det.style.display = 'none';
+    });
+}
+document.getElementById('search').addEventListener('input', filter);
+document.querySelector('tbody').addEventListener('click', e => {
+    const row = e.target.closest('.hist-row');
+    if (!row) { return; }
+    const det = document.getElementById(row.dataset.target);
+    if (det) { det.style.display = det.style.display === 'none' ? 'table-row' : 'none'; }
+});`;
+
+    const body = `
+<h1>Work Item History (${data.length} items)</h1>
+<div class="search-row"><input id="search" type="text" placeholder="Filter by ID, title, or column…"></div>
+<style nonce="${nonce}">${css}</style>
+<table>
+    <thead><tr><th>ID / Title</th><th>Board Entry</th><th>Column Journey</th><th>Regressions</th></tr></thead>
+    <tbody>${rows}</tbody>
+</table>`;
+
+    return baseHtml(nonce, 'Work Item History', body, js);
+}
+
 function renderGeneric(data: any, filename: string, nonce: string): string {
     const json = JSON.stringify(data, null, 2);
     const highlighted = json
@@ -530,7 +730,10 @@ function buildHtml(filePath: string, filename: string, data: any, nonce: string)
         case 'lead_time.json':    return renderMetricSummary(data, nonce);
         case 'time_in_columns.json': return renderTimeInColumns(data, nonce);
         case 'insights.json':     return renderInsights(data, nonce);
-        case 'work_items.json':   return renderWorkItems(Array.isArray(data) ? data : [], filePath, nonce);
-        default:                  return renderGeneric(data, filename, nonce);
+        case 'work_items.json':        return renderWorkItems(Array.isArray(data) ? data : [], filePath, nonce);
+        case 'excluded_items.json':     return renderExcludedItems(Array.isArray(data) ? data : [], filePath, nonce);
+        case 'work_item_rework.json':   return renderRework(Array.isArray(data) ? data : [], filePath, nonce);
+        case 'work_item_history.json':  return renderHistory(Array.isArray(data) ? data : [], filePath, nonce);
+        default:                        return renderGeneric(data, filename, nonce);
     }
 }

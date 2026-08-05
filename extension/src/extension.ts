@@ -12,7 +12,7 @@ interface Board {
 const PIPELINE_STEPS = [
     { label: 'Fetch Board Context',        description: 'Step 1',  contextValue: 'step.fetchContext', outputFile: 'output/data/context.json'                },
     { label: 'Fetch Work Items',           description: 'Step 2',  contextValue: 'step.fetchItems',   outputFile: 'output/data/work_items.json'              },
-    { label: 'Data Quality Checks',        description: 'Step 3',  contextValue: 'step.inactive',     outputFile: 'output/data/data_quality_report.json'    },
+    { label: 'Data Quality Checks',        description: 'Step 3',  contextValue: 'step.checkData',    outputFile: 'output/data/data_quality_report.json'    },
     { label: 'Configure Board (AI)',        description: 'Step 4',  contextValue: 'step.inactive',     outputFile: 'output/data/config.json'                 },
     { label: 'Calculate Time in Columns',  description: 'Step 5',  contextValue: 'step.inactive',     outputFile: 'output/metrics/time_in_columns.json'     },
     { label: 'Calculate Cycle Time',       description: 'Step 6',  contextValue: 'step.inactive',     outputFile: 'output/metrics/cycle_time.json'          },
@@ -309,6 +309,22 @@ export function activate(context: vscode.ExtensionContext) {
             }
             terminal.show();
             terminal.sendText(`pip install requests -q ; python "${script}" "${board.url}"`);
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.checkData', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const script = path.join(context.extensionPath, 'resources', 'scripts', 'check_data.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+
+            let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
+            if (!terminal) {
+                terminal = vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd: outputDir });
+            }
+            terminal.show();
+            terminal.sendText(`python "${script}"`);
         }),
     );
 }

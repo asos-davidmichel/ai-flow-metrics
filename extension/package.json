@@ -64,6 +64,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "ai-flow-metrics.checkData",
+        "title": "Run Data Quality Checks",
+        "icon": "$(play)"
+      },
+      {
         "command": "ai-flow-metrics.previewFile",
         "title": "Preview File"
       }
@@ -96,6 +101,11 @@
           "command": "ai-flow-metrics.fetchWorkItems",
           "when": "view == aiFlowMetrics.pipeline && viewItem == step.fetchItems",
           "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.checkData",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.checkData",
+          "group": "inline"
         }
       ]
     }
@@ -103,7 +113,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "npm run copy-scripts && npm run compile",
-    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts',{recursive:true});['fetch_data.py','util_ado.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));\"",
+    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts',{recursive:true});['fetch_data.py','util_ado.py','check_data.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
