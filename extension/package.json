@@ -24,6 +24,10 @@
     "views": {
       "ai-flow-metrics": [
         {
+          "id": "aiFlowMetrics.boards",
+          "name": "Boards"
+        },
+        {
           "id": "aiFlowMetrics.pipeline",
           "name": "Pipeline"
         }
@@ -31,8 +35,13 @@
     },
     "commands": [
       {
-        "command": "ai-flow-metrics.helloWorld",
-        "title": "Hello World"
+        "command": "ai-flow-metrics.addBoard",
+        "title": "Add Board",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ai-flow-metrics.selectBoard",
+        "title": "Select Board"
       },
       {
         "command": "ai-flow-metrics.fetchData",
@@ -41,6 +50,13 @@
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "ai-flow-metrics.addBoard",
+          "when": "view == aiFlowMetrics.boards",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "ai-flow-metrics.fetchData",
@@ -51,7 +67,9 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build",
+    "build": "npm run copy-scripts && npm run compile",
+    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts',{recursive:true});['fetch_data.py','util_ado.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
