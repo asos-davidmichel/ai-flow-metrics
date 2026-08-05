@@ -44,14 +44,28 @@
         "title": "Select Board"
       },
       {
+        "command": "ai-flow-metrics.clearOutput",
+        "title": "Clear Output",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "ai-flow-metrics.removeBoard",
+        "title": "Remove Board",
+        "icon": "$(remove-close)"
+      },
+      {
         "command": "ai-flow-metrics.fetchContext",
         "title": "Fetch Board Context",
-        "icon": "$(cloud-download)"
+        "icon": "$(play)"
       },
       {
         "command": "ai-flow-metrics.fetchWorkItems",
         "title": "Fetch Work Items",
-        "icon": "$(cloud-download)"
+        "icon": "$(play)"
+      },
+      {
+        "command": "ai-flow-metrics.previewFile",
+        "title": "Preview File"
       }
     ],
     "menus": {
@@ -63,6 +77,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "ai-flow-metrics.clearOutput",
+          "when": "view == aiFlowMetrics.boards && viewItem =~ /^board/",
+          "group": "1_manage"
+        },
+        {
+          "command": "ai-flow-metrics.removeBoard",
+          "when": "view == aiFlowMetrics.boards && viewItem =~ /^board/",
+          "group": "1_manage"
+        },
         {
           "command": "ai-flow-metrics.fetchContext",
           "when": "view == aiFlowMetrics.pipeline && viewItem == step.fetchContext",
