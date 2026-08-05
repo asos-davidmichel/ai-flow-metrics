@@ -44,8 +44,13 @@
         "title": "Select Board"
       },
       {
-        "command": "ai-flow-metrics.fetchData",
-        "title": "Fetch ADO Data",
+        "command": "ai-flow-metrics.fetchContext",
+        "title": "Fetch Board Context",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "ai-flow-metrics.fetchWorkItems",
+        "title": "Fetch Work Items",
         "icon": "$(cloud-download)"
       }
     ],
@@ -59,8 +64,13 @@
       ],
       "view/item/context": [
         {
-          "command": "ai-flow-metrics.fetchData",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.fetch",
+          "command": "ai-flow-metrics.fetchContext",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.fetchContext",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.fetchWorkItems",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.fetchItems",
           "group": "inline"
         }
       ]

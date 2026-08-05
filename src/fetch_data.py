@@ -60,20 +60,27 @@ def prompt_board_selection(candidates, context_label=""):
 
 
 def main():
-    _data_outputs = [
-        Path("output/data/context.json"),
-        Path("output/data/work_items.json"),
-        Path("output/data/work_item_history.json"),
-    ]
-    if all(p.exists() for p in _data_outputs):
-        print("Skipping: output data already exists. Delete output/data to re-fetch.")
-        sys.exit(0)
+    import argparse
+    parser = argparse.ArgumentParser(description="Fetch ADO board data")
+    parser.add_argument("url", help="ADO board URL")
+    parser.add_argument("--context-only", action="store_true",
+                        help="Only fetch board context (context.json)")
+    args = parser.parse_args()
+    url = args.url
 
-    if len(sys.argv) != 2:
-        print("Usage: python src/main.py <board-url>", file=sys.stderr)
-        sys.exit(1)
-
-    url = sys.argv[1]
+    if args.context_only:
+        if Path("output/data/context.json").exists():
+            print("Skipping: context.json already exists. Delete it to re-fetch.")
+            sys.exit(0)
+    else:
+        _data_outputs = [
+            Path("output/data/context.json"),
+            Path("output/data/work_items.json"),
+            Path("output/data/work_item_history.json"),
+        ]
+        if all(p.exists() for p in _data_outputs):
+            print("Skipping: output data already exists. Delete output/data to re-fetch.")
+            sys.exit(0)
     pat = get_pat()
 
     try:
@@ -288,6 +295,9 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2))
     print(f"\nContext saved to: {output_path}")
+
+    if args.context_only:
+        return
 
     items_path = Path("output/data/work_items.json")
     items_path.write_text(json.dumps(work_items, indent=2))
