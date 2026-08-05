@@ -5058,11 +5058,11 @@ function updateChart() {
     if (n === 1) return [feBlend(l, d, 0.55)];
     return Array.from({length:n}, (_, i) => feBlend(l, d, i/(n-1)));
   }
-  // Active: light-teal → dark-teal; Waiting: light-amber → dark-orange
-  const feAColors = feGradient(feACols.length, '#b2f5ea', '#234e52');
-  const feWColors = feGradient(feWCols.length, '#fef3c7', '#92400e');
-  const FE_A1 = feAColors.length ? feAColors[feAColors.length-1] : '#234e52';
-  const FE_W1 = feWColors.length ? feWColors[feWColors.length-1] : '#92400e';
+  // Active: light-indigo → dark-indigo; Waiting: light-orange → dark-orange
+  const feAColors = feGradient(feACols.length, '#e0e7ff', '#434190');
+  const feWColors = feGradient(feWCols.length, '#fbd38d', '#c05621');
+  const FE_A1 = feAColors.length ? feAColors[feAColors.length-1] : '#434190';
+  const FE_W1 = feWColors.length ? feWColors[feWColors.length-1] : '#c05621';
 
   // Update split-labels with actual column names, hide toggles for single columns
   (function () {
@@ -5587,7 +5587,7 @@ function updateChart() {
     document.getElementById('kpiGrid').insertAdjacentHTML('beforeend',
       `<div class="kpi-card trend-${arrowCls}">` +
       `<div class="kpi-label">Flow efficiency</div>` +
-      `<div class="kpi-value">${meanF}%<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
+      `<div class="kpi-value">${meanF.toFixed(1)}%<span class="kpi-arrow ${arrowCls}">${arrowSym}</span></div>` +
       `<div class="kpi-unit">${unitTxt}</div>` +
       `<div class="${pillCls}">${pillText}</div>` +
       `</div>`
