@@ -15,12 +15,12 @@ const PIPELINE_STEPS = [
     { label: 'Fetch Work Items',           description: 'Step 2',  contextValue: 'step.fetchItems',   outputFile: 'output/data/work_items.json'              },
     { label: 'Data Quality Checks',        description: 'Step 3',  contextValue: 'step.checkData',    outputFile: 'output/data/data_quality_report.json'    },
     { label: 'Configure Board (AI)',        description: 'Step 4',  contextValue: 'step.configureBoard', outputFile: 'output/data/config.json'                 },
-    { label: 'Calculate Time in Columns',  description: 'Step 5',  contextValue: 'step.inactive',     outputFile: 'output/metrics/time_in_columns.json'     },
-    { label: 'Calculate Cycle Time',       description: 'Step 6',  contextValue: 'step.inactive',     outputFile: 'output/metrics/cycle_time.json'          },
-    { label: 'Calculate Lead Time',        description: 'Step 7',  contextValue: 'step.inactive',     outputFile: 'output/metrics/lead_time.json'           },
-    { label: 'Generate Dashboard',         description: 'Step 8',  contextValue: 'step.inactive',     outputFile:  'output/dashboard.html'                                                              },
-    { label: 'Interpret Metrics (AI)',     description: 'Step 9',  contextValue: 'step.inactive',     outputFile:  'output/data/insights.json'                                                          },
-    { label: 'Re-generate Dashboard',      description: 'Step 10', contextValue: 'step.inactive',     outputFiles: ['output/dashboard.html', 'output/data/insights.json'] as string[] },
+    { label: 'Calculate Time in Columns',  description: 'Step 5',  contextValue: 'step.calcColumns',  outputFile: 'output/metrics/time_in_columns.json'    },
+    { label: 'Calculate Cycle Time',       description: 'Step 6',  contextValue: 'step.calcCycleTime', outputFile: 'output/metrics/cycle_time.json'         },
+    { label: 'Calculate Lead Time',        description: 'Step 7',  contextValue: 'step.calcLeadTime',  outputFile: 'output/metrics/lead_time.json'          },
+    { label: 'Generate Dashboard',         description: 'Step 8',  contextValue: 'step.generateDashboard', outputFile: 'output/dashboard.html'                },
+    { label: 'Interpret Metrics (AI)',     description: 'Step 9',  contextValue: 'step.interpretMetrics', outputFile: 'output/data/insights.json'              },
+    { label: 'Re-generate Dashboard',      description: 'Step 10', contextValue: 'step.regenerateDashboard', outputFiles: ['output/dashboard.html', 'output/data/insights.json'] as string[] },
 ];
 
 function slugify(name: string): string {
@@ -66,6 +66,12 @@ const FILE_LABELS: Record<string, string> = {
     'work_items.json':          'List of Work Items',
     'work_item_history.json':   'Work Item History',
     'work_item_rework.json':    'Work Item Backward Moves',
+    'sprint_retro.json':        'Sprint Retrospective',
+    'insights.json':            'AI Insights',
+    'time_in_columns.json':     'Time in Columns',
+    'cycle_time.json':          'Cycle Time',
+    'lead_time.json':           'Lead Time',
+    'dashboard.html':           'Dashboard',
 };
 
 class FileItem extends vscode.TreeItem {
@@ -76,7 +82,7 @@ class FileItem extends vscode.TreeItem {
         this.resourceUri = vscode.Uri.file(filePath);
         const isHtml = filePath.endsWith('.html');
         this.command = isHtml
-            ? { command: 'vscode.open', title: 'Open', arguments: [vscode.Uri.file(filePath)] }
+            ? { command: 'simpleBrowser.show', title: 'Open Preview', arguments: [vscode.Uri.file(filePath).toString()] }
             : { command: 'ai-flow-metrics.previewFile', title: 'Preview', arguments: [filePath] };
         this.contextValue = 'outputFile';
     }
@@ -198,7 +204,7 @@ export function activate(context: vscode.ExtensionContext) {
         boardsProvider.refresh();
         pipelineProvider.refresh();
         if (uri.fsPath.endsWith('.html')) {
-            vscode.commands.executeCommand('vscode.open', uri);
+            vscode.commands.executeCommand('simpleBrowser.show', uri.toString());
         } else {
             openPreview(uri.fsPath, context);
         }
@@ -366,7 +372,7 @@ export function activate(context: vscode.ExtensionContext) {
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Generating prompt…' });
                     let output = '';
-                    cp.exec(`python "${script}"`, { cwd: outputDir }, async (error, stdout, stderr) => {
+                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, async (error, stdout, stderr) => {
                         output = (stdout + stderr).trim();
                         if (error || !fs.existsSync(promptPath)) {
                             resolve();
@@ -398,6 +404,173 @@ export function activate(context: vscode.ExtensionContext) {
             }
             terminal.show();
             terminal.sendText(`python "${script}"`);
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.calculateTimeInColumns', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const script = path.join(context.extensionPath, 'resources', 'scripts', 'calc_columns.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const outputPath = path.join(outputDir, 'output', 'metrics', 'time_in_columns.json');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Calculate Time in Columns', cancellable: false },
+                (progress) => new Promise<void>((resolve) => {
+                    progress.report({ message: 'Running…' });
+                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                        resolve();
+                        const output = (stdout + stderr).trim();
+                        if (error && !fs.existsSync(outputPath)) {
+                            vscode.window.showErrorMessage(`Step 5 failed: ${output || 'No output. Ensure Steps 1–4 have run successfully.'}`);
+                        } else {
+                            boardsProvider.refresh();
+                            pipelineProvider.refresh();
+                        }
+                    });
+                })
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.calculateCycleTime', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const script = path.join(context.extensionPath, 'resources', 'scripts', 'calc_cycle_time.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const outputPath = path.join(outputDir, 'output', 'metrics', 'cycle_time.json');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Calculate Cycle Time', cancellable: false },
+                (progress) => new Promise<void>((resolve) => {
+                    progress.report({ message: 'Running…' });
+                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                        resolve();
+                        const output = (stdout + stderr).trim();
+                        if (error && !fs.existsSync(outputPath)) {
+                            vscode.window.showErrorMessage(`Step 6 failed: ${output || 'No output. Ensure Steps 1–5 have run successfully.'}`);
+                        } else {
+                            boardsProvider.refresh();
+                            pipelineProvider.refresh();
+                        }
+                    });
+                })
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.calculateLeadTime', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const script = path.join(context.extensionPath, 'resources', 'scripts', 'calc_lead_time.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const outputPath = path.join(outputDir, 'output', 'metrics', 'lead_time.json');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Calculate Lead Time', cancellable: false },
+                (progress) => new Promise<void>((resolve) => {
+                    progress.report({ message: 'Running…' });
+                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                        resolve();
+                        const output = (stdout + stderr).trim();
+                        if (error && !fs.existsSync(outputPath)) {
+                            vscode.window.showErrorMessage(`Step 7 failed: ${output || 'No output. Ensure Steps 1–6 have run successfully.'}`);
+                        } else {
+                            boardsProvider.refresh();
+                            pipelineProvider.refresh();
+                        }
+                    });
+                })
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.generateDashboard', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const script = path.join(context.extensionPath, 'resources', 'scripts', 'create_dashboard.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const outputPath = path.join(outputDir, 'output', 'dashboard.html');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Generate Dashboard', cancellable: false },
+                (progress) => new Promise<void>((resolve) => {
+                    progress.report({ message: 'Rendering…' });
+                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                        resolve();
+                        const output = (stdout + stderr).trim();
+                        if (error && !fs.existsSync(outputPath)) {
+                            vscode.window.showErrorMessage(`Step 8 failed: ${output || 'No output. Ensure Steps 1–7 have run successfully.'}`);
+                        } else {
+                            boardsProvider.refresh();
+                            pipelineProvider.refresh();
+                        }
+                    });
+                })
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.interpretMetrics', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const script = path.join(context.extensionPath, 'resources', 'scripts', 'ai_interpret_metrics.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const dataDir = path.join(outputDir, 'output', 'data');
+            const promptPath = path.join(dataDir, 'ai_interpret_metrics.prompt.md');
+            const insightsPath = path.join(dataDir, 'insights.json');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Interpret Metrics (AI)', cancellable: false },
+                (progress) => new Promise<void>((resolve) => {
+                    progress.report({ message: 'Generating prompt…' });
+                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, async (error, stdout, stderr) => {
+                        const output = (stdout + stderr).trim();
+                        if (error || !fs.existsSync(promptPath)) {
+                            resolve();
+                            vscode.window.showErrorMessage(`Step 9 failed: ${output || 'No output. Ensure Steps 1–8 have run successfully.'}`);
+                            return;
+                        }
+                        progress.report({ message: 'Opening Copilot Chat…' });
+                        const promptText = fs.readFileSync(promptPath, 'utf-8');
+                        const query = `${promptText}\n\nWrite the resulting JSON insights to "${insightsPath}".`;
+                        await vscode.commands.executeCommand('workbench.action.chat.open', { query });
+                        resolve();
+                    });
+                })
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.regenerateDashboard', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const script = path.join(context.extensionPath, 'resources', 'scripts', 'create_dashboard.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const outputPath = path.join(outputDir, 'output', 'dashboard.html');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Re-generate Dashboard', cancellable: false },
+                (progress) => new Promise<void>((resolve) => {
+                    progress.report({ message: 'Rendering…' });
+                    cp.exec(`python "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                        resolve();
+                        const output = (stdout + stderr).trim();
+                        if (error && !fs.existsSync(outputPath)) {
+                            vscode.window.showErrorMessage(`Step 10 failed: ${output || 'No output. Ensure Steps 1–9 have run successfully.'}`);
+                        } else {
+                            boardsProvider.refresh();
+                            pipelineProvider.refresh();
+                        }
+                    });
+                })
+            );
         }),
     );
 }

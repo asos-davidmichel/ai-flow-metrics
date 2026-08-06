@@ -74,6 +74,36 @@
         "icon": "$(play)"
       },
       {
+        "command": "ai-flow-metrics.calculateTimeInColumns",
+        "title": "Calculate Time in Columns",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ai-flow-metrics.calculateCycleTime",
+        "title": "Calculate Cycle Time",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ai-flow-metrics.calculateLeadTime",
+        "title": "Calculate Lead Time",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ai-flow-metrics.generateDashboard",
+        "title": "Generate Dashboard",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ai-flow-metrics.interpretMetrics",
+        "title": "Interpret Metrics (AI)",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ai-flow-metrics.regenerateDashboard",
+        "title": "Re-generate Dashboard",
+        "icon": "$(play)"
+      },
+      {
         "command": "ai-flow-metrics.deleteFile",
         "title": "Delete File",
         "icon": "$(trash)"
@@ -123,6 +153,36 @@
           "group": "inline"
         },
         {
+          "command": "ai-flow-metrics.calculateTimeInColumns",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.calcColumns",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.calculateCycleTime",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.calcCycleTime",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.calculateLeadTime",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.calcLeadTime",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.generateDashboard",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.generateDashboard",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.interpretMetrics",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.interpretMetrics",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.regenerateDashboard",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.regenerateDashboard",
+          "group": "inline"
+        },
+        {
           "command": "ai-flow-metrics.deleteFile",
           "when": "view == aiFlowMetrics.boards && viewItem == outputFile",
           "group": "inline"
@@ -133,7 +193,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "npm run copy-scripts && npm run compile",
-    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts/prompts',{recursive:true});['fetch_data.py','util_ado.py','check_data.py','ai_configure_board.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));require('fs').copyFileSync(require('path').join('..','src','prompts','ai_configure_board.prompt.md'),'resources/scripts/prompts/ai_configure_board.prompt.md');\"",
+    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts/prompts',{recursive:true});require('fs').mkdirSync('resources/scripts/templates',{recursive:true});['fetch_data.py','util_ado.py','check_data.py','ai_configure_board.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py','ai_interpret_metrics.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));require('fs').copyFileSync(require('path').join('..','src','prompts','ai_configure_board.prompt.md'),'resources/scripts/prompts/ai_configure_board.prompt.md');require('fs').copyFileSync(require('path').join('..','src','prompts','ai_interpret_metrics.prompt.md'),'resources/scripts/prompts/ai_interpret_metrics.prompt.md');require('fs').copyFileSync(require('path').join('..','src','templates','dashboard.html'),'resources/scripts/templates/dashboard.html');\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",

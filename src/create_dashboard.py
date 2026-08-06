@@ -24,7 +24,7 @@ WI_PATH       = Path("output/data/work_items.json")
 INSIGHTS_PATH = Path("output/data/insights.json")
 DQ_PATH       = Path("output/data/data_quality_report.json")
 EXCL_PATH     = Path("output/data/excluded_items.json")
-TEMPLATE_PATH = Path("src/templates/dashboard.html")
+TEMPLATE_PATH = Path(__file__).parent / "templates" / "dashboard.html"
 OUTPUT_PATH   = Path("output/dashboard.html")
 
 
