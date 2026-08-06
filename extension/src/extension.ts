@@ -179,6 +179,76 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     }
 }
 
+// ── AI helpers ────────────────────────────────────────────────────────────
+
+function extractJson(text: string): unknown {
+    // Prefer a fenced JSON block, then fall back to bare object/array
+    const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+    const src = fenced ? fenced[1] : text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)?.[1] ?? text;
+    return JSON.parse(src.trim());
+}
+
+async function runConfigureBoardAI(
+    promptUri: vscode.Uri,
+    dataDir: string,
+    context: vscode.ExtensionContext,
+): Promise<void> {
+    await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Configure Board (AI)', cancellable: false },
+        async (progress) => {
+            progress.report({ message: 'Selecting model…' });
+            const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+            if (!models.length) {
+                await vscode.commands.executeCommand('vscode.open', promptUri);
+                vscode.window.showWarningMessage('No Copilot model available — process the prompt manually.');
+                return;
+            }
+
+            const promptText = fs.readFileSync(promptUri.fsPath, 'utf-8');
+            progress.report({ message: 'Calling Copilot…' });
+
+            const cts = new vscode.CancellationTokenSource();
+            try {
+                const response = await models[0].sendRequest(
+                    [vscode.LanguageModelChatMessage.User(promptText)],
+                    {},
+                    cts.token,
+                );
+
+                let fullText = '';
+                for await (const chunk of response.stream) {
+                    if (chunk instanceof vscode.LanguageModelTextPart) {
+                        fullText += chunk.value;
+                    }
+                }
+
+                let config: unknown;
+                try {
+                    config = extractJson(fullText);
+                } catch {
+                    await vscode.commands.executeCommand('vscode.open', promptUri);
+                    vscode.window.showErrorMessage('Could not parse AI response as JSON — please complete config.json manually.');
+                    return;
+                }
+
+                progress.report({ message: 'Writing config.json…' });
+                const configPath = path.join(dataDir, 'config.json');
+                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+                const choice = await vscode.window.showInformationMessage(
+                    'Board configuration generated. Please review before running the metrics steps.',
+                    'Review'
+                );
+                if (choice === 'Review') {
+                    openPreview(configPath, context);
+                }
+            } finally {
+                cts.dispose();
+            }
+        },
+    );
+}
+
 // ── Activate ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
@@ -328,7 +398,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const script = path.join(context.extensionPath, 'resources', 'scripts', 'ai_configure_board.py');
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
-            const promptUri = vscode.Uri.file(path.join(outputDir, 'output', 'data', 'ai_configure_board.prompt.md'));
+            const dataDir = path.join(outputDir, 'output', 'data');
 
             let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
             if (!terminal) {
@@ -337,21 +407,13 @@ export function activate(context: vscode.ExtensionContext) {
             terminal.show();
             terminal.sendText(`python "${script}"`);
 
-            // Open the prompt file as soon as it lands, then nudge the user toward Chat
             const w = vscode.workspace.createFileSystemWatcher(
-                new vscode.RelativePattern(vscode.Uri.file(path.join(outputDir, 'output', 'data')), 'ai_configure_board.prompt.md')
+                new vscode.RelativePattern(vscode.Uri.file(dataDir), 'ai_configure_board.prompt.md')
             );
             const d = w.onDidCreate(async (uri) => {
                 d.dispose();
                 w.dispose();
-                await vscode.commands.executeCommand('vscode.open', uri);
-                const choice = await vscode.window.showInformationMessage(
-                    'Board configuration prompt ready. Ask Copilot to read it and write config.json.',
-                    'Open Copilot Chat'
-                );
-                if (choice === 'Open Copilot Chat') {
-                    vscode.commands.executeCommand('workbench.action.chat.open');
-                }
+                await runConfigureBoardAI(uri, dataDir, context);
             });
             context.subscriptions.push(w);
         }),
