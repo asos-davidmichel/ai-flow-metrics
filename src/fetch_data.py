@@ -22,8 +22,15 @@ from util_ado import (
 )
 
 
+def _path_exists(p: Path) -> bool:
+    # Python 3.12+ raises PermissionError from exists(); treat as not-found
+    try:
+        return p.exists()
+    except OSError:
+        return False
+
+
 def _humanise_filter(filter_str):
-    """Turn ADO filter syntax into a readable label, e.g. 'Tag: blocked'."""
     m = re.match(r"\[System\.Tags\] contains '(.+)'", filter_str, re.IGNORECASE)
     if m:
         return f"Tag: {m.group(1)}"
@@ -69,7 +76,7 @@ def main():
     url = args.url
 
     if args.context_only:
-        if Path("output/data/context.json").exists():
+        if _path_exists(Path("output/data/context.json")):
             print("Skipping: context.json already exists. Delete it to re-fetch.")
             sys.exit(0)
     else:
@@ -78,7 +85,7 @@ def main():
             Path("output/data/work_items.json"),
             Path("output/data/work_item_history.json"),
         ]
-        if all(p.exists() for p in _data_outputs):
+        if all(_path_exists(p) for p in _data_outputs):
             print("Skipping: output data already exists. Delete output/data to re-fetch.")
             sys.exit(0)
     pat = get_pat()
