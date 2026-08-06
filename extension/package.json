@@ -69,6 +69,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "ai-flow-metrics.configureBoard",
+        "title": "Configure Board (AI)",
+        "icon": "$(play)"
+      },
+      {
         "command": "ai-flow-metrics.previewFile",
         "title": "Preview File"
       }
@@ -106,6 +111,11 @@
           "command": "ai-flow-metrics.checkData",
           "when": "view == aiFlowMetrics.pipeline && viewItem == step.checkData",
           "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.configureBoard",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == step.configureBoard",
+          "group": "inline"
         }
       ]
     }
@@ -113,7 +123,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "npm run copy-scripts && npm run compile",
-    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts',{recursive:true});['fetch_data.py','util_ado.py','check_data.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));\"",
+    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts/prompts',{recursive:true});['fetch_data.py','util_ado.py','check_data.py','ai_configure_board.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));require('fs').copyFileSync(require('path').join('..','src','prompts','ai_configure_board.prompt.md'),'resources/scripts/prompts/ai_configure_board.prompt.md');\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
