@@ -193,7 +193,15 @@ export function activate(context: vscode.ExtensionContext) {
     const watcher = vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(context.globalStorageUri, '**/*.{json,html}')
     );
-    watcher.onDidCreate(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
+    watcher.onDidCreate((uri) => {
+        boardsProvider.refresh();
+        pipelineProvider.refresh();
+        if (uri.fsPath.endsWith('.html')) {
+            vscode.commands.executeCommand('vscode.open', uri);
+        } else {
+            openPreview(uri.fsPath, context);
+        }
+    });
     watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
     context.subscriptions.push(watcher);
 
