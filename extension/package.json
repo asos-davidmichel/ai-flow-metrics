@@ -74,6 +74,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "ai-flow-metrics.deleteFile",
+        "title": "Delete File",
+        "icon": "$(trash)"
+      },
+      {
         "command": "ai-flow-metrics.previewFile",
         "title": "Preview File"
       }
@@ -115,6 +120,11 @@
         {
           "command": "ai-flow-metrics.configureBoard",
           "when": "view == aiFlowMetrics.pipeline && viewItem == step.configureBoard",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.deleteFile",
+          "when": "view == aiFlowMetrics.boards && viewItem == outputFile",
           "group": "inline"
         }
       ]

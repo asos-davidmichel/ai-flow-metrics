@@ -268,6 +268,20 @@ export function activate(context: vscode.ExtensionContext) {
             pipelineProvider.refresh();
         }),
 
+        vscode.commands.registerCommand('ai-flow-metrics.deleteFile', async (item?: FileItem) => {
+            if (!item?.filePath) { return; }
+            const name = path.basename(item.filePath);
+            const answer = await vscode.window.showWarningMessage(
+                `Delete ${name}?`,
+                { modal: true },
+                'Delete'
+            );
+            if (answer !== 'Delete') { return; }
+            fs.unlinkSync(item.filePath);
+            boardsProvider.refresh();
+            pipelineProvider.refresh();
+        }),
+
         vscode.commands.registerCommand('ai-flow-metrics.clearOutput', async (item?: BoardItem) => {
             const board = item?.board ?? boardsProvider.getBoards().find(
                 b => b.id === context.globalState.get<string>('activeBoardId')
