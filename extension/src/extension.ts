@@ -10,17 +10,47 @@ interface Board {
     url: string;
 }
 
-const PIPELINE_STEPS = [
-    { label: 'Fetch Board Context',        description: 'Step 1',  contextValue: 'step.fetchContext', outputFile: 'output/data/context.json'                },
-    { label: 'Fetch Work Items',           description: 'Step 2',  contextValue: 'step.fetchItems',   outputFile: 'output/data/work_items.json'              },
-    { label: 'Data Quality Checks',        description: 'Step 3',  contextValue: 'step.checkData',    outputFile: 'output/data/data_quality_report.json'    },
-    { label: 'Configure Board (AI)',        description: 'Step 4',  contextValue: 'step.configureBoard', outputFile: 'output/data/config.json'                 },
-    { label: 'Calculate Time in Columns',  description: 'Step 5',  contextValue: 'step.calcColumns',  outputFile: 'output/metrics/time_in_columns.json'    },
-    { label: 'Calculate Cycle Time',       description: 'Step 6',  contextValue: 'step.calcCycleTime', outputFile: 'output/metrics/cycle_time.json'         },
-    { label: 'Calculate Lead Time',        description: 'Step 7',  contextValue: 'step.calcLeadTime',  outputFile: 'output/metrics/lead_time.json'          },
-    { label: 'Generate Dashboard',         description: 'Step 8',  contextValue: 'step.generateDashboard', outputFile: 'output/dashboard.html'                },
-    { label: 'Interpret Metrics (AI)',     description: 'Step 9',  contextValue: 'step.interpretMetrics', outputFile: 'output/data/insights.json'              },
-    { label: 'Re-generate Dashboard',      description: 'Step 10', contextValue: 'step.regenerateDashboard', outputFiles: ['output/dashboard.html', 'output/data/insights.json'] as string[] },
+interface PipelineStep {
+    label: string;
+    description: string;
+    contextValue: string;
+    outputFile?: string;
+    doneCheck?: (boardDir: string) => boolean;
+    group?: string;  // contextValue of the parent PipelineGroup
+}
+
+interface PipelineGroup {
+    label: string;
+    contextValue: string;
+}
+
+const PIPELINE_STEPS: PipelineStep[] = [
+    { label: 'Fetch Board Context',        description: 'Step 1',  contextValue: 'step.fetchContext',       outputFile: 'output/data/context.json'                },
+    { label: 'Fetch Work Items',           description: 'Step 2',  contextValue: 'step.fetchItems',         outputFile: 'output/data/work_items.json',              group: 'group.fetchAndCheck'          },
+    { label: 'Data Quality Checks',        description: 'Step 3',  contextValue: 'step.checkData',          outputFile: 'output/data/data_quality_report.json',    group: 'group.fetchAndCheck'          },
+    { label: 'Configure Board (AI)',        description: 'Step 4',  contextValue: 'step.configureBoard',     outputFile: 'output/data/config.json'                 },
+    { label: 'Calculate Time in Columns',  description: 'Step 5',  contextValue: 'step.calcColumns',        outputFile: 'output/metrics/time_in_columns.json',     group: 'group.calculateMetrics'       },
+    { label: 'Calculate Cycle Time',       description: 'Step 6',  contextValue: 'step.calcCycleTime',      outputFile: 'output/metrics/cycle_time.json',          group: 'group.calculateMetrics'       },
+    { label: 'Calculate Lead Time',        description: 'Step 7',  contextValue: 'step.calcLeadTime',       outputFile: 'output/metrics/lead_time.json',           group: 'group.calculateMetrics'       },
+    { label: 'Generate Dashboard',         description: 'Step 8',  contextValue: 'step.generateDashboard',  outputFile: 'output/dashboard.html'                   },
+    { label: 'Interpret Metrics (AI)',     description: 'Step 9',  contextValue: 'step.interpretMetrics',   outputFile: 'output/data/insights.json',               group: 'group.interpretAndRegenerate' },
+    {
+        label: 'Re-generate Dashboard', description: 'Step 10', contextValue: 'step.regenerateDashboard',
+        group: 'group.interpretAndRegenerate',
+        // Green when dashboard.html is newer than insights.json (meaning it was re-generated with insights)
+        doneCheck: (boardDir) => {
+            const dashboard = path.join(boardDir, 'output/dashboard.html');
+            const insights  = path.join(boardDir, 'output/data/insights.json');
+            return fs.existsSync(dashboard) && fs.existsSync(insights) &&
+                fs.statSync(dashboard).mtimeMs >= fs.statSync(insights).mtimeMs;
+        },
+    },
+];
+
+const PIPELINE_GROUPS: PipelineGroup[] = [
+    { label: 'Fetch & Check',          contextValue: 'group.fetchAndCheck'          },
+    { label: 'Calculate Metrics',      contextValue: 'group.calculateMetrics'       },
+    { label: 'Interpret & Regenerate', contextValue: 'group.interpretAndRegenerate' },
 ];
 
 function slugify(name: string): string {
@@ -80,10 +110,7 @@ class FileItem extends vscode.TreeItem {
         super(FILE_LABELS[filename] ?? filename, vscode.TreeItemCollapsibleState.None);
         this.description = path.relative(path.join(boardDir, 'output'), path.dirname(filePath));
         this.resourceUri = vscode.Uri.file(filePath);
-        const isHtml = filePath.endsWith('.html');
-        this.command = isHtml
-            ? { command: 'simpleBrowser.show', title: 'Open Preview', arguments: [vscode.Uri.file(filePath).toString()] }
-            : { command: 'ai-flow-metrics.previewFile', title: 'Preview', arguments: [filePath] };
+        this.command = { command: 'ai-flow-metrics.previewFile', title: 'Preview', arguments: [filePath] };
         this.contextValue = 'outputFile';
     }
 }
@@ -152,7 +179,17 @@ class PipelineItem extends vscode.TreeItem {
         this.description = config.description;
         this.contextValue = config.contextValue;
         this.iconPath = done
-            ? new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('testing.iconPassed'))
+            ? new vscode.ThemeIcon('check', new vscode.ThemeColor('testing.iconPassed'))
+            : new vscode.ThemeIcon('circle-outline');
+    }
+}
+
+class PipelineGroupItem extends vscode.TreeItem {
+    constructor(readonly group: PipelineGroup, allDone: boolean) {
+        super(group.label, vscode.TreeItemCollapsibleState.Expanded);
+        this.contextValue = group.contextValue;
+        this.iconPath = allDone
+            ? new vscode.ThemeIcon('check', new vscode.ThemeColor('testing.iconPassed'))
             : new vscode.ThemeIcon('circle-outline');
     }
 }
@@ -170,20 +207,35 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
     getTreeItem(element: vscode.TreeItem): vscode.TreeItem { return element; }
 
-    getChildren(): vscode.TreeItem[] {
+    getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
         const activeId = this.state.get<string>('activeBoardId');
         if (!activeId) {
             return [new vscode.TreeItem('Select a board above to begin')];
         }
         const boardDir = path.join(this.globalStoragePath, activeId);
-        return PIPELINE_STEPS.map(s => {
-            const done = 'outputFiles' in s
-                ? s.outputFiles!.every(f => fs.existsSync(path.join(boardDir, f)))
-                : s.outputFile
-                    ? fs.existsSync(path.join(boardDir, s.outputFile))
-                    : false;
-            return new PipelineItem(s, done);
-        });
+
+        const stepDone = (s: PipelineStep) =>
+            s.doneCheck ? s.doneCheck(boardDir)
+            : s.outputFile ? fs.existsSync(path.join(boardDir, s.outputFile))
+            : false;
+
+        if (element instanceof PipelineGroupItem) {
+            return PIPELINE_STEPS.filter(s => s.group === element.contextValue).map(s => new PipelineItem(s, stepDone(s)));
+        }
+
+        const seenGroups = new Set<string>();
+        const items: vscode.TreeItem[] = [];
+        for (const s of PIPELINE_STEPS) {
+            if (!s.group) {
+                items.push(new PipelineItem(s, stepDone(s)));
+            } else if (!seenGroups.has(s.group)) {
+                seenGroups.add(s.group);
+                const grp = PIPELINE_GROUPS.find(g => g.contextValue === s.group)!;
+                const allDone = PIPELINE_STEPS.filter(x => x.group === s.group).every(stepDone);
+                items.push(new PipelineGroupItem(grp, allDone));
+            }
+        }
+        return items;
     }
 }
 
@@ -203,16 +255,10 @@ export function activate(context: vscode.ExtensionContext) {
     watcher.onDidCreate((uri) => {
         boardsProvider.refresh();
         pipelineProvider.refresh();
-        if (uri.fsPath.endsWith('.html')) {
-            vscode.commands.executeCommand('simpleBrowser.show', uri.toString());
-        } else {
-            openPreview(uri.fsPath, context);
-        }
+        openPreview(uri.fsPath, context);
     });
     watcher.onDidChange((uri) => {
-        if (!uri.fsPath.endsWith('.html')) {
-            openPreview(uri.fsPath, context);
-        }
+        openPreview(uri.fsPath, context);
     });
     watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
     context.subscriptions.push(watcher);
@@ -572,7 +618,83 @@ export function activate(context: vscode.ExtensionContext) {
                 })
             );
         }),
-    );
+        vscode.commands.registerCommand('ai-flow-metrics.runFetchAndCheckGroup', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const fetchScript = path.join(context.extensionPath, 'resources', 'scripts', 'fetch_data.py');
+            const checkScript = path.join(context.extensionPath, 'resources', 'scripts', 'check_data.py');
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            fs.mkdirSync(outputDir, { recursive: true });
+
+            let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
+            if (!terminal) {
+                terminal = vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd: outputDir });
+            }
+            terminal.show();
+            terminal.sendText(`pip install requests -q ; python "${fetchScript}" "${board.url}" ; python "${checkScript}"`);
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.runCalculationsGroup', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const env = { ...process.env, PYTHONUTF8: '1' };
+
+            const runStep = (scriptName: string, outputFile: string, stepNum: number) =>
+                new Promise<boolean>(resolve => {
+                    const script = path.join(context.extensionPath, 'resources', 'scripts', scriptName);
+                    cp.exec(`python "${script}"`, { cwd: outputDir, env }, (error, stdout, stderr) => {
+                        const output = (stdout + stderr).trim();
+                        if (error && !fs.existsSync(path.join(outputDir, outputFile))) {
+                            vscode.window.showErrorMessage(`Step ${stepNum} failed: ${output || 'No output.'}`);
+                            resolve(false);
+                        } else { resolve(true); }
+                    });
+                });
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Calculate Metrics (3 steps)', cancellable: false },
+                async (progress) => {
+                    progress.report({ message: 'Time in Columns (5/7)…' });
+                    if (!await runStep('calc_columns.py', 'output/metrics/time_in_columns.json', 5)) return;
+                    progress.report({ message: 'Cycle Time (6/7)…', increment: 33 });
+                    if (!await runStep('calc_cycle_time.py', 'output/metrics/cycle_time.json', 6)) return;
+                    progress.report({ message: 'Lead Time (7/7)…', increment: 33 });
+                    if (!await runStep('calc_lead_time.py', 'output/metrics/lead_time.json', 7)) return;
+                    boardsProvider.refresh(); pipelineProvider.refresh();
+                }
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.runInterpretAndRegenerateGroup', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+
+            // Step 9: generate prompt and open Copilot Chat
+            await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
+
+            // Auto-run step 10 as soon as Copilot writes insights.json
+            let triggered = false;
+            const insightsWatcher = vscode.workspace.createFileSystemWatcher(
+                new vscode.RelativePattern(vscode.Uri.file(path.join(outputDir, 'output', 'data')), 'insights.json')
+            );
+            const autoRegen = async () => {
+                if (triggered) return;
+                triggered = true;
+                insightsWatcher.dispose();
+                await vscode.commands.executeCommand('ai-flow-metrics.regenerateDashboard');
+            };
+            insightsWatcher.onDidCreate(() => autoRegen());
+            insightsWatcher.onDidChange(() => autoRegen());
+            setTimeout(() => { if (!triggered) insightsWatcher.dispose(); }, 15 * 60 * 1000);
+        }),    );
 }
 
 export function deactivate() {}

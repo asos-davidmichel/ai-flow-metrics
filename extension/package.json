@@ -104,6 +104,21 @@
         "icon": "$(play)"
       },
       {
+        "command": "ai-flow-metrics.runFetchAndCheckGroup",
+        "title": "Run Fetch & Check",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "ai-flow-metrics.runCalculationsGroup",
+        "title": "Run All Calculations",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "ai-flow-metrics.runInterpretAndRegenerateGroup",
+        "title": "Run Interpret & Regenerate",
+        "icon": "$(run-all)"
+      },
+      {
         "command": "ai-flow-metrics.deleteFile",
         "title": "Delete File",
         "icon": "$(trash)"
@@ -180,6 +195,21 @@
         {
           "command": "ai-flow-metrics.regenerateDashboard",
           "when": "view == aiFlowMetrics.pipeline && viewItem == step.regenerateDashboard",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.runFetchAndCheckGroup",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == group.fetchAndCheck",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.runCalculationsGroup",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == group.calculateMetrics",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.runInterpretAndRegenerateGroup",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == group.interpretAndRegenerate",
           "group": "inline"
         },
         {
