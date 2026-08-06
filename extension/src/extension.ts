@@ -361,7 +361,8 @@ export function activate(context: vscode.ExtensionContext) {
                             return;
                         }
                         progress.report({ message: 'Opening Copilot Chat…' });
-                        const query = `AI Flow Metrics — configure board: the prompt is ready at "${promptPath}". Please read it, follow its instructions, and write the resulting JSON to "${configPath}".`;
+                        const promptText = fs.readFileSync(promptPath, 'utf-8');
+                        const query = `${promptText}\n\nWrite the resulting JSON config to "${configPath}".`;
                         await vscode.commands.executeCommand('workbench.action.chat.open', { query });
                         resolve();
                     });
