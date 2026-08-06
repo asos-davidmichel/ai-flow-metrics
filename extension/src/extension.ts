@@ -337,15 +337,19 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Configure Board (AI)', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Generating prompt…' });
-                    let stderr = '';
+                    let output = '';
                     const proc = cp.spawn('python', [script], { cwd: outputDir });
-                    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+                    proc.stdout?.on('data', (d: Buffer) => { output += d.toString(); });
+                    proc.stderr?.on('data', (d: Buffer) => { output += d.toString(); });
+                    proc.on('error', (err) => {
+                        resolve();
+                        vscode.window.showErrorMessage(`Step 4 failed: could not run Python. ${err.message}`);
+                    });
                     proc.on('close', async (code) => {
                         if (code !== 0 || !fs.existsSync(promptPath)) {
                             resolve();
-                            vscode.window.showErrorMessage(
-                                `Step 4 failed: could not generate prompt.${stderr ? ' ' + stderr.trim() : ' Ensure Steps 1–3 have run successfully.'}`
-                            );
+                            const detail = output.trim() || 'No output. Ensure Steps 1–3 have run successfully.';
+                            vscode.window.showErrorMessage(`Step 4 failed: ${detail}`);
                             return;
                         }
                         progress.report({ message: 'Opening Copilot Chat…' });
