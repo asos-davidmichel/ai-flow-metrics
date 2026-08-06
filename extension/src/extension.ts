@@ -193,60 +193,107 @@ async function runConfigureBoardAI(
     dataDir: string,
     context: vscode.ExtensionContext,
 ): Promise<void> {
-    await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Configure Board (AI)', cancellable: false },
-        async (progress) => {
-            progress.report({ message: 'Selecting model…' });
-            const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
-            if (!models.length) {
-                await vscode.commands.executeCommand('vscode.open', promptUri);
-                vscode.window.showWarningMessage('No Copilot model available — process the prompt manually.');
-                return;
-            }
+    const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+    if (!models.length) {
+        await vscode.commands.executeCommand('vscode.open', promptUri);
+        vscode.window.showErrorMessage(
+            'No Copilot language model available. Ensure GitHub Copilot is installed and signed in, then try again. The prompt has been opened for manual use.'
+        );
+        return;
+    }
 
-            const promptText = fs.readFileSync(promptUri.fsPath, 'utf-8');
-            progress.report({ message: 'Calling Copilot…' });
+    const promptText = fs.readFileSync(promptUri.fsPath, 'utf-8');
 
-            const cts = new vscode.CancellationTokenSource();
-            try {
-                const response = await models[0].sendRequest(
-                    [vscode.LanguageModelChatMessage.User(promptText)],
-                    {},
-                    cts.token,
-                );
-
-                let fullText = '';
-                for await (const chunk of response.stream) {
-                    if (chunk instanceof vscode.LanguageModelTextPart) {
-                        fullText += chunk.value;
-                    }
-                }
-
-                let config: unknown;
-                try {
-                    config = extractJson(fullText);
-                } catch {
-                    await vscode.commands.executeCommand('vscode.open', promptUri);
-                    vscode.window.showErrorMessage('Could not parse AI response as JSON — please complete config.json manually.');
-                    return;
-                }
-
-                progress.report({ message: 'Writing config.json…' });
-                const configPath = path.join(dataDir, 'config.json');
-                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-                const choice = await vscode.window.showInformationMessage(
-                    'Board configuration generated. Please review before running the metrics steps.',
-                    'Review'
-                );
-                if (choice === 'Review') {
-                    openPreview(configPath, context);
-                }
-            } finally {
-                cts.dispose();
-            }
-        },
+    const panel = vscode.window.createWebviewPanel(
+        'ai-flow-metrics.configuring',
+        'Configure Board (AI)',
+        vscode.ViewColumn.One,
+        { enableScripts: true, retainContextWhenHidden: true },
     );
+    panel.webview.html = buildStreamingHtml(panel.webview);
+
+    const cts = new vscode.CancellationTokenSource();
+    context.subscriptions.push({ dispose: () => cts.dispose() });
+
+    try {
+        const response = await models[0].sendRequest(
+            [vscode.LanguageModelChatMessage.User(promptText)],
+            {},
+            cts.token,
+        );
+
+        let fullText = '';
+        for await (const chunk of response.stream) {
+            if (chunk instanceof vscode.LanguageModelTextPart) {
+                fullText += chunk.value;
+                panel.webview.postMessage({ type: 'chunk', text: chunk.value });
+            }
+        }
+
+        panel.webview.postMessage({ type: 'done' });
+
+        let config: unknown;
+        try {
+            config = extractJson(fullText);
+        } catch {
+            panel.webview.postMessage({ type: 'error', message: 'Could not extract JSON from response — please complete config.json manually.' });
+            return;
+        }
+
+        const configPath = path.join(dataDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        panel.webview.postMessage({ type: 'saved' });
+    } finally {
+        cts.dispose();
+    }
+}
+
+function buildStreamingHtml(webview: vscode.Webview): string {
+    const nonce = Math.random().toString(36).slice(2);
+    const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<title>Configure Board (AI)</title>
+<style nonce="${nonce}">
+body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
+       color: var(--vscode-foreground); background: var(--vscode-editor-background);
+       margin: 0; padding: 16px; }
+h2 { margin: 0 0 12px; font-size: 1.1em; opacity: 0.7; font-weight: normal; }
+#output { white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+#status { margin-top: 16px; font-style: italic; opacity: 0.6; }
+#status.saved { color: var(--vscode-testing-iconPassed); font-style: normal; opacity: 1; }
+#status.error { color: var(--vscode-errorForeground); font-style: normal; opacity: 1; }
+.cursor { display: inline-block; width: 2px; height: 1em; background: currentColor;
+          vertical-align: text-bottom; animation: blink 1s step-end infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+</style>
+</head><body>
+<h2>Configure Board (AI)</h2>
+<div id="output"></div><span class="cursor" id="cursor"></span>
+<div id="status">Calling Copilot…</div>
+<script nonce="${nonce}">
+const output = document.getElementById('output');
+const status = document.getElementById('status');
+const cursor = document.getElementById('cursor');
+window.addEventListener('message', e => {
+    const m = e.data;
+    if (m.type === 'chunk') {
+        output.textContent += m.text;
+        window.scrollTo(0, document.body.scrollHeight);
+    } else if (m.type === 'done') {
+        cursor.remove();
+        status.textContent = 'Parsing response…';
+    } else if (m.type === 'saved') {
+        status.textContent = '✓ config.json saved — review it, then run the metrics steps.';
+        status.className = 'saved';
+    } else if (m.type === 'error') {
+        cursor.remove();
+        status.textContent = m.message;
+        status.className = 'error';
+    }
+});
+</script>
+</body></html>`;
 }
 
 // ── Activate ───────────────────────────────────────────────────────────────
@@ -399,6 +446,10 @@ export function activate(context: vscode.ExtensionContext) {
             const script = path.join(context.extensionPath, 'resources', 'scripts', 'ai_configure_board.py');
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             const dataDir = path.join(outputDir, 'output', 'data');
+            const promptPath = path.join(dataDir, 'ai_configure_board.prompt.md');
+
+            // Remove stale prompt so onDidCreate always fires reliably
+            if (fs.existsSync(promptPath)) { fs.unlinkSync(promptPath); }
 
             let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
             if (!terminal) {
@@ -407,14 +458,21 @@ export function activate(context: vscode.ExtensionContext) {
             terminal.show();
             terminal.sendText(`python "${script}"`);
 
+            vscode.window.showInformationMessage('Generating board configuration prompt…');
+
             const w = vscode.workspace.createFileSystemWatcher(
                 new vscode.RelativePattern(vscode.Uri.file(dataDir), 'ai_configure_board.prompt.md')
             );
-            const d = w.onDidCreate(async (uri) => {
-                d.dispose();
-                w.dispose();
+            // onDidChange is the fallback if the OS reports a modify instead of create
+            let handled = false;
+            const handler = async (uri: vscode.Uri) => {
+                if (handled) { return; }
+                handled = true;
+                d1.dispose(); d2.dispose(); w.dispose();
                 await runConfigureBoardAI(uri, dataDir, context);
-            });
+            };
+            const d1 = w.onDidCreate(handler);
+            const d2 = w.onDidChange(handler);
             context.subscriptions.push(w);
         }),
 
