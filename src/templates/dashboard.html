@@ -707,6 +707,136 @@
     .fe-switch.on{background:#38b2ac}
     .fe-knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .2s;pointer-events:none}
     .fe-switch.on .fe-knob{left:20px}
+
+  @media (prefers-color-scheme: dark) {
+    body { background: #111827; color: #e2e8f0; }
+    .card { background: #1f2937; box-shadow: 0 4px 10px rgba(0,0,0,0.35); }
+    .card h2 { color: #94a3b8; }
+    .kpi-card { background: #1f2937; box-shadow: 0 4px 10px rgba(0,0,0,0.35); }
+    .kpi-value { color: #e2e8f0; }
+    .kpi-unit, .kpi-sub { color: #718096; }
+    .kpi-pill { background: #2d3748; color: #94a3b8; }
+    .kpi-pill.pill-positive { background: #1a3326; color: #68d391; }
+    .kpi-pill.pill-negative { background: #3b1a1a; color: #fc8181; }
+    .meta { color: #718096; }
+    .meta strong { color: #94a3b8; }
+    .tag { background: #1e3a5f; color: #90cdf4; }
+    .tabs { background: #1f2937; }
+    .tab-btn { color: #718096; }
+    .tab-btn:hover { background: rgba(255,255,255,0.05); color: #94a3b8; }
+    .tab-btn.active { background: #2d3748; color: #818cf8; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+    .zoom-btn, .zoom-reset-btn { background: rgba(31,41,55,0.92); border-color: #4a5568; color: #94a3b8; }
+    .zoom-btn:hover, .zoom-reset-btn:hover { background: #2d3748; }
+    .chart-tooltip { background: #1f2937; border-color: #2d3748; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    .tt-title { color: #e2e8f0; }
+    .tt-item { background: #111827; }
+    .tt-item-title { color: #94a3b8; }
+    .tt-total, .tt-hint { color: #718096; }
+    .tt-link { color: #818cf8; }
+    .tt-link:hover { color: #a5b4fc; }
+    .tt-bottleneck { background: #3b1a0a; color: #f6ad55; }
+    .type-toggle { background: #1f2937; color: #718096; }
+    .type-toggle.active { background: #111827; color: #e2e8f0; }
+    details.warnings summary { color: #fc8181; }
+    details.warnings ul { color: #feb2b2; }
+    .insight-box { background: #1a2744; }
+    .insight-box > summary.ib-summary { color: #a5b4fc; }
+    .ib-label { color: #e2e8f0; }
+    .ib-evidence li { color: #94a3b8; }
+    .ib-watch { color: #f6ad55; }
+    .insight-panel { background: #1f2937; box-shadow: 0 4px 10px rgba(0,0,0,0.35); }
+    .insight-panel-title { color: #94a3b8; border-bottom-color: #2d3748; }
+    .exec-headline { color: #e2e8f0; }
+    .exec-narrative { color: #94a3b8; }
+    .exec-meta-label { color: #718096; }
+    .exec-meta-value { color: #94a3b8; }
+    details.insight-item { border-color: #2d3748; }
+    details.insight-item > summary { color: #e2e8f0; background: #111827; }
+    details.insight-item[open] > summary { background: #1a2744; color: #818cf8; }
+    details.insight-item > summary::after { color: #718096; }
+    .insight-item-body { color: #94a3b8; border-top-color: #2d3748; background: #1f2937; }
+    .insight-body-label { color: #e2e8f0; }
+    .insight-num-badge { background: #4f46e5; }
+    .ref-legend-item { color: #718096; }
+    #filterBtn { background: #1f2937; border-color: #4a5568; color: #94a3b8; }
+    #filterBtn:hover { border-color: #667eea; color: #818cf8; }
+    #filterPanel { background: #1f2937; border-color: #2d3748; border-top-color: #667eea; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+    .fp-header { background: #111827; border-bottom-color: #2d3748; }
+    .fp-title { color: #e2e8f0; }
+    .fp-close-btn { color: #718096; }
+    .fp-close-btn:hover { color: #94a3b8; background: #2d3748; }
+    .fp-label { color: #94a3b8; }
+    .fp-section + .fp-section { border-top-color: #2d3748; }
+    .fp-chip { background: #111827; border-color: #2d3748; color: #94a3b8; }
+    .fp-chip:hover { border-color: #4a5568; background: #1f2937; }
+    .fp-token-box { border-color: #2d3748; }
+    .fp-token-box:focus-within { border-color: #667eea; }
+    .fp-token-input { color: #e2e8f0; }
+    .fp-input { background: #111827; border-color: #2d3748; color: #e2e8f0; }
+    .fp-input:focus, .fp-age-row input:focus { border-color: #667eea; }
+    .fp-age-row input { background: #111827; border-color: #2d3748; color: #e2e8f0; }
+    .fp-age-row span { color: #94a3b8; }
+    .fp-dropdown { background: #1f2937; border-color: #2d3748; }
+    .fp-dd-item { color: #94a3b8; }
+    .fp-dd-item:hover, .fp-dd-item.fp-active { background: #111827; }
+    .fp-actions { border-top-color: #2d3748; }
+    .fp-clear-btn { background: #111827; border-color: #2d3748; color: #718096; }
+    .fp-clear-btn:hover { border-color: #4a5568; color: #94a3b8; }
+    #filterPills { background: rgba(252,129,74,0.08); border-color: rgba(252,129,74,0.25); }
+    .filter-pill { background: #3b1a1a; border-color: rgba(252,129,129,0.4); color: #fc8181; }
+    #filterExcludedCount.heavy { color: #fc8181; }
+    #filterExcludedCount:not(.heavy) { color: #718096; }
+    .info-section-title { color: #94a3b8; border-bottom-color: #2d3748; }
+    .info-chip { background: #2d3748; color: #94a3b8; }
+    .info-pipeline { background: #111827; }
+    .col-incoming  { background: #2d3748; color: #94a3b8; border-color: #4a5568; }
+    .col-inprogress { background: #1a2744; color: #90cdf4; border-color: #2b6cb0; }
+    .col-outgoing  { background: #1a3326; color: #68d391; border-color: #276749; }
+    .pipeline-arrow { color: #4a5568; }
+    .info-type-pill { background: #111827; }
+    .cfg-block { background: #111827; }
+    .cfg-block-title { color: #94a3b8; }
+    .clock-col-head { color: #718096; }
+    .cfg-lbl { color: #718096; }
+    .cfg-val { color: #e2e8f0; }
+    .sig-row { border-bottom-color: #2d3748; }
+    .sig-label { color: #e2e8f0; }
+    .sig-tag { color: #718096; }
+    .alias-arrow { color: #4a5568; }
+    .alias-source-tag { color: #94a3b8; }
+    .alias-source-sep { color: #4a5568; }
+    .alias-unmapped { color: #718096; }
+    .eff-active  { border-color: #276749; background: #1a3326; color: #68d391; }
+    .eff-waiting { border-color: #c05621; background: #2d1a0e; color: #f6ad55; }
+    .dq-stat-card { background: #111827; border-color: #2d3748; }
+    .dq-stat-label { color: #718096; }
+    .dq-stat-value { color: #e2e8f0; }
+    .dq-row { border-color: #2d3748; }
+    .dq-ok  { background: #1a3326; border-color: rgba(154,230,180,0.3); }
+    .dq-warn { background: #2d1a0e; border-color: rgba(251,211,141,0.3); }
+    .dq-info { background: #1a2744; border-color: rgba(144,205,244,0.3); }
+    .dq-ok   .dq-count { background: #1a3326; color: #68d391; }
+    .dq-warn .dq-count { background: #2d1a0e; color: #f6ad55; }
+    .dq-info .dq-count { background: #1a2744; color: #90cdf4; }
+    details.dq-row > summary { color: #94a3b8; }
+    .dq-label  { color: #94a3b8; }
+    .dq-label small { color: #718096; }
+    .dq-detail { color: #718096; border-top-color: #2d3748; }
+    .dq-chip { background: #111827; border-color: #2d3748; color: #94a3b8; }
+    .dq-chip-more { background: #1f2937; color: #718096; }
+    .excl-row { background: rgba(251,211,141,0.07); border-color: rgba(251,211,141,0.25); }
+    .excl-id { color: #f6ad55; }
+    .excl-reason { color: #f6ad55; }
+    .excl-reason-desc { color: #718096; }
+    .info-empty { color: #4a5568; }
+    .fe-lbl.active { color: #e2e8f0; }
+    .fe-switch { background: #4a5568; }
+    .kpi-card.trend-positive { border-left-color: #48bb78; }
+    .kpi-card.trend-negative { border-left-color: #fc8181; }
+    .kpi-card.trend-neutral  { border-left-color: #4a5568; }
+    .col-incoming .col-wip-badge { background: #4a5568; }
+    .dq-row { background: transparent; }
+  }
   </style>
 </head>
 <body>
@@ -1144,6 +1274,19 @@
 <div id="sharedTooltip" class="chart-tooltip"></div>
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
+
+// Apply Chart.js colour defaults based on OS colour scheme
+(function () {
+  function applyChartTheme(dark) {
+    const text = dark ? '#94a3b8' : '#718096';
+    const grid = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)';
+    Chart.defaults.color = text;
+    Chart.defaults.borderColor = grid;
+  }
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  applyChartTheme(mq.matches);
+  mq.addEventListener('change', e => applyChartTheme(e.matches));
+})();
 
 // ── Wheel zoom + +/− buttons + reset  (zoom/pan state persisted in localStorage) ──
 (function () {
