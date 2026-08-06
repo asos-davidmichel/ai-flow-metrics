@@ -57,9 +57,19 @@ function getOutputFiles(boardDir: string): string[] {
 
 // ── Boards TreeView ────────────────────────────────────────────────────────
 
+const FILE_LABELS: Record<string, string> = {
+    'context.json':             'Board Context',
+    'data_quality_report.json': 'Data Quality Report',
+    'excluded_items.json':      'Excluded Work Items',
+    'work_items.json':          'List of Work Items',
+    'work_item_history.json':   'Work Item History',
+    'work_item_rework.json':    'Work Item Backward Moves',
+};
+
 class FileItem extends vscode.TreeItem {
     constructor(readonly filePath: string, boardDir: string) {
-        super(path.basename(filePath), vscode.TreeItemCollapsibleState.None);
+        const filename = path.basename(filePath);
+        super(FILE_LABELS[filename] ?? filename, vscode.TreeItemCollapsibleState.None);
         this.description = path.relative(path.join(boardDir, 'output'), path.dirname(filePath));
         this.resourceUri = vscode.Uri.file(filePath);
         const isHtml = filePath.endsWith('.html');
