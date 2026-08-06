@@ -203,6 +203,11 @@ export function activate(context: vscode.ExtensionContext) {
             openPreview(uri.fsPath, context);
         }
     });
+    watcher.onDidChange((uri) => {
+        if (!uri.fsPath.endsWith('.html')) {
+            openPreview(uri.fsPath, context);
+        }
+    });
     watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
     context.subscriptions.push(watcher);
 

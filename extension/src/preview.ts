@@ -709,27 +709,44 @@ pre { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
+const _panels = new Map<string, vscode.WebviewPanel>();
+
 export function openPreview(filePath: string, context: vscode.ExtensionContext): void {
     const filename = path.basename(filePath);
+
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    let raw: string;
+    let data: any;
+    try { raw = fs.readFileSync(filePath, 'utf-8'); data = JSON.parse(raw); }
+    catch {
+        // If we have an existing panel, leave it as-is rather than showing an error on a partial write
+        if (!_panels.has(filePath)) {
+            const p = vscode.window.createWebviewPanel('aiFlowMetrics.preview', filename, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+            p.webview.html = baseHtml(nonce, filename, `<p>Could not read file.</p>`);
+            _panels.set(filePath, p);
+            p.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
+        }
+        return;
+    }
+
+    const existing = _panels.get(filePath);
+    if (existing) {
+        existing.webview.html = buildHtml(filePath, filename, data, nonce);
+        existing.reveal(undefined, true); // reveal without stealing focus
+        return;
+    }
+
     const panel = vscode.window.createWebviewPanel(
         'aiFlowMetrics.preview',
         filename,
         vscode.ViewColumn.One,
         { enableScripts: true, retainContextWhenHidden: true },
     );
-
-    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-
-    let raw: string;
-    try { raw = fs.readFileSync(filePath, 'utf-8'); }
-    catch { panel.webview.html = baseHtml(nonce, filename, `<p>Could not read file.</p>`); return; }
-
-    let data: any;
-    try { data = JSON.parse(raw); }
-    catch { panel.webview.html = baseHtml(nonce, filename, `<p>Invalid JSON.</p>`); return; }
-
     panel.webview.html = buildHtml(filePath, filename, data, nonce);
+    _panels.set(filePath, panel);
+    panel.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
 }
 
 function buildHtml(filePath: string, filename: string, data: any, nonce: string): string {
