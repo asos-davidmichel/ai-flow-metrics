@@ -1,3 +1,4 @@
+import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -179,18 +180,6 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     }
 }
 
-// ── AI helpers ────────────────────────────────────────────────────────────
-
-async function runConfigureBoardAI(
-    promptUri: vscode.Uri,
-    dataDir: string,
-    _context: vscode.ExtensionContext,
-): Promise<void> {
-    const configPath = path.join(dataDir, 'config.json');
-    const query = `AI Flow Metrics — configure board: the prompt is ready at "${promptUri.fsPath}". Please read it, follow its instructions, and write the resulting JSON to "${configPath}".`;
-    await vscode.commands.executeCommand('workbench.action.chat.open', { query });
-}
-
 // ── Activate ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
@@ -342,33 +331,30 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             const dataDir = path.join(outputDir, 'output', 'data');
             const promptPath = path.join(dataDir, 'ai_configure_board.prompt.md');
+            const configPath = path.join(dataDir, 'config.json');
 
-            // Remove stale prompt so onDidCreate always fires reliably
-            if (fs.existsSync(promptPath)) { fs.unlinkSync(promptPath); }
-
-            let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
-            if (!terminal) {
-                terminal = vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd: outputDir });
-            }
-            terminal.show();
-            terminal.sendText(`python "${script}"`);
-
-            vscode.window.showInformationMessage('Generating board configuration prompt…');
-
-            const w = vscode.workspace.createFileSystemWatcher(
-                new vscode.RelativePattern(vscode.Uri.file(dataDir), 'ai_configure_board.prompt.md')
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Configure Board (AI)', cancellable: false },
+                (progress) => new Promise<void>((resolve) => {
+                    progress.report({ message: 'Generating prompt…' });
+                    let stderr = '';
+                    const proc = cp.spawn('python', [script], { cwd: outputDir });
+                    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+                    proc.on('close', async (code) => {
+                        if (code !== 0 || !fs.existsSync(promptPath)) {
+                            resolve();
+                            vscode.window.showErrorMessage(
+                                `Step 4 failed: could not generate prompt.${stderr ? ' ' + stderr.trim() : ' Ensure Steps 1–3 have run successfully.'}`
+                            );
+                            return;
+                        }
+                        progress.report({ message: 'Opening Copilot Chat…' });
+                        const query = `AI Flow Metrics — configure board: the prompt is ready at "${promptPath}". Please read it, follow its instructions, and write the resulting JSON to "${configPath}".`;
+                        await vscode.commands.executeCommand('workbench.action.chat.open', { query });
+                        resolve();
+                    });
+                })
             );
-            // onDidChange is the fallback if the OS reports a modify instead of create
-            let handled = false;
-            const handler = async (uri: vscode.Uri) => {
-                if (handled) { return; }
-                handled = true;
-                d1.dispose(); d2.dispose(); w.dispose();
-                await runConfigureBoardAI(uri, dataDir, context);
-            };
-            const d1 = w.onDidCreate(handler);
-            const d2 = w.onDidChange(handler);
-            context.subscriptions.push(w);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.checkData', async () => {
