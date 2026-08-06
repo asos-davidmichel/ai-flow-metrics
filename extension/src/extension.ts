@@ -338,7 +338,7 @@ export function activate(context: vscode.ExtensionContext) {
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Generating prompt…' });
                     let output = '';
-                    const proc = cp.spawn('python', [script], { cwd: outputDir });
+                    const proc = cp.spawn('python', [script], { cwd: outputDir, shell: true });
                     proc.stdout?.on('data', (d: Buffer) => { output += d.toString(); });
                     proc.stderr?.on('data', (d: Buffer) => { output += d.toString(); });
                     proc.on('error', (err) => {
