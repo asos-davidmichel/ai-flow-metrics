@@ -208,7 +208,12 @@ function renderConfig(data: any, nonce: string): string {
 
     const mapping = Object.entries(data.historical_column_mapping ?? {});
     const mappingRows = mapping.map(([from, to]) =>
-        `<tr><td>${esc(from)}</td><td style="color:var(--vscode-descriptionForeground)">→</td><td>${esc(to as string)}</td></tr>`
+        `<tr><td>${esc(from)}</td><td style="color:var(--vscode-descriptionForeground)">→</td><td>${esc(to as string ?? 'exclude')}</td></tr>`
+    ).join('\n');
+
+    const swimlaneMapping = Object.entries(data.swimlane_mapping ?? {});
+    const swimlaneMappingRows = swimlaneMapping.map(([from, to]) =>
+        `<tr><td>${esc(from)}</td><td style="color:var(--vscode-descriptionForeground)">→</td><td>${esc(to as string ?? 'unmapped')}</td></tr>`
     ).join('\n');
 
     const body = `
@@ -246,6 +251,12 @@ ${mappingRows ? `<section>
     <h2>Historical Column Mapping (${mapping.length})</h2>
     <table><thead><tr><th>Old Name</th><th></th><th>Maps To</th></tr></thead>
     <tbody>${mappingRows}</tbody></table>
+</section>` : ''}
+
+${swimlaneMappingRows ? `<section>
+    <h2>Swimlane Mapping (${swimlaneMapping.length})</h2>
+    <table><thead><tr><th>Old Name</th><th></th><th>Maps To</th></tr></thead>
+    <tbody>${swimlaneMappingRows}</tbody></table>
 </section>` : ''}`;
 
     return baseHtml(nonce, 'Board Configuration', body);

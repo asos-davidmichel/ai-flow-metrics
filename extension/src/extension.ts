@@ -60,6 +60,7 @@ function getOutputFiles(boardDir: string): string[] {
 
 const FILE_LABELS: Record<string, string> = {
     'context.json':             'Board Context',
+    'config.json':              'Board Configuration',
     'data_quality_report.json': 'Data Quality Report',
     'excluded_items.json':      'Excluded Work Items',
     'work_items.json':          'List of Work Items',
