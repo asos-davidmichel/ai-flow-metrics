@@ -30,6 +30,10 @@
         {
           "id": "aiFlowMetrics.pipeline",
           "name": "Pipeline"
+        },
+        {
+          "id": "aiFlowMetrics.publish",
+          "name": "Publish"
         }
       ]
     },
@@ -131,6 +135,16 @@
         "command": "ai-flow-metrics.autoplayWithReview",
         "title": "Autoplay: pause after board config for review",
         "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "ai-flow-metrics.publishDashboard",
+        "title": "Publish Dashboard to GitHub",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "ai-flow-metrics.relinkRepo",
+        "title": "Change Repository",
+        "icon": "$(edit)"
       }
     ],
     "menus": {
@@ -225,6 +239,16 @@
         {
           "command": "ai-flow-metrics.deleteFile",
           "when": "view == aiFlowMetrics.boards && viewItem == outputFile",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.publishDashboard",
+          "when": "view == aiFlowMetrics.publish && (viewItem == publish.unpublished || viewItem == publish.repo)",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.relinkRepo",
+          "when": "view == aiFlowMetrics.publish && viewItem == publish.repo",
           "group": "inline"
         }
       ]

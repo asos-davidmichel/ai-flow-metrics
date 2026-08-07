@@ -1,5 +1,7 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
+import * as https from 'https';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { openPreview } from './preview';
@@ -293,14 +295,127 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     }
 }
 
+// ── Publish helpers ────────────────────────────────────────────────────────
+
+function slugifyRepoName(name: string): string {
+    return 'flow-metrics-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function runGh(cmd: string): Promise<string> {
+    return new Promise((resolve, reject) =>
+        cp.exec(cmd, (err, stdout, stderr) =>
+            err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout.trim())
+        )
+    );
+}
+
+// Copies output files, skipping .prompt.md and dashboard.html (published separately as index.html)
+function copyOutputFiles(src: string, dest: string): void {
+    if (!fs.existsSync(src)) { return; }
+    for (const item of fs.readdirSync(src, { withFileTypes: true })) {
+        if (item.name.endsWith('.prompt.md') || item.name === 'dashboard.html') { continue; }
+        const s = path.join(src, item.name), d = path.join(dest, item.name);
+        if (item.isDirectory()) { fs.mkdirSync(d, { recursive: true }); copyOutputFiles(s, d); }
+        else { fs.copyFileSync(s, d); }
+    }
+}
+
+function githubPost(token: string, apiPath: string, body: object): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const data = JSON.stringify(body);
+        const req = https.request({
+            hostname: 'api.github.com', path: apiPath, method: 'POST',
+            headers: {
+                'Authorization': `token ${token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(data),
+                'User-Agent': 'ai-flow-metrics-vscode',
+            }
+        }, res => {
+            let raw = '';
+            res.on('data', (c: string) => raw += c);
+            res.on('end', () => (res.statusCode ?? 0) < 400 ? resolve() : reject(new Error(`GitHub ${res.statusCode}: ${raw}`)));
+        });
+        req.on('error', reject);
+        req.write(data); req.end();
+    });
+}
+
+// ── Publish Panel ──────────────────────────────────────────────────────────
+
+class PublishProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+    private _onDidChangeTreeData = new vscode.EventEmitter<void>();
+    readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+    constructor(
+        private readonly globalState: vscode.Memento,
+    ) {}
+
+    refresh() { this._onDidChangeTreeData.fire(); }
+    getTreeItem(item: vscode.TreeItem) { return item; }
+
+    getChildren(): vscode.TreeItem[] {
+        const activeId = this.globalState.get<string>('activeBoardId');
+        if (!activeId) { return [new vscode.TreeItem('No board selected')]; }
+
+        const repo      = this.globalState.get<string>(`publishRepo.${activeId}`);
+        const publishedAt = this.globalState.get<string>(`publishedAt.${activeId}`);
+
+        if (!repo) {
+            const item = new vscode.TreeItem('Not yet published', vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('circle-outline');
+            item.contextValue = 'publish.unpublished';
+            return [item];
+        }
+
+        const isPublic = this.globalState.get<boolean>(`publishIsPublic.${activeId}`);
+        const cleanRepo = repo.replace(/^https?:\/\/github\.com\//, '');
+        const [owner, repoName] = cleanRepo.split('/');
+        const pagesUrl = `https://${owner}.github.io/${repoName}`;
+        const dateStr  = publishedAt
+            ? new Date(publishedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : '';
+
+        const repoItem = new vscode.TreeItem(cleanRepo, vscode.TreeItemCollapsibleState.None);
+        repoItem.description  = dateStr ? `published ${dateStr}` : '';
+        repoItem.iconPath     = new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('testing.iconPassed'));
+        repoItem.contextValue = 'publish.repo';
+        repoItem.command      = { command: 'vscode.open', title: 'Open Repository', arguments: [vscode.Uri.parse(`https://github.com/${cleanRepo}`)] };
+        repoItem.tooltip      = `https://github.com/${cleanRepo}`;
+
+        const items: vscode.TreeItem[] = [repoItem];
+
+        if (isPublic) {
+            const pagesItem = new vscode.TreeItem(pagesUrl.replace('https://', ''), vscode.TreeItemCollapsibleState.None);
+            pagesItem.description  = 'live dashboard';
+            pagesItem.iconPath     = new vscode.ThemeIcon('globe');
+            pagesItem.contextValue = 'publish.pages';
+            pagesItem.command      = { command: 'vscode.open', title: 'Open Dashboard', arguments: [vscode.Uri.parse(pagesUrl)] };
+            pagesItem.tooltip      = pagesUrl;
+            items.push(pagesItem);
+        }
+
+        const schedItem = new vscode.TreeItem('Schedule', vscode.TreeItemCollapsibleState.None);
+        schedItem.description  = 'not configured';
+        schedItem.iconPath     = new vscode.ThemeIcon('calendar');
+        schedItem.contextValue = 'publish.schedule';
+        items.push(schedItem);
+
+        return items;
+    }
+}
+
 // ── Activate ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
     const boardsProvider   = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
     const pipelineProvider  = new PipelineProvider(context.globalState, context.globalStorageUri.fsPath);
+    const publishProvider   = new PublishProvider(context.globalState);
 
     vscode.window.registerTreeDataProvider('aiFlowMetrics.boards',   boardsProvider);
     vscode.window.registerTreeDataProvider('aiFlowMetrics.pipeline', pipelineProvider);
+    vscode.window.registerTreeDataProvider('aiFlowMetrics.publish',  publishProvider);
 
     // Refresh trees whenever output files are created or deleted
     const watcher = vscode.workspace.createFileSystemWatcher(
@@ -352,12 +467,14 @@ export function activate(context: vscode.ExtensionContext) {
             await context.globalState.update('activeBoardId', id);
             boardsProvider.refresh();
             pipelineProvider.refresh();
+            publishProvider.refresh();
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.selectBoard', async (board: Board) => {
             await context.globalState.update('activeBoardId', board.id);
             boardsProvider.refresh();
             pipelineProvider.refresh();
+            publishProvider.refresh();
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.removeBoard', async (item?: BoardItem) => {
@@ -386,6 +503,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             boardsProvider.refresh();
             pipelineProvider.refresh();
+            publishProvider.refresh();
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.deleteFile', async (item?: FileItem) => {
@@ -932,7 +1050,164 @@ export function activate(context: vscode.ExtensionContext) {
 
                 }
             );
-        }),    );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.publishDashboard', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const boardDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const dashboardSrc = path.join(boardDir, 'output', 'dashboard.html');
+            if (!fs.existsSync(dashboardSrc)) {
+                vscode.window.showErrorMessage('No dashboard found. Run the pipeline first.');
+                return;
+            }
+
+            // Re-use saved repo; only prompt on first publish (or after re-link)
+            let fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
+            if (!fullRepo) {
+                const input = await vscode.window.showInputBox({
+                    prompt: 'GitHub repository (owner/repo)',
+                    placeHolder: `myorg/${slugifyRepoName(board.name)}`,
+                    ignoreFocusOut: true,
+                    validateInput: v => v.includes('/') ? undefined : 'Must be owner/repo',
+                });
+                if (!input) { return; }
+                fullRepo = input.trim();
+            }
+            fullRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
+
+            const [owner, repoName] = fullRepo.split('/');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Publish Dashboard', cancellable: false },
+                async (progress) => {
+                    // 1. Check gh CLI + auth
+                    progress.report({ message: 'Checking GitHub CLI…' });
+                    try { await runGh('gh --version'); }
+                    catch { vscode.window.showErrorMessage('GitHub CLI (gh) not found. Install from https://cli.github.com'); return; }
+                    try { await runGh('gh auth status'); }
+                    catch { vscode.window.showErrorMessage('Not logged in to GitHub CLI. Run: gh auth login'); return; }
+
+                    // 2. Create repo if it doesn't exist
+                    let isNew = false;
+                    progress.report({ message: `Checking ${fullRepo}…` });
+                    let repoExists = true;
+                    try { await runGh(`gh repo view "${fullRepo}"`); }
+                    catch { repoExists = false; }
+
+                    let isPublic = false;
+                    if (!repoExists) {
+                        const visibilityPick = await vscode.window.showQuickPick(
+                            [
+                                { label: '$(lock) Private', description: 'Pages requires GitHub Pro / Teams / Enterprise', value: '--private' },
+                                { label: '$(globe) Public',  description: 'Anyone can view — dashboard data will be visible', value: '--public'  },
+                            ],
+                            { title: 'Repository visibility', ignoreFocusOut: true }
+                        );
+                        if (!visibilityPick) { return; }
+                        const visibilityFlag = (visibilityPick as { value: string }).value;
+                        isPublic = visibilityFlag === '--public';
+                        progress.report({ message: `Creating ${fullRepo}…` });
+                        try {
+                            await runGh(`gh repo create "${fullRepo}" ${visibilityFlag} --description "AI Flow Metrics dashboard for ${board.name}"`);
+                            isNew = true;
+                        } catch (e) { vscode.window.showErrorMessage(`Could not create repo: ${e}`); return; }
+                    } else {
+                        // Query visibility of the existing repo
+                        try {
+                            const isPrivateStr = await runGh(`gh repo view "${fullRepo}" --json isPrivate --jq .isPrivate`);
+                            isPublic = isPrivateStr.trim() === 'false';
+                        } catch { /* assume private if query fails */ }
+                    }
+
+                    // 3. Clone → clear → copy → commit → push
+                    const tmpDir = path.join(os.tmpdir(), `aiflowmetrics-publish-${Date.now()}`);
+                    progress.report({ message: 'Cloning repository…' });
+                    try {
+                        await runGh(`gh repo clone "${fullRepo}" "${tmpDir}"`);
+                    } catch (e) { vscode.window.showErrorMessage(`Clone failed: ${e}`); return; }
+
+                    try {
+                        for (const item of fs.readdirSync(tmpDir)) {
+                            if (item === '.git') { continue; }
+                            fs.rmSync(path.join(tmpDir, item), { recursive: true });
+                        }
+                        copyOutputFiles(path.join(boardDir, 'output'), tmpDir);
+                        fs.copyFileSync(dashboardSrc, path.join(tmpDir, 'index.html'));
+
+                        progress.report({ message: 'Publishing to GitHub…' });
+                        const gitCmds = [
+                            `git -C "${tmpDir}" config user.email "aiflowmetrics@users.noreply.github.com"`,
+                            `git -C "${tmpDir}" config user.name "AI Flow Metrics"`,
+                            `git -C "${tmpDir}" add -A`,
+                            `git -C "${tmpDir}" commit -m "Dashboard published ${new Date().toISOString()}"`,
+                            isNew
+                                ? `git -C "${tmpDir}" push -u origin HEAD:main`
+                                : `git -C "${tmpDir}" push`,
+                        ];
+                        for (const cmd of gitCmds) {
+                            await runGh(cmd).catch(() => {}); // commit is a no-op if nothing changed
+                        }
+
+                        if (isNew) {
+                            progress.report({ message: 'Enabling GitHub Pages…' });
+                            try {
+                                const token = await runGh('gh auth token');
+                                await githubPost(token, `/repos/${fullRepo}/pages`, { source: { branch: 'main', path: '/' } });
+                            } catch { /* Pages may already be on, or org policy differs */ }
+                        }
+                    } finally {
+                        // git may still hold handles on Windows — ignore EPERM
+                        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+                    }
+
+                    await context.globalState.update(`publishRepo.${activeId}`, fullRepo);
+                    await context.globalState.update(`publishedAt.${activeId}`, new Date().toISOString());
+                    await context.globalState.update(`publishIsPublic.${activeId}`, isPublic);
+                    publishProvider.refresh();
+
+                    const pagesUrl = `https://${owner}.github.io/${repoName}`;
+                    const repoUrl  = `https://github.com/${fullRepo}`;
+                    if (isNew && isPublic) {
+                        vscode.window.showInformationMessage(
+                            `Published to ${fullRepo}. GitHub Pages will be live at ${pagesUrl} in ~1 minute.`,
+                            'Open Repository'
+                        ).then(c => { if (c === 'Open Repository') { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); } });
+                    } else {
+                        vscode.window.showInformationMessage(
+                            `Dashboard published to ${fullRepo}`,
+                            ...(isPublic ? ['Open Dashboard' as const] : []), 'Open Repository' as const
+                        ).then(c => {
+                            if (c === 'Open Dashboard')  { vscode.env.openExternal(vscode.Uri.parse(pagesUrl)); }
+                            if (c === 'Open Repository') { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); }
+                        });
+                    }
+                }
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.relinkRepo', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { return; }
+            const previousRepo      = context.globalState.get<string>(`publishRepo.${activeId}`);
+            const previousAt        = context.globalState.get<string>(`publishedAt.${activeId}`);
+            const previousIsPublic  = context.globalState.get<boolean>(`publishIsPublic.${activeId}`);
+            await context.globalState.update(`publishRepo.${activeId}`, undefined);
+            await context.globalState.update(`publishedAt.${activeId}`, undefined);
+            await context.globalState.update(`publishIsPublic.${activeId}`, undefined);
+            publishProvider.refresh();
+            await vscode.commands.executeCommand('ai-flow-metrics.publishDashboard');
+            // If the user cancelled without publishing, restore the previous state
+            if (!context.globalState.get(`publishRepo.${activeId}`)) {
+                await context.globalState.update(`publishRepo.${activeId}`, previousRepo);
+                await context.globalState.update(`publishedAt.${activeId}`, previousAt);
+                await context.globalState.update(`publishIsPublic.${activeId}`, previousIsPublic);
+                publishProvider.refresh();
+            }
+        }),
+    );
 }
 
 export function deactivate() {}
