@@ -1245,15 +1245,50 @@ export function activate(context: vscode.ExtensionContext) {
             }
             const cleanRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
 
+            const isConfigured = !!context.globalState.get<string>(`publishSchedule.${activeId}`);
+
             const SCHEDULES = [
-                { label: 'Daily at 9am UTC',          cron: '0 9 * * *',   description: 'Every day at 09:00 UTC' },
-                { label: 'Weekly — Monday 9am UTC',   cron: '0 9 * * 1',   description: 'Every Monday at 09:00 UTC' },
-                { label: 'Weekly — Friday 9am UTC',   cron: '0 9 * * 5',   description: 'Every Friday at 09:00 UTC' },
-                { label: '$(edit) Custom cron…',      cron: '',             description: 'Enter a cron expression' },
+                { label: 'Daily at 9am UTC',          cron: '0 9 * * *', description: 'Every day at 09:00 UTC' },
+                { label: 'Weekly — Monday 9am UTC',   cron: '0 9 * * 1', description: 'Every Monday at 09:00 UTC' },
+                { label: 'Weekly — Friday 9am UTC',   cron: '0 9 * * 5', description: 'Every Friday at 09:00 UTC' },
+                { label: '$(edit) Custom cron…',      cron: '',          description: 'Enter a cron expression' },
+                ...(isConfigured ? [{ label: '$(trash) Remove schedule', cron: 'remove', description: 'Delete the workflow from the repo' }] : []),
             ];
-            const pick = await vscode.window.showQuickPick(SCHEDULES, { title: 'Schedule frequency', ignoreFocusOut: true });
+            const pick = await vscode.window.showQuickPick(SCHEDULES, { title: 'Schedule', ignoreFocusOut: true });
             if (!pick) { return; }
 
+            // ── Remove ────────────────────────────────────────────────────
+            if (pick.cron === 'remove') {
+                await vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: 'Remove Schedule', cancellable: false },
+                    async (progress) => {
+                        const tmpDir = path.join(os.tmpdir(), `aiflowmetrics-schedule-${Date.now()}`);
+                        progress.report({ message: 'Cloning repository…' });
+                        try { await runGh(`gh repo clone "${cleanRepo}" "${tmpDir}"`); }
+                        catch (e) { vscode.window.showErrorMessage(`Clone failed: ${e}`); return; }
+                        try {
+                            const workflowFile = path.join(tmpDir, '.github', 'workflows', 'update-dashboard.yml');
+                            if (fs.existsSync(workflowFile)) { fs.unlinkSync(workflowFile); }
+                            const gitCmds = [
+                                `git -C "${tmpDir}" config user.email "aiflowmetrics@users.noreply.github.com"`,
+                                `git -C "${tmpDir}" config user.name "AI Flow Metrics"`,
+                                `git -C "${tmpDir}" add -A`,
+                                `git -C "${tmpDir}" commit -m "Remove scheduled update workflow"`,
+                                `git -C "${tmpDir}" push`,
+                            ];
+                            for (const cmd of gitCmds) { await runGh(cmd).catch(() => {}); }
+                        } finally {
+                            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+                        }
+                        await context.globalState.update(`publishSchedule.${activeId}`, undefined);
+                        publishProvider.refresh();
+                        vscode.window.showInformationMessage('Schedule removed.');
+                    }
+                );
+                return;
+            }
+
+            // ── Add / Edit ────────────────────────────────────────────────
             let cronExpr = pick.cron;
             if (!cronExpr) {
                 const input = await vscode.window.showInputBox({
@@ -1301,7 +1336,7 @@ export function activate(context: vscode.ExtensionContext) {
                             `git -C "${tmpDir}" config user.email "aiflowmetrics@users.noreply.github.com"`,
                             `git -C "${tmpDir}" config user.name "AI Flow Metrics"`,
                             `git -C "${tmpDir}" add -A`,
-                            `git -C "${tmpDir}" commit -m "Add scheduled update workflow (${cronExpr})"`,
+                            `git -C "${tmpDir}" commit -m "${isConfigured ? 'Update' : 'Add'} scheduled update workflow (${cronExpr})"`,
                             `git -C "${tmpDir}" push`,
                         ];
                         for (const cmd of gitCmds) { await runGh(cmd).catch(() => {}); }
