@@ -35,11 +35,9 @@ const PIPELINE_STEPS: PipelineStep[] = [
     { label: 'Calculate Cycle Time',       description: '',       contextValue: 'step.calcCycleTime',      outputFile: 'output/metrics/cycle_time.json',          group: 'group.calculateMetrics'       },
     { label: 'Calculate Lead Time',        description: '',       contextValue: 'step.calcLeadTime',       outputFile: 'output/metrics/lead_time.json',           group: 'group.calculateMetrics'       },
     { label: 'Generate Dashboard',         description: 'Step 5', contextValue: 'step.generateDashboard',  outputFile: 'output/dashboard.html'                   },
-    { label: 'Interpret Metrics (AI)',     description: '',       contextValue: 'step.interpretMetrics',   outputFile: 'output/data/insights.json',               group: 'group.interpretAndRegenerate' },
     {
-        label: 'Re-generate Dashboard', description: '', contextValue: 'step.regenerateDashboard',
-        group: 'group.interpretAndRegenerate',
-        // Green when dashboard.html is newer than insights.json (meaning it was re-generated with insights)
+        label: 'Interpret Metrics (AI)', description: 'Step 6', contextValue: 'step.interpretMetrics',
+        // Done when dashboard has been re-generated with the AI insights
         doneCheck: (boardDir) => {
             const dashboard = path.join(boardDir, 'output/dashboard.html');
             const insights  = path.join(boardDir, 'output/data/insights.json');
@@ -50,24 +48,21 @@ const PIPELINE_STEPS: PipelineStep[] = [
 ];
 
 const PIPELINE_GROUPS: PipelineGroup[] = [
-    { label: 'Fetch & Check',          contextValue: 'group.fetchAndCheck',          description: 'Step 2', requires: 'output/data/context.json'      },
-    { label: 'Calculate Metrics',      contextValue: 'group.calculateMetrics',       description: 'Step 4', requires: 'output/data/config.json'        },
-    { label: 'Interpret & Regenerate', contextValue: 'group.interpretAndRegenerate', description: 'Step 6', requires: 'output/dashboard.html'          },
+    { label: 'Fetch & Check',     contextValue: 'group.fetchAndCheck',    description: 'Step 2', requires: 'output/data/context.json' },
+    { label: 'Calculate Metrics', contextValue: 'group.calculateMetrics', description: 'Step 4', requires: 'output/data/config.json'   },
 ];
 
 const STEP_PREREQS: Record<string, string> = {
-    'step.fetchItems':              'output/data/context.json',
-    'step.checkData':               'output/data/work_items.json',
-    'step.configureBoard':          'output/data/data_quality_report.json',
-    'step.calcColumns':             'output/data/config.json',
-    'step.calcCycleTime':           'output/metrics/time_in_columns.json',
-    'step.calcLeadTime':            'output/metrics/cycle_time.json',
-    'step.generateDashboard':       'output/metrics/lead_time.json',
-    'step.interpretMetrics':        'output/dashboard.html',
-    'step.regenerateDashboard':     'output/data/insights.json',
-    'group.fetchAndCheck':          'output/data/context.json',
-    'group.calculateMetrics':       'output/data/config.json',
-    'group.interpretAndRegenerate': 'output/dashboard.html',
+    'step.fetchItems':     'output/data/context.json',
+    'step.checkData':      'output/data/work_items.json',
+    'step.configureBoard': 'output/data/data_quality_report.json',
+    'step.calcColumns':    'output/data/config.json',
+    'step.calcCycleTime':  'output/metrics/time_in_columns.json',
+    'step.calcLeadTime':   'output/metrics/cycle_time.json',
+    'step.generateDashboard': 'output/metrics/lead_time.json',
+    'step.interpretMetrics':  'output/dashboard.html',
+    'group.fetchAndCheck':    'output/data/context.json',
+    'group.calculateMetrics': 'output/data/config.json',
 };
 
 function assertPrereq(key: string, boardDir: string): boolean {
@@ -109,6 +104,7 @@ function getOutputFiles(boardDir: string): string[] {
         }
     };
     scan(outDir);
+    results.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
     return results;
 }
 
@@ -267,9 +263,22 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             return PIPELINE_STEPS.filter(s => s.group === element.contextValue).map(s => new PipelineItem(s, stepDone(s), true));
         }
 
-        const doneCount = PIPELINE_STEPS.filter(stepDone).length;
+        // Count progress at the top-level granularity (groups count as 1 unit)
+        let totalTopLevel = 0, doneTopLevel = 0;
+        const seenForProgress = new Set<string>();
+        for (const s of PIPELINE_STEPS) {
+            if (!s.group) {
+                totalTopLevel++;
+                if (stepDone(s)) { doneTopLevel++; }
+            } else if (!seenForProgress.has(s.group)) {
+                seenForProgress.add(s.group);
+                totalTopLevel++;
+                if (PIPELINE_STEPS.filter(x => x.group === s.group).every(stepDone)) { doneTopLevel++; }
+            }
+        }
+
         const seenGroups = new Set<string>();
-        const items: vscode.TreeItem[] = [new PipelineProgressItem(doneCount, PIPELINE_STEPS.length)];
+        const items: vscode.TreeItem[] = [new PipelineProgressItem(doneTopLevel, totalTopLevel)];
         for (const s of PIPELINE_STEPS) {
             if (!s.group) {
                 items.push(new PipelineItem(s, stepDone(s)));
@@ -598,7 +607,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Generate Dashboard', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Rendering…' });
-                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`python "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -624,6 +633,7 @@ export function activate(context: vscode.ExtensionContext) {
             const promptPath = path.join(dataDir, 'ai_interpret_metrics.prompt.md');
             const insightsPath = path.join(dataDir, 'insights.json');
 
+            let chatOpened = false;
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Interpret Metrics (AI)', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
@@ -632,17 +642,34 @@ export function activate(context: vscode.ExtensionContext) {
                         const output = (stdout + stderr).trim();
                         if (error || !fs.existsSync(promptPath)) {
                             resolve();
-                            vscode.window.showErrorMessage(`Step 9 failed: ${output || 'No output. Ensure Steps 1–8 have run successfully.'}`);
+                            vscode.window.showErrorMessage(`Step 6 failed: ${output || 'No output. Ensure Steps 1–5 have run successfully.'}`);
                             return;
                         }
                         progress.report({ message: 'Opening Copilot Chat…' });
                         const promptText = fs.readFileSync(promptPath, 'utf-8');
                         const query = `${promptText}\n\nWrite the resulting JSON insights to "${insightsPath}".`;
                         await vscode.commands.executeCommand('workbench.action.chat.open', { query });
+                        chatOpened = true;
                         resolve();
                     });
                 })
             );
+            // Auto-regenerate the dashboard as soon as Copilot writes insights.json
+            if (chatOpened) {
+                let triggered = false;
+                const insightsWatcher = vscode.workspace.createFileSystemWatcher(
+                    new vscode.RelativePattern(vscode.Uri.file(path.join(outputDir, 'output', 'data')), 'insights.json')
+                );
+                const autoRegen = async () => {
+                    if (triggered) return;
+                    triggered = true;
+                    insightsWatcher.dispose();
+                    await vscode.commands.executeCommand('ai-flow-metrics.regenerateDashboard');
+                };
+                insightsWatcher.onDidCreate(() => autoRegen());
+                insightsWatcher.onDidChange(() => autoRegen());
+                setTimeout(() => { if (!triggered) { insightsWatcher.dispose(); } }, 15 * 60 * 1000);
+            }
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.regenerateDashboard', async () => {
@@ -653,7 +680,6 @@ export function activate(context: vscode.ExtensionContext) {
             const script = path.join(context.extensionPath, 'resources', 'scripts', 'create_dashboard.py');
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             const outputPath = path.join(outputDir, 'output', 'dashboard.html');
-            if (!assertPrereq('step.regenerateDashboard', outputDir)) { return; }
 
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Re-generate Dashboard', cancellable: false },
@@ -727,35 +753,6 @@ export function activate(context: vscode.ExtensionContext) {
                     boardsProvider.refresh(); pipelineProvider.refresh();
                 }
             );
-        }),
-
-        vscode.commands.registerCommand('ai-flow-metrics.runInterpretAndRegenerateGroup', async () => {
-            const activeId = context.globalState.get<string>('activeBoardId');
-            const board = boardsProvider.getBoards().find(b => b.id === activeId);
-            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
-
-            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
-            if (!assertPrereq('group.interpretAndRegenerate', outputDir)) { return; }
-
-            pipelineProvider.setGroupRunning('group.interpretAndRegenerate', true);
-            // Step 9: generate prompt and open Copilot Chat
-            await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
-
-            // Auto-run step 10 as soon as Copilot writes insights.json
-            let triggered = false;
-            const insightsWatcher = vscode.workspace.createFileSystemWatcher(
-                new vscode.RelativePattern(vscode.Uri.file(path.join(outputDir, 'output', 'data')), 'insights.json')
-            );
-            const autoRegen = async () => {
-                if (triggered) return;
-                triggered = true;
-                insightsWatcher.dispose();
-                await vscode.commands.executeCommand('ai-flow-metrics.regenerateDashboard');
-                pipelineProvider.setGroupRunning('group.interpretAndRegenerate', false);
-            };
-            insightsWatcher.onDidCreate(() => autoRegen());
-            insightsWatcher.onDidChange(() => autoRegen());
-            setTimeout(() => { if (!triggered) insightsWatcher.dispose(); }, 15 * 60 * 1000);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.autoplay', async () => {
@@ -839,9 +836,9 @@ export function activate(context: vscode.ExtensionContext) {
                     await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
                     await waitForFile('output/dashboard.html', 2 * 60 * 1000);
 
-                    // Steps 9–10: Interpret & Regenerate (auto-chained)
-                    progress.report({ message: 'Steps 9–10 — Interpreting metrics (AI)…' });
-                    await vscode.commands.executeCommand('ai-flow-metrics.runInterpretAndRegenerateGroup');
+                    // Step 6: Interpret — auto-regenerates dashboard when Copilot writes insights.json
+                    progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
+                    await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
                 }
             );
         }),    );
