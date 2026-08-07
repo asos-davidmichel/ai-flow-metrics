@@ -145,6 +145,11 @@
         "command": "ai-flow-metrics.relinkRepo",
         "title": "Change Repository",
         "icon": "$(edit)"
+      },
+      {
+        "command": "ai-flow-metrics.configureSchedule",
+        "title": "Configure Schedule",
+        "icon": "$(calendar)"
       }
     ],
     "menus": {
@@ -249,6 +254,11 @@
         {
           "command": "ai-flow-metrics.relinkRepo",
           "when": "view == aiFlowMetrics.publish && viewItem == publish.repo",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.configureSchedule",
+          "when": "view == aiFlowMetrics.publish && (viewItem == publish.schedule || viewItem == publish.schedule.configured)",
           "group": "inline"
         }
       ]

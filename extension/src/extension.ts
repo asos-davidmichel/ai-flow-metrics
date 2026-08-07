@@ -320,6 +320,50 @@ function copyOutputFiles(src: string, dest: string): void {
     }
 }
 
+function generateWorkflowYaml(cronExpr: string): string {
+    return [
+        'name: Update Dashboard',
+        'on:',
+        '  schedule:',
+        `    - cron: '${cronExpr}'`,
+        '  workflow_dispatch:',
+        'jobs:',
+        '  update:',
+        '    runs-on: ubuntu-latest',
+        '    permissions:',
+        '      contents: write',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '      - uses: actions/setup-python@v5',
+        '        with:',
+        '          python-version: "3.11"',
+        '      - name: Install dependencies',
+        '        run: pip install requests jinja2 -q',
+        '      - name: Fetch data',
+        '        env:',
+        '          ADO_PAT: ${{ secrets.ADO_PAT }}',
+        '        run: python scripts/fetch_data.py "${{ vars.BOARD_URL }}"',
+        '      - name: Check data',
+        '        run: python scripts/check_data.py',
+        '      - name: Calculate metrics',
+        '        run: |',
+        '          python scripts/calc_columns.py',
+        '          python scripts/calc_cycle_time.py',
+        '          python scripts/calc_lead_time.py',
+        '      - name: Generate dashboard',
+        '        run: python scripts/create_dashboard.py --force',
+        '      - name: Update index.html',
+        '        run: cp output/dashboard.html index.html',
+        '      - name: Commit and push',
+        '        run: |',
+        '          git config user.email "github-actions@github.com"',
+        '          git config user.name "GitHub Actions"',
+        '          git add -A',
+        '          git diff --quiet && git diff --staged --quiet || git commit -m "Dashboard updated $(date -u +%Y-%m-%dT%H:%M:%SZ)"',
+        '          git push',
+    ].join('\n');
+}
+
 function githubPost(token: string, apiPath: string, body: object): Promise<void> {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify(body);
@@ -396,10 +440,11 @@ class PublishProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             items.push(pagesItem);
         }
 
+        const schedule = this.globalState.get<string>(`publishSchedule.${activeId}`);
         const schedItem = new vscode.TreeItem('Schedule', vscode.TreeItemCollapsibleState.None);
-        schedItem.description  = 'not configured';
+        schedItem.description  = schedule ?? 'not configured';
         schedItem.iconPath     = new vscode.ThemeIcon('calendar');
-        schedItem.contextValue = 'publish.schedule';
+        schedItem.contextValue = schedule ? 'publish.schedule.configured' : 'publish.schedule';
         items.push(schedItem);
 
         return items;
@@ -1131,10 +1176,10 @@ export function activate(context: vscode.ExtensionContext) {
 
                     try {
                         for (const item of fs.readdirSync(tmpDir)) {
-                            if (item === '.git') { continue; }
+                            if (item === '.git' || item === '.github' || item === 'scripts') { continue; }
                             fs.rmSync(path.join(tmpDir, item), { recursive: true });
                         }
-                        copyOutputFiles(path.join(boardDir, 'output'), tmpDir);
+                        copyOutputFiles(path.join(boardDir, 'output'), path.join(tmpDir, 'output'));
                         fs.copyFileSync(dashboardSrc, path.join(tmpDir, 'index.html'));
 
                         progress.report({ message: 'Publishing to GitHub…' });
@@ -1184,6 +1229,113 @@ export function activate(context: vscode.ExtensionContext) {
                             if (c === 'Open Repository') { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); }
                         });
                     }
+                }
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.configureSchedule', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
+            if (!fullRepo) {
+                vscode.window.showErrorMessage('Publish the dashboard first, then configure a schedule.');
+                return;
+            }
+            const cleanRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
+
+            const SCHEDULES = [
+                { label: 'Daily at 9am UTC',          cron: '0 9 * * *',   description: 'Every day at 09:00 UTC' },
+                { label: 'Weekly — Monday 9am UTC',   cron: '0 9 * * 1',   description: 'Every Monday at 09:00 UTC' },
+                { label: 'Weekly — Friday 9am UTC',   cron: '0 9 * * 5',   description: 'Every Friday at 09:00 UTC' },
+                { label: '$(edit) Custom cron…',      cron: '',             description: 'Enter a cron expression' },
+            ];
+            const pick = await vscode.window.showQuickPick(SCHEDULES, { title: 'Schedule frequency', ignoreFocusOut: true });
+            if (!pick) { return; }
+
+            let cronExpr = pick.cron;
+            if (!cronExpr) {
+                const input = await vscode.window.showInputBox({
+                    prompt: 'Cron expression (UTC)',
+                    placeHolder: '0 9 * * 1',
+                    ignoreFocusOut: true,
+                    validateInput: v => v.trim().split(/\s+/).length === 5 ? undefined : 'Must be 5 fields: minute hour day month weekday',
+                });
+                if (!input) { return; }
+                cronExpr = input.trim();
+            }
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Configure Schedule', cancellable: false },
+                async (progress) => {
+                    const tmpDir = path.join(os.tmpdir(), `aiflowmetrics-schedule-${Date.now()}`);
+                    progress.report({ message: 'Cloning repository…' });
+                    try { await runGh(`gh repo clone "${cleanRepo}" "${tmpDir}"`); }
+                    catch (e) { vscode.window.showErrorMessage(`Clone failed: ${e}`); return; }
+
+                    try {
+                        // Write workflow
+                        const workflowDir = path.join(tmpDir, '.github', 'workflows');
+                        fs.mkdirSync(workflowDir, { recursive: true });
+                        fs.writeFileSync(path.join(workflowDir, 'update-dashboard.yml'), generateWorkflowYaml(cronExpr));
+
+                        // Copy Python scripts + dashboard template
+                        const scriptsDir = path.join(tmpDir, 'scripts');
+                        const templatesDir = path.join(scriptsDir, 'templates');
+                        fs.mkdirSync(templatesDir, { recursive: true });
+                        const scriptNames = ['fetch_data.py','util_ado.py','check_data.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py'];
+                        for (const s of scriptNames) {
+                            fs.copyFileSync(
+                                path.join(context.extensionPath, 'resources', 'scripts', s),
+                                path.join(scriptsDir, s)
+                            );
+                        }
+                        fs.copyFileSync(
+                            path.join(context.extensionPath, 'resources', 'scripts', 'templates', 'dashboard.html'),
+                            path.join(templatesDir, 'dashboard.html')
+                        );
+
+                        progress.report({ message: 'Committing workflow…' });
+                        const gitCmds = [
+                            `git -C "${tmpDir}" config user.email "aiflowmetrics@users.noreply.github.com"`,
+                            `git -C "${tmpDir}" config user.name "AI Flow Metrics"`,
+                            `git -C "${tmpDir}" add -A`,
+                            `git -C "${tmpDir}" commit -m "Add scheduled update workflow (${cronExpr})"`,
+                            `git -C "${tmpDir}" push`,
+                        ];
+                        for (const cmd of gitCmds) { await runGh(cmd).catch(() => {}); }
+
+                        // Set BOARD_URL as Actions variable
+                        progress.report({ message: 'Setting BOARD_URL variable…' });
+                        try {
+                            await runGh(`gh api repos/${cleanRepo}/actions/variables -X POST -f name=BOARD_URL -f value="${board.url}"`);
+                        } catch {
+                            // Variable may already exist — try PATCH
+                            await runGh(`gh api repos/${cleanRepo}/actions/variables/BOARD_URL -X PATCH -f value="${board.url}"`).catch(() => {});
+                        }
+
+                        // Set ADO_PAT secret if available in environment
+                        const adoPat = process.env.ADO_PAT;
+                        if (adoPat) {
+                            progress.report({ message: 'Setting ADO_PAT secret…' });
+                            try { await runGh(`gh secret set ADO_PAT --body "${adoPat}" --repo "${cleanRepo}"`); }
+                            catch { /* non-fatal — user can set manually */ }
+                        }
+                    } finally {
+                        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+                    }
+
+                    const scheduleLabel = pick.cron ? pick.label : cronExpr;
+                    await context.globalState.update(`publishSchedule.${activeId}`, scheduleLabel);
+                    publishProvider.refresh();
+
+                    const secretsUrl = `https://github.com/${cleanRepo}/settings/secrets/actions/new`;
+                    const msg = process.env.ADO_PAT
+                        ? `Schedule configured: ${scheduleLabel}`
+                        : `Schedule configured. Add ADO_PAT as a repository secret to enable data fetching.`;
+                    vscode.window.showInformationMessage(msg, ...(process.env.ADO_PAT ? [] : ['Set ADO_PAT Secret']))
+                        .then(c => { if (c === 'Set ADO_PAT Secret') { vscode.env.openExternal(vscode.Uri.parse(secretsUrl)); } });
                 }
             );
         }),
