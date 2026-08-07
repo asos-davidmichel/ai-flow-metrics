@@ -296,13 +296,13 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 // ── Activate ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
-    const boardsProvider = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
-    const pipelineProvider = new PipelineProvider(context.globalState, context.globalStorageUri.fsPath);
+    const boardsProvider   = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
+    const pipelineProvider  = new PipelineProvider(context.globalState, context.globalStorageUri.fsPath);
 
-    vscode.window.registerTreeDataProvider('aiFlowMetrics.boards', boardsProvider);
+    vscode.window.registerTreeDataProvider('aiFlowMetrics.boards',   boardsProvider);
     vscode.window.registerTreeDataProvider('aiFlowMetrics.pipeline', pipelineProvider);
 
-    // Refresh the boards tree whenever output files are created or deleted
+    // Refresh trees whenever output files are created or deleted
     const watcher = vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(context.globalStorageUri, '**/*.{json,html}')
     );
@@ -801,44 +801,135 @@ export function activate(context: vscode.ExtensionContext) {
                         }
                     }
 
-                    // Steps 2–3: Fetch & Check group (terminal-based)
+                    // Step 2: Fetch & Check group (terminal-based)
                     if (!exists('output/data/data_quality_report.json')) {
-                        progress.report({ message: 'Steps 2–3 — Fetching work items & data quality check…' });
+                        progress.report({ message: 'Step 2 — Fetching work items & data quality check…' });
                         await vscode.commands.executeCommand('ai-flow-metrics.runFetchAndCheckGroup');
                         if (!await waitForFile('output/data/data_quality_report.json', 10 * 60 * 1000)) {
-                            vscode.window.showErrorMessage('Autoplay stopped: Steps 2–3 timed out.');
+                            vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.');
                             return;
                         }
                     }
 
-                    // Step 4: Configure Board (AI — opens Copilot Chat, user must complete)
+                    // Step 3: Configure Board (AI — opens Copilot Chat, user must complete)
                     if (!exists('output/data/config.json')) {
-                        progress.report({ message: 'Step 4 — Configure Board (AI) — waiting for config.json…' });
+                        progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
                         await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
                         if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out (config.json not written).');
+                            vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).');
                             return;
                         }
                     }
 
-                    // Steps 5–7: Calculate Metrics group
+                    // Step 4: Calculate Metrics group
                     if (!exists('output/metrics/lead_time.json')) {
-                        progress.report({ message: 'Steps 5–7 — Calculating metrics…' });
+                        progress.report({ message: 'Step 4 — Calculating metrics…' });
                         await vscode.commands.executeCommand('ai-flow-metrics.runCalculationsGroup');
                         if (!await waitForFile('output/metrics/lead_time.json', 5 * 60 * 1000)) {
-                            vscode.window.showErrorMessage('Autoplay stopped: Steps 5–7 timed out.');
+                            vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.');
                             return;
                         }
                     }
 
-                    // Step 8: Generate Dashboard
-                    progress.report({ message: 'Step 8 — Generating dashboard…' });
+                    // Step 5: Generate Dashboard
+                    progress.report({ message: 'Step 5 — Generating dashboard…' });
                     await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
                     await waitForFile('output/dashboard.html', 2 * 60 * 1000);
 
                     // Step 6: Interpret — auto-regenerates dashboard when Copilot writes insights.json
                     progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
                     await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
+
+                }
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.autoplayWithReview', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            const board = boardsProvider.getBoards().find(b => b.id === activeId);
+            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+
+            function waitForFile(relPath: string, timeoutMs: number): Promise<boolean> {
+                const absPath = path.join(outputDir, relPath);
+                if (fs.existsSync(absPath)) { return Promise.resolve(true); }
+                return new Promise<boolean>(resolve => {
+                    const dir = path.dirname(absPath);
+                    const file = path.basename(absPath);
+                    const watcher = vscode.workspace.createFileSystemWatcher(
+                        new vscode.RelativePattern(vscode.Uri.file(dir), file)
+                    );
+                    let done = false;
+                    const finish = (ok: boolean) => {
+                        if (done) return;
+                        done = true;
+                        watcher.dispose();
+                        clearTimeout(timer);
+                        resolve(ok);
+                    };
+                    watcher.onDidCreate(() => finish(true));
+                    watcher.onDidChange(() => finish(true));
+                    const timer = setTimeout(() => finish(false), timeoutMs);
+                });
+            }
+
+            const exists = (rel: string) => fs.existsSync(path.join(outputDir, rel));
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'AI Flow Metrics — Autoplay', cancellable: false },
+                async (progress) => {
+                    if (!exists('output/data/context.json')) {
+                        progress.report({ message: 'Step 1 — Fetching board context…' });
+                        await vscode.commands.executeCommand('ai-flow-metrics.fetchContext');
+                        if (!await waitForFile('output/data/context.json', 2 * 60 * 1000)) {
+                            vscode.window.showErrorMessage('Autoplay stopped: Step 1 timed out.');
+                            return;
+                        }
+                    }
+
+                    if (!exists('output/data/data_quality_report.json')) {
+                        progress.report({ message: 'Step 2 — Fetching work items & data quality check…' });
+                        await vscode.commands.executeCommand('ai-flow-metrics.runFetchAndCheckGroup');
+                        if (!await waitForFile('output/data/data_quality_report.json', 10 * 60 * 1000)) {
+                            vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.');
+                            return;
+                        }
+                    }
+
+                    if (!exists('output/data/config.json')) {
+                        progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
+                        await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
+                        if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
+                            vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).');
+                            return;
+                        }
+                    }
+
+                    // Pause for human review before continuing
+                    progress.report({ message: 'Step 3 complete — review board config, then continue.' });
+                    const choice = await vscode.window.showInformationMessage(
+                        'Board configured (Step 3 complete). Review config.json, then continue autoplay.',
+                        { modal: true }, 'Continue', 'Stop'
+                    );
+                    if (choice !== 'Continue') { return; }
+
+                    if (!exists('output/metrics/lead_time.json')) {
+                        progress.report({ message: 'Step 4 — Calculating metrics…' });
+                        await vscode.commands.executeCommand('ai-flow-metrics.runCalculationsGroup');
+                        if (!await waitForFile('output/metrics/lead_time.json', 5 * 60 * 1000)) {
+                            vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.');
+                            return;
+                        }
+                    }
+
+                    progress.report({ message: 'Step 5 — Generating dashboard…' });
+                    await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
+                    await waitForFile('output/dashboard.html', 2 * 60 * 1000);
+
+                    progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
+                    await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
+
                 }
             );
         }),    );

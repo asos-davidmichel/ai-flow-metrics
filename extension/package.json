@@ -124,8 +124,13 @@
       },
       {
         "command": "ai-flow-metrics.autoplay",
-        "title": "Autoplay Pipeline",
+        "title": "Autoplay: run all steps uninterrupted",
         "icon": "$(run-all)"
+      },
+      {
+        "command": "ai-flow-metrics.autoplayWithReview",
+        "title": "Autoplay: pause after board config for review",
+        "icon": "$(debug-step-over)"
       }
     ],
     "menus": {
@@ -137,6 +142,11 @@
         },
         {
           "command": "ai-flow-metrics.autoplay",
+          "when": "view == aiFlowMetrics.pipeline",
+          "group": "navigation"
+        },
+        {
+          "command": "ai-flow-metrics.autoplayWithReview",
           "when": "view == aiFlowMetrics.pipeline",
           "group": "navigation"
         }
