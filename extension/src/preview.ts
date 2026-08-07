@@ -711,24 +711,12 @@ pre { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em
 
 const _panels = new Map<string, vscode.WebviewPanel>();
 
-// Strip the @media(prefers-color-scheme:dark) wrapper so rules apply unconditionally
+// Force dark mode by switching the dark-mode-style element's media attribute to "all"
 function forceDarkCss(html: string): string {
-    const marker = '@media (prefers-color-scheme: dark)';
-    let result = html;
-    let pos = result.indexOf(marker);
-    while (pos !== -1) {
-        const braceStart = result.indexOf('{', pos);
-        if (braceStart === -1) break;
-        let depth = 0, braceEnd = -1;
-        for (let i = braceStart; i < result.length; i++) {
-            if (result[i] === '{') depth++;
-            else if (result[i] === '}') { depth--; if (depth === 0) { braceEnd = i; break; } }
-        }
-        if (braceEnd === -1) break;
-        result = result.slice(0, pos) + result.slice(braceStart + 1, braceEnd) + result.slice(braceEnd + 1);
-        pos = result.indexOf(marker);
-    }
-    return result;
+    return html.replace(
+        'id="dark-mode-style" media="(prefers-color-scheme: dark)"',
+        'id="dark-mode-style" media="all"'
+    );
 }
 
 function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): void {
@@ -744,8 +732,6 @@ function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): vo
                            vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrast;
             if (isDark) {
                 html = forceDarkCss(html);
-                // Patch Chart.js dark-theme init to skip the matchMedia check
-                html = html.replace('applyChartTheme(mq.matches)', 'applyChartTheme(true)');
             }
 
             return html;

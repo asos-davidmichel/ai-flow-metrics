@@ -708,7 +708,8 @@
     .fe-knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .2s;pointer-events:none}
     .fe-switch.on .fe-knob{left:20px}
 
-  @media (prefers-color-scheme: dark) {
+  </style>
+  <style id="dark-mode-style" media="(prefers-color-scheme: dark)">
     body { background: #111827; color: #e2e8f0; }
     .card { background: #1f2937; box-shadow: 0 4px 10px rgba(0,0,0,0.35); }
     .card h2 { color: #94a3b8; }
@@ -836,13 +837,13 @@
     .kpi-card.trend-neutral  { border-left-color: #4a5568; }
     .col-incoming .col-wip-badge { background: #4a5568; }
     .dq-row { background: transparent; }
-  }
   </style>
 </head>
 <body>
 <div class="container">
 
-  <div class="header">
+  <div class="header" style="position:relative">
+    <button id="dark-toggle" title="Toggle dark mode" style="position:absolute;top:0;right:0;background:none;border:none;cursor:pointer;font-size:20px;padding:4px 8px;opacity:0.55;border-radius:6px;line-height:1;transition:opacity .15s" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='0.55'">🌙</button>
     <h1>Flow Metrics</h1>
     <div id="headerMeta" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;font-size:13px;opacity:0.88;">
       <span id="hTeam"></span>
@@ -1275,7 +1276,7 @@
 <script>
 const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
 
-// Apply Chart.js colour defaults based on OS colour scheme
+// Apply Chart.js colour defaults based on active colour scheme
 (function () {
   function applyChartTheme(dark) {
     const text = dark ? '#94a3b8' : '#718096';
@@ -1283,9 +1284,51 @@ const dashboard = /*DASHBOARD_DATA_PLACEHOLDER*/;
     Chart.defaults.color = text;
     Chart.defaults.borderColor = grid;
   }
+  window._applyChartTheme = applyChartTheme;  // exposed for dark-toggle
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
-  applyChartTheme(mq.matches);
-  mq.addEventListener('change', e => applyChartTheme(e.matches));
+  const darkStyle = document.getElementById('dark-mode-style');
+  function isDashboardDark() {
+    if (!darkStyle) return mq.matches;
+    return darkStyle.media === 'all' || (darkStyle.media !== 'not all' && mq.matches);
+  }
+  applyChartTheme(isDashboardDark());
+  mq.addEventListener('change', () => applyChartTheme(isDashboardDark()));
+})();
+
+// ── Dark mode toggle button ────────────────────────────────────────────────
+(function () {
+  const darkStyle = document.getElementById('dark-mode-style');
+  const btn = document.getElementById('dark-toggle');
+  if (!darkStyle || !btn) return;
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function isDark() {
+    return darkStyle.media === 'all' ||
+           (darkStyle.media !== 'not all' && mq.matches);
+  }
+  function syncBtn() {
+    btn.textContent = isDark() ? '☀' : '🌙';
+    btn.title = isDark() ? 'Switch to light mode' : 'Switch to dark mode';
+  }
+
+  // Apply saved preference (skip if extension already forced via media="all")
+  const saved = localStorage.getItem('flowDark');
+  if (darkStyle.media !== 'all' && saved === '1') { darkStyle.media = 'all'; }
+  else if (saved === '0') { darkStyle.media = 'not all'; }
+
+  syncBtn();
+
+  btn.addEventListener('click', () => {
+    if (isDark()) {
+      darkStyle.media = 'not all';
+      localStorage.setItem('flowDark', '0');
+    } else {
+      darkStyle.media = 'all';
+      localStorage.setItem('flowDark', '1');
+    }
+    syncBtn();
+    if (window._applyChartTheme) { window._applyChartTheme(isDark()); }
+  });
 })();
 
 // ── Wheel zoom + +/− buttons + reset  (zoom/pan state persisted in localStorage) ──

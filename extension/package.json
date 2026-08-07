@@ -126,6 +126,11 @@
       {
         "command": "ai-flow-metrics.previewFile",
         "title": "Preview File"
+      },
+      {
+        "command": "ai-flow-metrics.autoplay",
+        "title": "Autoplay Pipeline",
+        "icon": "$(run-all)"
       }
     ],
     "menus": {
@@ -133,6 +138,11 @@
         {
           "command": "ai-flow-metrics.addBoard",
           "when": "view == aiFlowMetrics.boards",
+          "group": "navigation"
+        },
+        {
+          "command": "ai-flow-metrics.autoplay",
+          "when": "view == aiFlowMetrics.pipeline",
           "group": "navigation"
         }
       ],
