@@ -297,6 +297,33 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
 // ── Publish helpers ────────────────────────────────────────────────────────
 
+// Returns ADO PAT from env, then SecretStorage, then prompts the user once and stores it
+async function getAdoPat(context: vscode.ExtensionContext): Promise<string | undefined> {
+    if (process.env.ADO_PAT) { return process.env.ADO_PAT; }
+    const stored = await context.secrets.get('ADO_PAT');
+    if (stored) { return stored; }
+    const input = await vscode.window.showInputBox({
+        prompt: 'Azure DevOps Personal Access Token (stored securely in VS Code)',
+        password: true,
+        ignoreFocusOut: true,
+        placeHolder: 'Paste your read-only ADO PAT here',
+    });
+    if (!input?.trim()) { return undefined; }
+    await context.secrets.store('ADO_PAT', input.trim());
+    return input.trim();
+}
+
+// Creates or reuses the AI Flow Metrics terminal, injecting ADO_PAT when it's not in process.env
+function getOrCreateTerminal(cwd: string, adoPat?: string): vscode.Terminal {
+    if (process.env.ADO_PAT || !adoPat) {
+        return vscode.window.terminals.find(t => t.name === 'AI Flow Metrics')
+            ?? vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd });
+    }
+    // PAT from storage — must inject via terminal env; dispose stale terminal that lacks it
+    vscode.window.terminals.find(t => t.name === 'AI Flow Metrics')?.dispose();
+    return vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd, env: { ADO_PAT: adoPat } });
+}
+
 function slugifyRepoName(name: string): string {
     return 'flow-metrics-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -307,6 +334,17 @@ function runGh(cmd: string): Promise<string> {
             err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout.trim())
         )
     );
+}
+
+// Pipes value via stdin to avoid shell escaping issues (e.g. for secrets)
+function runGhStdin(cmd: string, stdin: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const proc = cp.exec(cmd, (err, _out, stderr) =>
+            err ? reject(new Error((stderr || err.message).trim())) : resolve()
+        );
+        proc.stdin?.write(stdin);
+        proc.stdin?.end();
+    });
 }
 
 // Copies output files, skipping .prompt.md and dashboard.html (published separately as index.html)
@@ -339,6 +377,18 @@ function generateWorkflowYaml(cronExpr: string): string {
         '          python-version: "3.11"',
         '      - name: Install dependencies',
         '        run: pip install requests jinja2 -q',
+        '      - name: Clean stale data',
+        '        run: |',
+        '          rm -f output/data/work_items.json',
+        '          rm -f output/data/work_item_history.json',
+        '          rm -f output/data/work_item_rework.json',
+        '          rm -f output/data/excluded_items.json',
+        '          rm -f output/data/sprint_retro.json',
+        '          rm -f output/data/data_quality_report.json',
+        '          rm -f output/metrics/time_in_columns.json',
+        '          rm -f output/metrics/cycle_time.json',
+        '          rm -f output/metrics/lead_time.json',
+        '          rm -f output/data/insights.json',
         '      - name: Fetch data',
         '        env:',
         '          ADO_PAT: ${{ secrets.ADO_PAT }}',
@@ -350,6 +400,14 @@ function generateWorkflowYaml(cronExpr: string): string {
         '          python scripts/calc_columns.py',
         '          python scripts/calc_cycle_time.py',
         '          python scripts/calc_lead_time.py',
+        '      - name: Interpret metrics (AI)',
+        '        env:',
+        '          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}',
+        '          AI_API_KEY: ${{ secrets.AI_API_KEY }}',
+        '          AI_API_ENDPOINT: ${{ vars.AI_API_ENDPOINT }}',
+        '          AI_MODEL: ${{ vars.AI_MODEL }}',
+        '        run: python scripts/ai_interpret_metrics.py --auto',
+        '        continue-on-error: true',
         '      - name: Generate dashboard',
         '        run: python scripts/create_dashboard.py --force',
         '      - name: Update index.html',
@@ -594,10 +652,9 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             fs.mkdirSync(outputDir, { recursive: true });
 
-            let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
-            if (!terminal) {
-                terminal = vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd: outputDir });
-            }
+            const adoPat = await getAdoPat(context);
+            if (!adoPat) { return; }
+            const terminal = getOrCreateTerminal(outputDir, adoPat);
             terminal.show();
             terminal.sendText(`pip install requests -q ; python "${script}" --context-only "${board.url}"`);
         }),
@@ -612,10 +669,9 @@ export function activate(context: vscode.ExtensionContext) {
             if (!assertPrereq('step.fetchItems', outputDir)) { return; }
             fs.mkdirSync(outputDir, { recursive: true });
 
-            let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
-            if (!terminal) {
-                terminal = vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd: outputDir });
-            }
+            const adoPat = await getAdoPat(context);
+            if (!adoPat) { return; }
+            const terminal = getOrCreateTerminal(outputDir, adoPat);
             terminal.show();
             terminal.sendText(`pip install requests -q ; python "${script}" "${board.url}"`);
         }),
@@ -872,10 +928,9 @@ export function activate(context: vscode.ExtensionContext) {
             if (!assertPrereq('group.fetchAndCheck', outputDir)) { return; }
             fs.mkdirSync(outputDir, { recursive: true });
 
-            let terminal = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
-            if (!terminal) {
-                terminal = vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd: outputDir });
-            }
+            const adoPat = await getAdoPat(context);
+            if (!adoPat) { return; }
+            const terminal = getOrCreateTerminal(outputDir, adoPat);
             terminal.show();
             terminal.sendText(`pip install requests -q ; python "${fetchScript}" "${board.url}" ; python "${checkScript}"`);
             pipelineProvider.setGroupRunning('group.fetchAndCheck', true);
@@ -1318,8 +1373,10 @@ export function activate(context: vscode.ExtensionContext) {
                         // Copy Python scripts + dashboard template
                         const scriptsDir = path.join(tmpDir, 'scripts');
                         const templatesDir = path.join(scriptsDir, 'templates');
+                        const promptsDir  = path.join(scriptsDir, 'prompts');
                         fs.mkdirSync(templatesDir, { recursive: true });
-                        const scriptNames = ['fetch_data.py','util_ado.py','check_data.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py'];
+                        fs.mkdirSync(promptsDir,   { recursive: true });
+                        const scriptNames = ['fetch_data.py','util_ado.py','check_data.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py','ai_interpret_metrics.py'];
                         for (const s of scriptNames) {
                             fs.copyFileSync(
                                 path.join(context.extensionPath, 'resources', 'scripts', s),
@@ -1329,6 +1386,10 @@ export function activate(context: vscode.ExtensionContext) {
                         fs.copyFileSync(
                             path.join(context.extensionPath, 'resources', 'scripts', 'templates', 'dashboard.html'),
                             path.join(templatesDir, 'dashboard.html')
+                        );
+                        fs.copyFileSync(
+                            path.join(context.extensionPath, 'resources', 'scripts', 'prompts', 'ai_interpret_metrics.prompt.md'),
+                            path.join(promptsDir, 'ai_interpret_metrics.prompt.md')
                         );
 
                         progress.report({ message: 'Committing workflow…' });
@@ -1350,12 +1411,20 @@ export function activate(context: vscode.ExtensionContext) {
                             await runGh(`gh api repos/${cleanRepo}/actions/variables/BOARD_URL -X PATCH -f value="${board.url}"`).catch(() => {});
                         }
 
-                        // Set ADO_PAT secret if available in environment
-                        const adoPat = process.env.ADO_PAT;
+                        // Set ADO_PAT secret from env or SecretStorage (optional — skip if unavailable)
+                        const adoPat = process.env.ADO_PAT ?? await context.secrets.get('ADO_PAT');
                         if (adoPat) {
                             progress.report({ message: 'Setting ADO_PAT secret…' });
-                            try { await runGh(`gh secret set ADO_PAT --body "${adoPat}" --repo "${cleanRepo}"`); }
+                            try { await runGhStdin(`gh secret set ADO_PAT --repo "${cleanRepo}"`, adoPat); }
                             catch { /* non-fatal — user can set manually */ }
+                        }
+
+                        // Set AI_API_KEY secret if stored (optional — powers automated AI interpretation)
+                        const aiApiKey = process.env.AI_API_KEY ?? await context.secrets.get('AI_API_KEY');
+                        if (aiApiKey) {
+                            progress.report({ message: 'Setting AI_API_KEY secret…' });
+                            try { await runGhStdin(`gh secret set AI_API_KEY --repo "${cleanRepo}"`, aiApiKey); }
+                            catch { /* non-fatal */ }
                         }
                     } finally {
                         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
@@ -1366,13 +1435,77 @@ export function activate(context: vscode.ExtensionContext) {
                     publishProvider.refresh();
 
                     const secretsUrl = `https://github.com/${cleanRepo}/settings/secrets/actions/new`;
-                    const msg = process.env.ADO_PAT
+                    const hasAdoPat = !!(process.env.ADO_PAT ?? await context.secrets.get('ADO_PAT'));
+                    const msg = hasAdoPat
                         ? `Schedule configured: ${scheduleLabel}`
                         : `Schedule configured. Add ADO_PAT as a repository secret to enable data fetching.`;
-                    vscode.window.showInformationMessage(msg, ...(process.env.ADO_PAT ? [] : ['Set ADO_PAT Secret']))
+                    vscode.window.showInformationMessage(msg, ...(hasAdoPat ? [] : ['Set ADO_PAT Secret']))
                         .then(c => { if (c === 'Set ADO_PAT Secret') { vscode.env.openExternal(vscode.Uri.parse(secretsUrl)); } });
                 }
             );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.runScheduleNow', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { return; }
+            const fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
+            if (!fullRepo) { return; }
+            const cleanRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
+
+            // Ensure ADO_PAT secret is up to date before triggering
+            const adoPat = await getAdoPat(context);
+            if (!adoPat) { return; }
+
+            try { await runGhStdin(`gh secret set ADO_PAT --repo "${cleanRepo}"`, adoPat); }
+            catch { /* non-fatal */ }
+
+            try {
+                await runGh(`gh workflow run update-dashboard.yml --repo "${cleanRepo}"`);
+                vscode.window.showInformationMessage(
+                    'Workflow triggered. Check progress on GitHub Actions.',
+                    'Open Actions'
+                ).then(c => {
+                    if (c === 'Open Actions') {
+                        vscode.env.openExternal(vscode.Uri.parse(`https://github.com/${cleanRepo}/actions`));
+                    }
+                });
+            } catch (e) {
+                vscode.window.showErrorMessage(`Could not trigger workflow: ${e}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.setAdoPat', async () => {
+            const input = await vscode.window.showInputBox({
+                prompt: 'Azure DevOps Personal Access Token — leave blank to clear',
+                password: true,
+                ignoreFocusOut: true,
+                placeHolder: 'Paste your read-only ADO PAT here',
+            });
+            if (input === undefined) { return; } // cancelled
+            if (input.trim()) {
+                await context.secrets.store('ADO_PAT', input.trim());
+                vscode.window.showInformationMessage('ADO PAT saved.');
+            } else {
+                await context.secrets.delete('ADO_PAT');
+                vscode.window.showInformationMessage('ADO PAT cleared.');
+            }
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.setAiApiKey', async () => {
+            const input = await vscode.window.showInputBox({
+                prompt: 'AI API key for automated insights (OpenAI, Azure AI Foundry, etc.) — leave blank to clear',
+                password: true,
+                ignoreFocusOut: true,
+                placeHolder: 'Paste your API key here',
+            });
+            if (input === undefined) { return; }
+            if (input.trim()) {
+                await context.secrets.store('AI_API_KEY', input.trim());
+                vscode.window.showInformationMessage('AI API key saved. Re-run Configure Schedule to push it to GitHub.');
+            } else {
+                await context.secrets.delete('AI_API_KEY');
+                vscode.window.showInformationMessage('AI API key cleared.');
+            }
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.relinkRepo', async () => {

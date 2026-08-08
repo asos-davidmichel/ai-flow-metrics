@@ -1492,6 +1492,61 @@ in 3-5 bullet points.
 # CLI
 # ---------------------------------------------------------------------------
 
+def auto_interpret(summary):
+    """Call an AI API and write insights.json directly — CI/automation mode."""
+    import os
+    import urllib.request
+    import urllib.error
+
+    # GitHub Models (free, uses GITHUB_TOKEN) is the default; override with AI_API_KEY + AI_API_ENDPOINT.
+    token = os.environ.get('AI_API_KEY')
+    endpoint = os.environ.get('AI_API_ENDPOINT') or 'https://api.openai.com/v1'
+    model = os.environ.get('AI_MODEL') or 'gpt-4o-mini'
+
+    if not token:
+        print("Skipping AI interpretation: set AI_API_KEY as a repository secret to enable automated insights.")
+        return
+
+    prompt_text = build_prompt_text(summary)
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt_text}],
+        "temperature": 0.2,
+    }).encode()
+
+    print(f"Calling AI API: {endpoint}  model={model}")
+    req = urllib.request.Request(
+        f"{endpoint}/chat/completions",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        print(f"AI API error {exc.code}: {body}", file=sys.stderr)
+        sys.exit(1)
+
+    content = data["choices"][0]["message"]["content"]
+
+    # Strip accidental markdown fences the model may add despite instructions
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        stripped = "\n".join(stripped.splitlines()[1:])
+        if stripped.endswith("```"):
+            stripped = stripped[: stripped.rfind("```")]
+
+    insights = json.loads(stripped)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    INSIGHTS_PATH.write_text(json.dumps(insights, indent=2), encoding="utf-8")
+    print(f"Written: {INSIGHTS_PATH}")
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(
@@ -1501,12 +1556,21 @@ def main():
         "--dump-summary", action="store_true",
         help="Write the computed summary JSON to stdout and exit (for inspection).",
     )
+    parser.add_argument(
+        "--auto", action="store_true",
+        help="Call the AI API directly and write insights.json (CI mode). "
+             "Uses GITHUB_TOKEN (GitHub Models) or AI_API_KEY + AI_API_ENDPOINT.",
+    )
     args = parser.parse_args()
 
     summary = build_summary()
 
     if args.dump_summary:
         print(json.dumps(summary, indent=2))
+        return
+
+    if args.auto:
+        auto_interpret(summary)
         return
 
     write_prompt(summary)

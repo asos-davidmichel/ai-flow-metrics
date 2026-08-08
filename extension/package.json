@@ -150,6 +150,19 @@
         "command": "ai-flow-metrics.configureSchedule",
         "title": "Configure Schedule",
         "icon": "$(calendar)"
+      },
+      {
+        "command": "ai-flow-metrics.runScheduleNow",
+        "title": "Run Workflow Now",
+        "icon": "$(run)"
+      },
+      {
+        "command": "ai-flow-metrics.setAdoPat",
+        "title": "AI Flow Metrics: Set ADO Personal Access Token"
+      },
+      {
+        "command": "ai-flow-metrics.setAiApiKey",
+        "title": "AI Flow Metrics: Set AI API Key (for automated insights)"
       }
     ],
     "menus": {
@@ -259,6 +272,11 @@
         {
           "command": "ai-flow-metrics.configureSchedule",
           "when": "view == aiFlowMetrics.publish && (viewItem == publish.schedule || viewItem == publish.schedule.configured)",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.runScheduleNow",
+          "when": "view == aiFlowMetrics.publish && viewItem == publish.schedule.configured",
           "group": "inline"
         }
       ]
