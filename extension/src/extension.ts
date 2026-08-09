@@ -1137,10 +1137,13 @@ export function activate(context: vscode.ExtensionContext) {
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'AI Flow Metrics — Autoplay', cancellable: false },
                 async (progress) => {
+                    const yield50 = () => new Promise<void>(r => setTimeout(r, 50));
+
                     // Step 1: Fetch Board Context
                     if (!exists('output/data/context.json')) {
                         progress.report({ message: 'Step 1 — Fetching board context…' });
                         pipelineProvider.setStepRunning('step.fetchContext');
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.fetchContext');
                         if (!await waitForFile('output/data/context.json', 2 * 60 * 1000)) {
                             pipelineProvider.setStepRunning(null);
@@ -1154,6 +1157,7 @@ export function activate(context: vscode.ExtensionContext) {
                     if (!exists('output/data/data_quality_report.json')) {
                         progress.report({ message: 'Step 2 — Fetching work items & data quality check…' });
                         pipelineProvider.setGroupRunning('group.fetchAndCheck', true);
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.runFetchAndCheckGroup');
                         if (!await waitForFile('output/data/data_quality_report.json', 10 * 60 * 1000)) {
                             pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
@@ -1163,10 +1167,11 @@ export function activate(context: vscode.ExtensionContext) {
                         pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
                     }
 
-                    // Step 3: Configure Board (AI — opens Copilot Chat, user must complete)
+                    // Step 3: Configure Board (AI)
                     if (!exists('output/data/config.json')) {
                         progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
                         pipelineProvider.setStepRunning('step.configureBoard');
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
                         if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
                             pipelineProvider.setStepRunning(null);
@@ -1179,16 +1184,21 @@ export function activate(context: vscode.ExtensionContext) {
                     // Step 4: Calculate Metrics group
                     if (!exists('output/metrics/lead_time.json')) {
                         progress.report({ message: 'Step 4 — Calculating metrics…' });
+                        pipelineProvider.setGroupRunning('group.calculateMetrics', true);
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.runCalculationsGroup');
                         if (!await waitForFile('output/metrics/lead_time.json', 5 * 60 * 1000)) {
+                            pipelineProvider.setGroupRunning('group.calculateMetrics', false);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.');
                             return;
                         }
+                        pipelineProvider.setGroupRunning('group.calculateMetrics', false);
                     }
 
                     // Step 5: Generate Dashboard
                     progress.report({ message: 'Step 5 — Generating dashboard…' });
                     pipelineProvider.setStepRunning('step.generateDashboard');
+                    await yield50();
                     await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
                     await waitForFile('output/dashboard.html', 2 * 60 * 1000);
                     pipelineProvider.setStepRunning(null);
@@ -1196,6 +1206,7 @@ export function activate(context: vscode.ExtensionContext) {
                     // Step 6: Interpret — auto-regenerates dashboard when Copilot writes insights.json
                     progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
                     pipelineProvider.setStepRunning('step.interpretMetrics');
+                    await yield50();
                     await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
                     pipelineProvider.setStepRunning(null);
 
@@ -1233,31 +1244,45 @@ export function activate(context: vscode.ExtensionContext) {
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'AI Flow Metrics — Autoplay', cancellable: false },
                 async (progress) => {
+                    const yield50 = () => new Promise<void>(r => setTimeout(r, 50));
+
                     if (!exists('output/data/context.json')) {
                         progress.report({ message: 'Step 1 — Fetching board context…' });
+                        pipelineProvider.setStepRunning('step.fetchContext');
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.fetchContext');
                         if (!await waitForFile('output/data/context.json', 2 * 60 * 1000)) {
+                            pipelineProvider.setStepRunning(null);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 1 timed out.');
                             return;
                         }
+                        pipelineProvider.setStepRunning(null);
                     }
 
                     if (!exists('output/data/data_quality_report.json')) {
                         progress.report({ message: 'Step 2 — Fetching work items & data quality check…' });
+                        pipelineProvider.setGroupRunning('group.fetchAndCheck', true);
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.runFetchAndCheckGroup');
                         if (!await waitForFile('output/data/data_quality_report.json', 10 * 60 * 1000)) {
+                            pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.');
                             return;
                         }
+                        pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
                     }
 
                     if (!exists('output/data/config.json')) {
                         progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
+                        pipelineProvider.setStepRunning('step.configureBoard');
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
                         if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
+                            pipelineProvider.setStepRunning(null);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).');
                             return;
                         }
+                        pipelineProvider.setStepRunning(null);
                     }
 
                     // Pause for human review before continuing
@@ -1270,19 +1295,29 @@ export function activate(context: vscode.ExtensionContext) {
 
                     if (!exists('output/metrics/lead_time.json')) {
                         progress.report({ message: 'Step 4 — Calculating metrics…' });
+                        pipelineProvider.setGroupRunning('group.calculateMetrics', true);
+                        await yield50();
                         await vscode.commands.executeCommand('ai-flow-metrics.runCalculationsGroup');
                         if (!await waitForFile('output/metrics/lead_time.json', 5 * 60 * 1000)) {
+                            pipelineProvider.setGroupRunning('group.calculateMetrics', false);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.');
                             return;
                         }
+                        pipelineProvider.setGroupRunning('group.calculateMetrics', false);
                     }
 
                     progress.report({ message: 'Step 5 — Generating dashboard…' });
+                    pipelineProvider.setStepRunning('step.generateDashboard');
+                    await yield50();
                     await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
                     await waitForFile('output/dashboard.html', 2 * 60 * 1000);
+                    pipelineProvider.setStepRunning(null);
 
                     progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
+                    pipelineProvider.setStepRunning('step.interpretMetrics');
+                    await yield50();
                     await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
+                    pipelineProvider.setStepRunning(null);
 
                 }
             );
