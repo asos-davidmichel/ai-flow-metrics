@@ -457,6 +457,25 @@ function copyOutputFiles(src: string, dest: string): void {
     }
 }
 
+function describeCron(expr: string): string {
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 5) { return expr; }
+    const [min, hour, dom, month, dow] = parts;
+    if (!/^\d+$/.test(min) || !/^\d+$/.test(hour)) { return expr; }
+    const time = `${String(+hour).padStart(2, '0')}:${String(+min).padStart(2, '0')} UTC`;
+    const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    if (dom === '*' && month === '*' && dow === '*') { return `Every day at ${time}`; }
+    if (dom === '*' && month === '*' && /^[\d,]+$/.test(dow)) {
+        const days = dow.split(',').map(d => DAY[+d] ?? d).join(' & ');
+        return `Every ${days} at ${time}`;
+    }
+    if (/^\d+$/.test(dom) && month === '*' && dow === '*') {
+        const n = +dom; const s = n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th';
+        return `${n}${s} of every month at ${time}`;
+    }
+    return expr;
+}
+
 function generateWorkflowYaml(cronExpr: string): string {
     return [
         'name: Update Dashboard',
@@ -1614,7 +1633,7 @@ export function activate(context: vscode.ExtensionContext) {
                         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
                     }
 
-                    const scheduleLabel = pick.cron ? pick.label : cronExpr;
+                    const scheduleLabel = pick.cron ? pick.label : describeCron(cronExpr);
                     await context.globalState.update(`publishSchedule.${activeId}`, scheduleLabel);
                     publishProvider.refresh();
 
