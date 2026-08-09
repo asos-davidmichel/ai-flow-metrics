@@ -152,6 +152,11 @@
         "icon": "$(calendar)"
       },
       {
+        "command": "ai-flow-metrics.syncFromGitHub",
+        "title": "Sync Local Files from GitHub",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "ai-flow-metrics.removeSchedule",
         "title": "Remove Schedule",
         "icon": "$(trash)"
@@ -262,6 +267,11 @@
         {
           "command": "ai-flow-metrics.deleteFile",
           "when": "view == aiFlowMetrics.boards && viewItem == outputFile",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.syncFromGitHub",
+          "when": "view == aiFlowMetrics.boards && (viewItem == board.sync.stale || viewItem == board.sync)",
           "group": "inline"
         },
         {

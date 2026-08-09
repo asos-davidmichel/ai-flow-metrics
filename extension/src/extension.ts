@@ -139,6 +139,33 @@ class FileItem extends vscode.TreeItem {
     }
 }
 
+class SyncStatusItem extends vscode.TreeItem {
+    constructor(status: 'checking' | 'uptodate' | 'stale' | 'never', lastSynced?: string) {
+        const labels: Record<string, string> = {
+            checking:  'Checking for updates…',
+            uptodate:  'Local files up to date',
+            stale:     'Out of date — new data on GitHub',
+            never:     'Not synced from GitHub',
+        };
+        const icons: Record<string, string> = {
+            checking: 'loading~spin',
+            uptodate: 'check',
+            stale:    'warning',
+            never:    'cloud-download',
+        };
+        super(labels[status], vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon(
+            icons[status],
+            status === 'stale' ? new vscode.ThemeColor('list.warningForeground') : undefined
+        );
+        this.description = lastSynced ? `synced ${new Date(lastSynced).toLocaleString()}` : undefined;
+        this.tooltip = status === 'stale' || status === 'never'
+            ? 'Click the download icon to pull the latest data from GitHub'
+            : undefined;
+        this.contextValue = status === 'stale' || status === 'never' ? 'board.sync.stale' : 'board.sync';
+    }
+}
+
 class BoardItem extends vscode.TreeItem {
     constructor(readonly board: Board, isActive: boolean) {
         super(board.name, vscode.TreeItemCollapsibleState.Collapsed);
@@ -156,6 +183,9 @@ class BoardItem extends vscode.TreeItem {
 class BoardsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+    private staleCache   = new Map<string, 'checking' | 'uptodate' | 'stale' | 'never'>();
+    private checkedAt    = new Map<string, number>();
+    private readonly TTL = 2 * 60 * 1000; // re-check every 2 minutes
 
     constructor(
         private readonly state: vscode.Memento,
@@ -163,6 +193,30 @@ class BoardsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     ) {}
 
     refresh(): void { this._onDidChangeTreeData.fire(); }
+
+    clearStaleCache(boardId: string): void {
+        this.staleCache.delete(boardId);
+        this.checkedAt.delete(boardId);
+    }
+
+    private async checkStaleness(boardId: string): Promise<void> {
+        const fullRepo = this.state.get<string>(`publishRepo.${boardId}`);
+        if (!fullRepo) { return; }
+        const cleanRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
+        try {
+            const json = await runGh(`gh api repos/${cleanRepo}/commits?per_page=1`);
+            const dateStr = JSON.parse(json)[0]?.commit?.committer?.date as string | undefined;
+            if (!dateStr) { return; }
+            const lastSync = this.state.get<string>(`localSyncedAt.${boardId}`);
+            this.staleCache.set(boardId, (!lastSync || new Date(lastSync) < new Date(dateStr)) ? 'stale' : 'uptodate');
+        } catch {
+            // On error, derive state from whether a sync has ever happened
+            const lastSync = this.state.get<string>(`localSyncedAt.${boardId}`);
+            this.staleCache.set(boardId, lastSync ? 'uptodate' : 'never');
+        }
+        this.checkedAt.set(boardId, Date.now());
+        this._onDidChangeTreeData.fire();
+    }
 
     getBoards(): Board[] { return this.state.get<Board[]>('boards', []); }
 
@@ -178,13 +232,36 @@ class BoardsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
         if (element instanceof BoardItem) {
             const boardDir = path.join(this.globalStoragePath, element.board.id);
+            const items: vscode.TreeItem[] = [];
+
+            // Sync status row — only when board has a linked publish repo
+            const publishRepo = this.state.get<string>(`publishRepo.${element.board.id}`);
+            if (publishRepo) {
+                const cached  = this.staleCache.get(element.board.id);
+                const elapsed = Date.now() - (this.checkedAt.get(element.board.id) ?? 0);
+                if (!cached) {
+                    // First expansion: show spinner immediately
+                    this.staleCache.set(element.board.id, 'checking');
+                    this.checkStaleness(element.board.id);
+                } else if (cached !== 'checking' && elapsed > this.TTL) {
+                    // TTL expired: silent background re-check, keep current status visible
+                    this.checkedAt.set(element.board.id, Date.now()); // prevent re-triggering
+                    this.checkStaleness(element.board.id);
+                }
+                const status = this.staleCache.get(element.board.id) ?? 'checking';
+                const lastSync = this.state.get<string>(`localSyncedAt.${element.board.id}`);
+                items.push(new SyncStatusItem(status, lastSync));
+            }
+
             const files = getOutputFiles(boardDir);
             if (files.length === 0) {
                 const empty = new vscode.TreeItem('No output yet');
                 empty.iconPath = new vscode.ThemeIcon('info');
-                return [empty];
+                items.push(empty);
+            } else {
+                items.push(...files.map(f => new FileItem(f, boardDir)));
             }
-            return files.map(f => new FileItem(f, boardDir));
+            return items;
         }
         const boards = this.getBoards();
         if (boards.length === 0) {
@@ -322,6 +399,15 @@ function getOrCreateTerminal(cwd: string, adoPat?: string): vscode.Terminal {
     // PAT from storage — must inject via terminal env; dispose stale terminal that lacks it
     vscode.window.terminals.find(t => t.name === 'AI Flow Metrics')?.dispose();
     return vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd, env: { ADO_PAT: adoPat } });
+}
+
+function copyDirSync(src: string, dest: string): void {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+        const s = path.join(src, entry.name);
+        const d = path.join(dest, entry.name);
+        entry.isDirectory() ? copyDirSync(s, d) : fs.copyFileSync(s, d);
+    }
 }
 
 function slugifyRepoName(name: string): string {
@@ -1482,6 +1568,40 @@ export function activate(context: vscode.ExtensionContext) {
             } catch (e) {
                 vscode.window.showErrorMessage(`Could not trigger workflow: ${e}`);
             }
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.syncFromGitHub', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { return; }
+            const fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
+            if (!fullRepo) { vscode.window.showErrorMessage('No publish repo linked to this board.'); return; }
+            const cleanRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Sync from GitHub', cancellable: false },
+                async (progress) => {
+                    const boardDir = path.join(context.globalStorageUri.fsPath, activeId);
+                    const tmpDir = path.join(os.tmpdir(), `aiflowmetrics-sync-${Date.now()}`);
+                    progress.report({ message: 'Cloning repository…' });
+                    try { await runGh(`gh repo clone "${cleanRepo}" "${tmpDir}"`); }
+                    catch (e) { vscode.window.showErrorMessage(`Clone failed: ${e}`); return; }
+                    try {
+                        const srcOutput = path.join(tmpDir, 'output');
+                        if (!fs.existsSync(srcOutput)) {
+                            vscode.window.showErrorMessage('No output/ folder found in publish repo — run the workflow first.');
+                            return;
+                        }
+                        progress.report({ message: 'Copying files…' });
+                        copyDirSync(srcOutput, path.join(boardDir, 'output'));
+                        await context.globalState.update(`localSyncedAt.${activeId}`, new Date().toISOString());
+                        boardsProvider.clearStaleCache(activeId);
+                        boardsProvider.refresh();
+                        vscode.window.showInformationMessage('Local files updated from GitHub.');
+                    } finally {
+                        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+                    }
+                }
+            );
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.setAdoPat', async () => {
