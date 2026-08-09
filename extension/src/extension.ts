@@ -790,24 +790,52 @@ export function activate(context: vscode.ExtensionContext) {
 
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Configure Board (AI)', cancellable: false },
-                (progress) => new Promise<void>((resolve) => {
+                async (progress) => {
                     progress.report({ message: 'Generating prompt…' });
-                    let output = '';
-                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, async (error, stdout, stderr) => {
-                        output = (stdout + stderr).trim();
-                        if (error || !fs.existsSync(promptPath)) {
-                            resolve();
-                            const detail = output || 'No output. Ensure Steps 1–3 have run successfully.';
-                            vscode.window.showErrorMessage(`Step 4 failed: ${detail}`);
-                            return;
-                        }
-                        progress.report({ message: 'Opening Copilot Chat…' });
-                        const promptText = fs.readFileSync(promptPath, 'utf-8');
-                        const query = `${promptText}\n\nWrite the resulting JSON config to "${configPath}".`;
-                        await vscode.commands.executeCommand('workbench.action.chat.open', { query });
-                        resolve();
-                    });
-                })
+                    const genError = await new Promise<string | null>(resolve =>
+                        cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
+                            resolve(err ? (stderr || err.message) : null)
+                        )
+                    );
+                    if (genError || !fs.existsSync(promptPath)) {
+                        vscode.window.showErrorMessage(`Configure Board failed: ${genError ?? 'prompt file not written'}`);
+                        return;
+                    }
+
+                    progress.report({ message: 'Calling AI…' });
+                    const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+                    const model = models[0];
+                    if (!model) { vscode.window.showErrorMessage('No Copilot model available.'); return; }
+
+                    const promptText = fs.readFileSync(promptPath, 'utf-8');
+                    const cts = new vscode.CancellationTokenSource();
+                    let responseText = '';
+                    try {
+                        const lmResponse = await model.sendRequest(
+                            [vscode.LanguageModelChatMessage.User(promptText)], {}, cts.token
+                        );
+                        for await (const part of lmResponse.text) { responseText += part; }
+                    } finally { cts.dispose(); }
+
+                    // Extract JSON from the response (may be wrapped in a code block)
+                    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? responseText.match(/(\{[\s\S]*\})/);
+                    const jsonStr = (jsonMatch?.[1] ?? responseText).trim();
+                    try {
+                        JSON.parse(jsonStr);
+                    } catch {
+                        vscode.window.showErrorMessage('AI response was not valid JSON. Try again or configure manually.');
+                        return;
+                    }
+
+                    fs.mkdirSync(dataDir, { recursive: true });
+                    fs.writeFileSync(configPath, jsonStr, 'utf-8');
+                    boardsProvider.refresh();
+                    pipelineProvider.refresh();
+
+                    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(configPath));
+                    await vscode.window.showTextDocument(doc);
+                    vscode.window.showInformationMessage('Board configured! Review config.json and adjust if needed, then continue autoplay.');
+                }
             );
         }),
 
@@ -952,43 +980,49 @@ export function activate(context: vscode.ExtensionContext) {
             const promptPath = path.join(dataDir, 'ai_interpret_metrics.prompt.md');
             const insightsPath = path.join(dataDir, 'insights.json');
 
-            let chatOpened = false;
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Interpret Metrics (AI)', cancellable: false },
-                (progress) => new Promise<void>((resolve) => {
+                async (progress) => {
                     progress.report({ message: 'Generating prompt…' });
-                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, async (error, stdout, stderr) => {
-                        const output = (stdout + stderr).trim();
-                        if (error || !fs.existsSync(promptPath)) {
-                            resolve();
-                            vscode.window.showErrorMessage(`Step 6 failed: ${output || 'No output. Ensure Steps 1–5 have run successfully.'}`);
-                            return;
-                        }
-                        progress.report({ message: 'Opening Copilot Chat…' });
-                        const promptText = fs.readFileSync(promptPath, 'utf-8');
-                        const query = `${promptText}\n\nWrite the resulting JSON insights to "${insightsPath}".`;
-                        await vscode.commands.executeCommand('workbench.action.chat.open', { query });
-                        chatOpened = true;
-                        resolve();
-                    });
-                })
-            );
-            // Auto-regenerate the dashboard as soon as Copilot writes insights.json
-            if (chatOpened) {
-                let triggered = false;
-                const insightsWatcher = vscode.workspace.createFileSystemWatcher(
-                    new vscode.RelativePattern(vscode.Uri.file(path.join(outputDir, 'output', 'data')), 'insights.json')
-                );
-                const autoRegen = async () => {
-                    if (triggered) return;
-                    triggered = true;
-                    insightsWatcher.dispose();
+                    const genError = await new Promise<string | null>(resolve =>
+                        cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
+                            resolve(err ? (stderr || err.message) : null)
+                        )
+                    );
+                    if (genError || !fs.existsSync(promptPath)) {
+                        vscode.window.showErrorMessage(`Interpret Metrics failed: ${genError ?? 'prompt file not written'}`);
+                        return;
+                    }
+
+                    progress.report({ message: 'Calling AI…' });
+                    const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+                    const model = models[0];
+                    if (!model) { vscode.window.showErrorMessage('No Copilot model available.'); return; }
+
+                    const promptText = fs.readFileSync(promptPath, 'utf-8');
+                    const cts = new vscode.CancellationTokenSource();
+                    let responseText = '';
+                    try {
+                        const lmResponse = await model.sendRequest(
+                            [vscode.LanguageModelChatMessage.User(promptText)], {}, cts.token
+                        );
+                        for await (const part of lmResponse.text) { responseText += part; }
+                    } finally { cts.dispose(); }
+
+                    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? responseText.match(/(\{[\s\S]*\})/);
+                    const jsonStr = (jsonMatch?.[1] ?? responseText).trim();
+                    try {
+                        JSON.parse(jsonStr);
+                    } catch {
+                        vscode.window.showErrorMessage('AI response was not valid JSON. Try again.');
+                        return;
+                    }
+
+                    fs.mkdirSync(dataDir, { recursive: true });
+                    fs.writeFileSync(insightsPath, jsonStr, 'utf-8');
                     await vscode.commands.executeCommand('ai-flow-metrics.regenerateDashboard');
-                };
-                insightsWatcher.onDidCreate(() => autoRegen());
-                insightsWatcher.onDidChange(() => autoRegen());
-                setTimeout(() => { if (!triggered) { insightsWatcher.dispose(); } }, 15 * 60 * 1000);
-            }
+                }
+            );
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.regenerateDashboard', async () => {
