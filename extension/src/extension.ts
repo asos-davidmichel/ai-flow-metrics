@@ -1068,27 +1068,21 @@ export function activate(context: vscode.ExtensionContext) {
 
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
 
-            /** Wait for a file relative to outputDir, up to timeoutMs. */
+            // Polls every 2 s — file watchers don't fire reliably outside the workspace folder
             function waitForFile(relPath: string, timeoutMs: number): Promise<boolean> {
                 const absPath = path.join(outputDir, relPath);
                 if (fs.existsSync(absPath)) { return Promise.resolve(true); }
                 return new Promise<boolean>(resolve => {
-                    const dir = path.dirname(absPath);
-                    const file = path.basename(absPath);
-                    const watcher = vscode.workspace.createFileSystemWatcher(
-                        new vscode.RelativePattern(vscode.Uri.file(dir), file)
-                    );
-                    let done = false;
-                    const finish = (ok: boolean) => {
-                        if (done) return;
-                        done = true;
-                        watcher.dispose();
-                        clearTimeout(timer);
-                        resolve(ok);
-                    };
-                    watcher.onDidCreate(() => finish(true));
-                    watcher.onDidChange(() => finish(true));
-                    const timer = setTimeout(() => finish(false), timeoutMs);
+                    const start = Date.now();
+                    const interval = setInterval(() => {
+                        if (fs.existsSync(absPath)) {
+                            clearInterval(interval);
+                            resolve(true);
+                        } else if (Date.now() - start >= timeoutMs) {
+                            clearInterval(interval);
+                            resolve(false);
+                        }
+                    }, 2000);
                 });
             }
 
@@ -1157,26 +1151,21 @@ export function activate(context: vscode.ExtensionContext) {
 
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
 
+            // Polls every 2 s — file watchers don't fire reliably outside the workspace folder
             function waitForFile(relPath: string, timeoutMs: number): Promise<boolean> {
                 const absPath = path.join(outputDir, relPath);
                 if (fs.existsSync(absPath)) { return Promise.resolve(true); }
                 return new Promise<boolean>(resolve => {
-                    const dir = path.dirname(absPath);
-                    const file = path.basename(absPath);
-                    const watcher = vscode.workspace.createFileSystemWatcher(
-                        new vscode.RelativePattern(vscode.Uri.file(dir), file)
-                    );
-                    let done = false;
-                    const finish = (ok: boolean) => {
-                        if (done) return;
-                        done = true;
-                        watcher.dispose();
-                        clearTimeout(timer);
-                        resolve(ok);
-                    };
-                    watcher.onDidCreate(() => finish(true));
-                    watcher.onDidChange(() => finish(true));
-                    const timer = setTimeout(() => finish(false), timeoutMs);
+                    const start = Date.now();
+                    const interval = setInterval(() => {
+                        if (fs.existsSync(absPath)) {
+                            clearInterval(interval);
+                            resolve(true);
+                        } else if (Date.now() - start >= timeoutMs) {
+                            clearInterval(interval);
+                            resolve(false);
+                        }
+                    }, 2000);
                 });
             }
 
