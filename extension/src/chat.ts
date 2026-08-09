@@ -118,6 +118,7 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `- update_board_config: save a modified board config to disk`,
         ``,
         `Strategy: first read the cached files that are most relevant to the question. If the cached data is insufficient, stale, or missing the detail needed, use fetch_live_work_items or fetch_item_history to query ADO directly. For questions about a specific item's journey, prefer fetch_item_history over loading the full history file.`,
+        `Honesty rule: never invent or guess data. If none of the tools or files can provide what is asked, say so clearly. You may then offer to write a standalone Python script (using util_ado.py or the ADO REST API directly) that the user can run themselves to retrieve the missing information.`,
         `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns. Be specific — include work item IDs and titles.`,
     ].join('\n');
 }
