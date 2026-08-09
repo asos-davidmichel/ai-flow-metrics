@@ -1509,25 +1509,49 @@ def _write_insights(content: str):
     print(f"Written: {INSIGHTS_PATH}")
 
 
-async def _copilot_call(prompt_text: str) -> str:
+async def _copilot_call(prompt_text: str, github_token: str) -> str:
+    import asyncio
     from copilot import CopilotClient
     from copilot.session import PermissionHandler
-    client = CopilotClient()
-    await client.start()
-    try:
-        session = await client.create_session(
+    from copilot.session_events import AssistantMessageData, AssistantMessageDeltaData, SessionIdleData
+
+    done = asyncio.Event()
+    deltas: list[str] = []
+    final_content: list[str] = []
+
+    # session_idle_timeout_seconds=0 disables the server idle timeout so long
+    # inference runs don't get cut off before the response arrives.
+    async with CopilotClient(github_token=github_token, session_idle_timeout_seconds=0) as client:
+        async with await client.create_session(
             on_permission_request=PermissionHandler.approve_all,
             model="auto",
-        )
-        return await session.send_and_wait(prompt_text)
-    finally:
-        await client.stop()
+            streaming=True,
+        ) as session:
+            def on_event(event):
+                match event.data:
+                    case AssistantMessageDeltaData() as data:
+                        delta = getattr(data, 'delta_content', '') or ''
+                        if isinstance(delta, str):
+                            deltas.append(delta)
+                    case AssistantMessageData() as data:
+                        val = getattr(data, 'content', '')
+                        if isinstance(val, str) and val:
+                            final_content.append(val)
+                    case SessionIdleData():
+                        done.set()
+
+            session.on(on_event)
+            await session.send(prompt_text)
+            await done.wait()
+
+    assembled = ''.join(deltas)
+    return assembled if assembled else (final_content[-1] if final_content else '')
 
 
 def auto_interpret(summary):
     """Write insights.json directly — CI/automation mode.
 
-    Tries GitHub Copilot SDK first (GITHUB_TOKEN, no extra secrets).
+    Tries GitHub Copilot SDK first (GITHUB_TOKEN + copilot-requests:write).
     Falls back to an OpenAI-compatible HTTP API if AI_API_KEY is set.
     """
     import os
@@ -1536,14 +1560,16 @@ def auto_interpret(summary):
 
     prompt_text = build_prompt_text(summary)
 
-    # Prefer Copilot SDK — works with GITHUB_TOKEN, no extra secrets needed
-    if os.environ.get('GITHUB_TOKEN'):
+    github_token = os.environ.get('GITHUB_TOKEN')
+    if github_token:
         try:
             import asyncio
             print("Calling GitHub Copilot SDK…")
-            content = asyncio.run(_copilot_call(prompt_text))
-            _write_insights(content)
-            return
+            content = asyncio.run(_copilot_call(prompt_text, github_token))
+            if content:
+                _write_insights(content)
+                return
+            print("Copilot SDK returned empty response, falling back to AI_API_KEY.", file=sys.stderr)
         except ImportError:
             print("github-copilot-sdk not installed, falling back to AI_API_KEY.")
         except Exception as exc:

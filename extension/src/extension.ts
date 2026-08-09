@@ -377,7 +377,7 @@ function generateWorkflowYaml(cronExpr: string): string {
         '        with:',
         '          python-version: "3.11"',
         '      - name: Install dependencies',
-        '        run: pip install requests jinja2 github-copilot-sdk -q',
+        '        run: pip install requests jinja2 github-copilot-sdk -q && python -m copilot download-runtime',
         '      - name: Clean stale data',
         '        run: |',
         '          rm -f output/data/work_items.json',
