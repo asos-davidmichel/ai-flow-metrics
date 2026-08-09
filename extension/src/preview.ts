@@ -202,9 +202,14 @@ function renderConfig(data: any, nonce: string): string {
         (cols ?? []).map(c => `<span class="chip ${cls}">${esc(c)}</span>`).join('');
 
     const fe = data.flow_efficiency ?? {};
-    const signals = (data.blocked_time?.signals ?? []).map((s: any) =>
-        `<span class="chip" style="border-left: 4px solid ${esc(s.color)}; background:${esc(s.color)}22">${esc(s.label)}: ${esc((s.tags ?? []).join(', '))}</span>`
-    ).join('');
+    const signals = (data.blocked_time?.signals ?? []).map((s: any) => {
+        const values = s.mechanism === 'tag'
+            ? (s.tags ?? []).map((t: string) => `tag: ${t}`)
+            : s.mechanism === 'column'
+                ? (s.columns ?? []).map((c: string) => `column: ${c}`)
+                : [`${s.mechanism}`];
+        return `<span class="chip" style="border-left: 4px solid ${esc(s.color)}; background:${esc(s.color)}22">${esc(s.label)} <span style="opacity:0.7;font-size:0.85em">(${esc(values.join(', '))})</span></span>`;
+    }).join('');
 
     const mapping = Object.entries(data.historical_column_mapping ?? {});
     const mappingRows = mapping.map(([from, to]) =>
