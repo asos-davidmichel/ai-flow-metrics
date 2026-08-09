@@ -40,6 +40,19 @@ const TOOLS: vscode.LanguageModelChatTool[] = [
             required: ['config'],
         },
     },
+    {
+        name: 'read_output_file',
+        description:
+            'Read a cached output data file. Call this when you need detailed data to answer a question — ' +
+            'only fetch what you actually need. The system prompt lists which files are available.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                file: { type: 'string', description: 'Relative path, e.g. "output/data/insights.json"' },
+            },
+            required: ['file'],
+        },
+    },
 ];
 
 function runPython(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
@@ -55,17 +68,21 @@ function loadJson<T>(filePath: string): T | undefined {
     catch { return undefined; }
 }
 
+const READABLE_FILES: Array<{ rel: string; description: string }> = [
+    { rel: 'output/data/work_items.json',          description: 'Current work items — id, title, type, column, state, assignee, tags' },
+    { rel: 'output/data/work_item_history.json',   description: 'Full column transition history for every item (entered/left dates, tag changes, state changes)' },
+    { rel: 'output/data/work_item_rework.json',    description: 'Items that moved backward to an earlier column (rework / regression events)' },
+    { rel: 'output/data/insights.json',            description: 'AI-generated insights — executive summary, per-chart insights, diagnostic findings, outlier patterns' },
+    { rel: 'output/data/sprint_retro.json',        description: 'Sprint-level retrospective data' },
+    { rel: 'output/data/data_quality_report.json', description: 'Data quality warnings and excluded items' },
+    { rel: 'output/metrics/cycle_time.json',       description: 'Cycle time — overall stats (median, P85, mean), weekly throughput, per-item breakdown' },
+    { rel: 'output/metrics/lead_time.json',        description: 'Lead time — overall stats, weekly breakdown, per-item breakdown' },
+    { rel: 'output/metrics/time_in_columns.json',  description: 'Time spent in each column — per-column stats and per-item dwell times' },
+];
+
 function buildSystemPrompt(board: Board, boardDir: string): string {
-    const ctx        = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
-    const cfg        = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
-    const items      = loadJson<any[]>(path.join(boardDir, 'output/data/work_items.json'));
-    const history    = loadJson<any[]>(path.join(boardDir, 'output/data/work_item_history.json'));
-    const insights   = loadJson<any>(path.join(boardDir, 'output/data/insights.json'));
-    const sprintRetro = loadJson<any[]>(path.join(boardDir, 'output/data/sprint_retro.json'));
-    const rework     = loadJson<any[]>(path.join(boardDir, 'output/data/work_item_rework.json'));
-    const cycleTime  = loadJson<any>(path.join(boardDir, 'output/metrics/cycle_time.json'));
-    const leadTime   = loadJson<any>(path.join(boardDir, 'output/metrics/lead_time.json'));
-    const tic        = loadJson<any>(path.join(boardDir, 'output/metrics/time_in_columns.json'));
+    const ctx = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
+    const cfg = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
 
     const columns        = (ctx?.columns ?? []).map((c: any) => c.name).join(' → ');
     const activeColumns  = (cfg?.flow_efficiency?.active_columns  ?? []).join(', ');
@@ -74,54 +91,11 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
     const cycleEnd       = cfg?.cycle_time?.clock_end?.value   ?? 'unknown';
     const rawConfig      = cfg ? JSON.stringify(cfg, null, 2) : 'Not yet configured.';
 
-    const truncate = (obj: unknown, limit: number) => {
-        const s = JSON.stringify(obj);
-        return s.length > limit ? s.slice(0, limit) + '\n... (truncated)' : s;
-    };
-
-    let itemsText: string;
-    if (items?.length) {
-        const compact = items.map((i: any) => ({
-            id: i.id, title: i.title, type: i.type, column: i.column,
-            assignee: i.assignee ?? null, tags: i.tags ?? [], state: i.state,
-        }));
-        itemsText = truncate(compact, 80_000);
-    } else {
-        itemsText = 'No cached data available — use fetch_live_work_items to get current items.';
-    }
-
-    // Compact column history: strip tag/state history, keep only column moves with dates
-    let historyText = 'Not available.';
-    if (history?.length) {
-        const compact = history.map((item: any) => ({
-            id: item.id,
-            cols: (item.column_history ?? []).map((c: any) => ({
-                col: c.value,
-                from: c.entered?.slice(0, 10) ?? null,
-                to: c.left?.slice(0, 10) ?? null,
-            })),
-        }));
-        historyText = truncate(compact, 60_000);
-    }
-
-    // Metrics: summary only — skip per-item arrays to stay within context limits
-    const cycleTimeSummary = cycleTime
-        ? truncate({ overall: cycleTime.overall, weekly_stats: cycleTime.weekly_stats }, 30_000)
-        : 'Not available.';
-    const leadTimeSummary = leadTime
-        ? truncate({ overall: leadTime.overall, weekly_stats: leadTime.weekly_stats }, 30_000)
-        : 'Not available.';
-    const ticSummary = tic
-        ? truncate({ columns: tic.columns }, 30_000)
-        : 'Not available.';
-    const insightsText = insights ? truncate(insights, 55_000) : 'Not available.';
-    const sprintRetroText = sprintRetro ? truncate(sprintRetro, 35_000) : 'Not available.';
-    const reworkText = rework ? truncate(rework, 40_000) : 'Not available.';
-
-    let dataAge = 'unknown';
-    try {
-        dataAge = fs.statSync(path.join(boardDir, 'output/data/work_items.json')).mtime.toLocaleString();
-    } catch { /* file absent */ }
+    // Only list files that actually exist
+    const availableFiles = READABLE_FILES.filter(f => fs.existsSync(path.join(boardDir, f.rel)));
+    const fileCatalogue = availableFiles
+        .map(f => `  ${f.rel} — ${f.description}`)
+        .join('\n');
 
     return [
         `You are a flow metrics assistant for the "${board.name}" board (team: ${ctx?.team ?? ''}, project: ${ctx?.project ?? ''}).`,
@@ -131,40 +105,20 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `Waiting columns: ${waitingColumns || 'not configured'}`,
         `Cycle time clock: ${cycleStart} → ${cycleEnd}`,
         ``,
-        `Full board config (config.json) — use this exact structure when calling update_board_config:`,
+        `Full board config — use this exact structure when calling update_board_config:`,
         rawConfig,
         ``,
-        `Cached work items (as of ${dataAge}):`,
-        itemsText,
-        ``,
-        `Column movement history — each item's column transitions with entry/exit dates:`,
-        historyText,
-        ``,
-        `Cycle time metrics (overall summary + weekly throughput):`,
-        cycleTimeSummary,
-        ``,
-        `Lead time metrics (overall summary + weekly):`,
-        leadTimeSummary,
-        ``,
-        `Time in columns (per-column dwell time statistics):`,
-        ticSummary,
-        ``,
-        `AI insights (executive summary, chart insights, diagnostic findings, outlier patterns):`,
-        insightsText,
-        ``,
-        `Sprint retrospective data:`,
-        sprintRetroText,
-        ``,
-        `Work item rework (backward column moves — items that regressed to an earlier stage):`,
-        reworkText,
+        `Available data files (use read_output_file to load any of these on demand):`,
+        fileCatalogue,
         ``,
         `Tools available:`,
-        `- fetch_live_work_items: fetches fresh work items directly from ADO`,
-        `- fetch_item_history: fetches column/state change history for one item by ID`,
-        `- update_board_config: saves a modified config.json to disk (use when the user asks to change configuration)`,
+        `- read_output_file: load any of the above files when you need their data`,
+        `- fetch_live_work_items: fetch fresh work items directly from ADO (use when cache may be stale)`,
+        `- fetch_item_history: fetch detailed column/state history for a single item by ID from ADO`,
+        `- update_board_config: save a modified board config to disk`,
         ``,
-        `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns.`,
-        `Be specific — include work item IDs and titles. Offer to fetch live data if the cache looks stale.`,
+        `Strategy: read only the files you actually need to answer the question. For questions about specific items, prefer fetch_item_history over loading the full history file.`,
+        `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns. Be specific — include work item IDs and titles.`,
     ].join('\n');
 }
 
@@ -235,8 +189,8 @@ export function registerChatParticipant(
                 vscode.LanguageModelChatMessage.User(request.prompt),
             ];
 
-            // Tool-calling loop — max 3 rounds to prevent runaway calls
-            for (let round = 0; round < 3; round++) {
+            // Tool-calling loop — up to 5 rounds (read_output_file may need multiple fetches)
+            for (let round = 0; round < 5; round++) {
                 const response = await model.sendRequest(messages, { tools: TOOLS }, token);
                 const toolCalls: vscode.LanguageModelToolCallPart[] = [];
 
@@ -252,7 +206,7 @@ export function registerChatParticipant(
 
                 const toolResults: vscode.LanguageModelToolResultPart[] = [];
                 for (const call of toolCalls) {
-                    stream.progress(`Querying ADO (${call.name.replace(/_/g, ' ')})…`);
+                    stream.progress(`${call.name === 'read_output_file' ? 'Reading' : 'Querying ADO'}: ${(call.input as any).file ?? (call.input as any).id ?? call.name.replace(/_/g, ' ')}…`);
                     let result: string;
                     try {
                         if (call.name === 'fetch_live_work_items') {
@@ -272,8 +226,20 @@ export function registerChatParticipant(
                             result = JSON.stringify({ success: true });
                         } catch (e) {
                             result = JSON.stringify({ error: String(e) });
-                        }
-                    } else {
+                        }                        } else if (call.name === 'read_output_file') {
+                            const relPath = (call.input as { file: string }).file;
+                            const allowed = READABLE_FILES.map(f => f.rel);
+                            if (!allowed.includes(relPath)) {
+                                result = JSON.stringify({ error: `Not a readable file: ${relPath}` });
+                            } else {
+                                const absPath = path.join(boardDir, relPath);
+                                if (!fs.existsSync(absPath)) {
+                                    result = JSON.stringify({ error: 'File not found — pipeline may not have run this step yet.' });
+                                } else {
+                                    const raw = fs.readFileSync(absPath, 'utf-8');
+                                    result = raw.length > 100_000 ? raw.slice(0, 100_000) + '\n... (truncated)' : raw;
+                                }
+                            }                    } else {
                             result = JSON.stringify({ error: `Unknown tool: ${call.name}` });
                         }
                     } catch (e) {
