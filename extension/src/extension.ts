@@ -276,13 +276,15 @@ class BoardsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 // ── Pipeline TreeView ──────────────────────────────────────────────────────
 
 class PipelineItem extends vscode.TreeItem {
-    constructor(config: { label: string; description: string; contextValue: string }, done: boolean, isSubstep = false) {
+    constructor(config: { label: string; description: string; contextValue: string }, done: boolean, isSubstep = false, isRunning = false) {
         super(config.label, vscode.TreeItemCollapsibleState.None);
         this.description = config.description;
         this.contextValue = config.contextValue;
-        this.iconPath = done
-            ? new vscode.ThemeIcon(isSubstep ? 'check' : 'pass-filled', new vscode.ThemeColor('testing.iconPassed'))
-            : new vscode.ThemeIcon('circle-outline');
+        this.iconPath = isRunning
+            ? new vscode.ThemeIcon('loading~spin')
+            : done
+                ? new vscode.ThemeIcon(isSubstep ? 'check' : 'pass-filled', new vscode.ThemeColor('testing.iconPassed'))
+                : new vscode.ThemeIcon('circle-outline');
     }
 }
 
@@ -291,9 +293,11 @@ class PipelineGroupItem extends vscode.TreeItem {
         super(group.label, isRunning ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
         this.description = group.description;
         this.contextValue = group.contextValue;
-        this.iconPath = allDone
-            ? new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('testing.iconPassed'))
-            : new vscode.ThemeIcon('circle-outline');
+        this.iconPath = isRunning
+            ? new vscode.ThemeIcon('loading~spin')
+            : allDone
+                ? new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('testing.iconPassed'))
+                : new vscode.ThemeIcon('circle-outline');
     }
 }
 
@@ -312,6 +316,7 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
     private runningGroups = new Set<string>();
+    private runningStep: string | null = null;
 
     constructor(
         private readonly state: vscode.Memento,
@@ -322,6 +327,11 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
     setGroupRunning(contextValue: string, running: boolean): void {
         running ? this.runningGroups.add(contextValue) : this.runningGroups.delete(contextValue);
+        this._onDidChangeTreeData.fire();
+    }
+
+    setStepRunning(contextValue: string | null): void {
+        this.runningStep = contextValue;
         this._onDidChangeTreeData.fire();
     }
 
@@ -340,7 +350,9 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             : false;
 
         if (element instanceof PipelineGroupItem) {
-            return PIPELINE_STEPS.filter(s => s.group === element.contextValue).map(s => new PipelineItem(s, stepDone(s), true));
+            return PIPELINE_STEPS.filter(s => s.group === element.contextValue).map(s =>
+                new PipelineItem(s, stepDone(s), true, this.runningStep === s.contextValue)
+            );
         }
 
         // Count progress at the top-level granularity (groups count as 1 unit)
@@ -361,7 +373,7 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         const items: vscode.TreeItem[] = [new PipelineProgressItem(doneTopLevel, totalTopLevel)];
         for (const s of PIPELINE_STEPS) {
             if (!s.group) {
-                items.push(new PipelineItem(s, stepDone(s)));
+                items.push(new PipelineItem(s, stepDone(s), false, this.runningStep === s.contextValue));
             } else if (!seenGroups.has(s.group)) {
                 seenGroups.add(s.group);
                 const grp = PIPELINE_GROUPS.find(g => g.contextValue === s.group)!;
@@ -1094,31 +1106,40 @@ export function activate(context: vscode.ExtensionContext) {
                     // Step 1: Fetch Board Context
                     if (!exists('output/data/context.json')) {
                         progress.report({ message: 'Step 1 — Fetching board context…' });
+                        pipelineProvider.setStepRunning('step.fetchContext');
                         await vscode.commands.executeCommand('ai-flow-metrics.fetchContext');
                         if (!await waitForFile('output/data/context.json', 2 * 60 * 1000)) {
+                            pipelineProvider.setStepRunning(null);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 1 timed out.');
                             return;
                         }
+                        pipelineProvider.setStepRunning(null);
                     }
 
                     // Step 2: Fetch & Check group (terminal-based)
                     if (!exists('output/data/data_quality_report.json')) {
                         progress.report({ message: 'Step 2 — Fetching work items & data quality check…' });
+                        pipelineProvider.setGroupRunning('group.fetchAndCheck', true);
                         await vscode.commands.executeCommand('ai-flow-metrics.runFetchAndCheckGroup');
                         if (!await waitForFile('output/data/data_quality_report.json', 10 * 60 * 1000)) {
+                            pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.');
                             return;
                         }
+                        pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
                     }
 
                     // Step 3: Configure Board (AI — opens Copilot Chat, user must complete)
                     if (!exists('output/data/config.json')) {
                         progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
+                        pipelineProvider.setStepRunning('step.configureBoard');
                         await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
                         if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
+                            pipelineProvider.setStepRunning(null);
                             vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).');
                             return;
                         }
+                        pipelineProvider.setStepRunning(null);
                     }
 
                     // Step 4: Calculate Metrics group
@@ -1133,12 +1154,16 @@ export function activate(context: vscode.ExtensionContext) {
 
                     // Step 5: Generate Dashboard
                     progress.report({ message: 'Step 5 — Generating dashboard…' });
+                    pipelineProvider.setStepRunning('step.generateDashboard');
                     await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
                     await waitForFile('output/dashboard.html', 2 * 60 * 1000);
+                    pipelineProvider.setStepRunning(null);
 
                     // Step 6: Interpret — auto-regenerates dashboard when Copilot writes insights.json
                     progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
+                    pipelineProvider.setStepRunning('step.interpretMetrics');
                     await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
+                    pipelineProvider.setStepRunning(null);
 
                 }
             );
