@@ -62,6 +62,7 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
     const history    = loadJson<any[]>(path.join(boardDir, 'output/data/work_item_history.json'));
     const insights   = loadJson<any>(path.join(boardDir, 'output/data/insights.json'));
     const sprintRetro = loadJson<any[]>(path.join(boardDir, 'output/data/sprint_retro.json'));
+    const rework     = loadJson<any[]>(path.join(boardDir, 'output/data/work_item_rework.json'));
     const cycleTime  = loadJson<any>(path.join(boardDir, 'output/metrics/cycle_time.json'));
     const leadTime   = loadJson<any>(path.join(boardDir, 'output/metrics/lead_time.json'));
     const tic        = loadJson<any>(path.join(boardDir, 'output/metrics/time_in_columns.json'));
@@ -115,6 +116,7 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         : 'Not available.';
     const insightsText = insights ? truncate(insights, 55_000) : 'Not available.';
     const sprintRetroText = sprintRetro ? truncate(sprintRetro, 35_000) : 'Not available.';
+    const reworkText = rework ? truncate(rework, 40_000) : 'Not available.';
 
     let dataAge = 'unknown';
     try {
@@ -152,6 +154,9 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         ``,
         `Sprint retrospective data:`,
         sprintRetroText,
+        ``,
+        `Work item rework (backward column moves — items that regressed to an earlier stage):`,
+        reworkText,
         ``,
         `Tools available:`,
         `- fetch_live_work_items: fetches fresh work items directly from ADO`,
