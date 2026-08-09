@@ -24,6 +24,22 @@ const TOOLS: vscode.LanguageModelChatTool[] = [
             required: ['id'],
         },
     },
+    {
+        name: 'update_board_config',
+        description:
+            'Update the board configuration and save it to disk. Call only when the user explicitly asks to change column classification (active/waiting), clock start/end columns, or blocker signals. ' +
+            'Provide the COMPLETE updated config object — preserve all fields that are not being changed.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                config: {
+                    type: 'object',
+                    description: 'The complete updated board config object (all fields, not just changed ones)',
+                },
+            },
+            required: ['config'],
+        },
+    },
 ];
 
 function runPython(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
@@ -49,6 +65,7 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
     const waitingColumns = (cfg?.flow_efficiency?.waiting_columns ?? []).join(', ');
     const cycleStart     = cfg?.cycle_time?.clock_start?.value ?? 'unknown';
     const cycleEnd       = cfg?.cycle_time?.clock_end?.value   ?? 'unknown';
+    const rawConfig      = cfg ? JSON.stringify(cfg, null, 2) : 'Not yet configured.';
 
     let itemsText: string;
     if (items?.length) {
@@ -75,12 +92,16 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `Waiting columns: ${waitingColumns || 'not configured'}`,
         `Cycle time clock: ${cycleStart} → ${cycleEnd}`,
         ``,
+        `Full board config (config.json) — use this exact structure when calling update_board_config:`,
+        rawConfig,
+        ``,
         `Cached work items (as of ${dataAge}):`,
         itemsText,
         ``,
         `Tools available:`,
         `- fetch_live_work_items: fetches fresh work items directly from ADO`,
         `- fetch_item_history: fetches column/state change history for one item by ID`,
+        `- update_board_config: saves a modified config.json to disk (use when the user asks to change configuration)`,
         ``,
         `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns.`,
         `Be specific — include work item IDs and titles. Offer to fetch live data if the cache looks stale.`,
@@ -132,6 +153,7 @@ async function resolveBoard(
 export function registerChatParticipant(
     context: vscode.ExtensionContext,
     getBoards: () => Board[],
+    refresh?: () => void,
 ): void {
     const participant = vscode.chat.createChatParticipant(
         'ai-flow-metrics.chat',
@@ -178,7 +200,20 @@ export function registerChatParticipant(
                         } else if (call.name === 'fetch_item_history') {
                             const id = (call.input as { id: number }).id;
                             result = await runPython(scriptPath, ['item-history', '--id', String(id)], boardDir, env);
-                        } else {
+                        } else if (call.name === 'update_board_config') {
+                        try {
+                            const newConfig = (call.input as { config: unknown }).config;
+                            const jsonStr = JSON.stringify(newConfig, null, 2);
+                            const configPath = path.join(boardDir, 'output', 'data', 'config.json');
+                            fs.writeFileSync(configPath, jsonStr, 'utf-8');
+                            refresh?.();
+                            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(configPath));
+                            vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
+                            result = JSON.stringify({ success: true });
+                        } catch (e) {
+                            result = JSON.stringify({ error: String(e) });
+                        }
+                    } else {
                             result = JSON.stringify({ error: `Unknown tool: ${call.name}` });
                         }
                     } catch (e) {

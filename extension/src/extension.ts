@@ -1708,7 +1708,10 @@ export function activate(context: vscode.ExtensionContext) {
         }),
     );
 
-    registerChatParticipant(context, () => boardsProvider.getBoards());
+    registerChatParticipant(context, () => boardsProvider.getBoards(), () => {
+        boardsProvider.refresh();
+        pipelineProvider.refresh();
+    });
 }
 
 export function deactivate() {}
