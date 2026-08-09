@@ -1338,14 +1338,45 @@ export function activate(context: vscode.ExtensionContext) {
             // Re-use saved repo; only prompt on first publish (or after re-link)
             let fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
             if (!fullRepo) {
-                const input = await vscode.window.showInputBox({
-                    prompt: 'GitHub repository (owner/repo)',
-                    placeHolder: `myorg/${slugifyRepoName(board.name)}`,
+                // Step 1: resolve candidate owners from gh CLI, then let user pick
+                let ownerChoices: vscode.QuickPickItem[] = [];
+                try {
+                    const [loginJson, orgsJson] = await Promise.all([
+                        runGh('gh api user --jq .login').catch(() => '""'),
+                        runGh('gh api orgs --jq "[.[].login]"').catch(() => '[]'),
+                    ]);
+                    const login: string = JSON.parse(loginJson.trim());
+                    const orgs: string[] = JSON.parse(orgsJson.trim());
+                    if (login) { ownerChoices.push({ label: login, description: 'Your personal account' }); }
+                    orgs.forEach(o => ownerChoices.push({ label: o, description: 'Organisation' }));
+                } catch { /* leave ownerChoices empty — fall through to manual entry */ }
+
+                let owner: string | undefined;
+                if (ownerChoices.length) {
+                    const picked = await vscode.window.showQuickPick(ownerChoices, {
+                        title: 'Who should own the repository?',
+                        ignoreFocusOut: true,
+                    });
+                    if (!picked) { return; }
+                    owner = picked.label;
+                } else {
+                    owner = await vscode.window.showInputBox({
+                        prompt: 'Repository owner (your GitHub username or an org name)',
+                        ignoreFocusOut: true,
+                        validateInput: v => v.trim() ? undefined : 'Required',
+                    });
+                    if (!owner) { return; }
+                }
+
+                // Step 2: repo name
+                const repoName = await vscode.window.showInputBox({
+                    prompt: `Repository name under ${owner}`,
+                    value: slugifyRepoName(board.name),
                     ignoreFocusOut: true,
-                    validateInput: v => v.includes('/') ? undefined : 'Must be owner/repo',
+                    validateInput: v => v.trim() ? undefined : 'Required',
                 });
-                if (!input) { return; }
-                fullRepo = input.trim();
+                if (!repoName) { return; }
+                fullRepo = `${owner}/${repoName.trim()}`;
             }
             fullRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
 
