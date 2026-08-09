@@ -117,7 +117,7 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `- fetch_item_history: fetch detailed column/state history for a single item by ID from ADO`,
         `- update_board_config: save a modified board config to disk`,
         ``,
-        `Strategy: read only the files you actually need to answer the question. For questions about specific items, prefer fetch_item_history over loading the full history file.`,
+        `Strategy: first read the cached files that are most relevant to the question. If the cached data is insufficient, stale, or missing the detail needed, use fetch_live_work_items or fetch_item_history to query ADO directly. For questions about a specific item's journey, prefer fetch_item_history over loading the full history file.`,
         `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns. Be specific — include work item IDs and titles.`,
     ].join('\n');
 }
