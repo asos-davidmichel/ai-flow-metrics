@@ -56,10 +56,15 @@ function loadJson<T>(filePath: string): T | undefined {
 }
 
 function buildSystemPrompt(board: Board, boardDir: string): string {
-    const ctx     = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
-    const cfg     = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
-    const items   = loadJson<any[]>(path.join(boardDir, 'output/data/work_items.json'));
-    const history = loadJson<any[]>(path.join(boardDir, 'output/data/work_item_history.json'));
+    const ctx        = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
+    const cfg        = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
+    const items      = loadJson<any[]>(path.join(boardDir, 'output/data/work_items.json'));
+    const history    = loadJson<any[]>(path.join(boardDir, 'output/data/work_item_history.json'));
+    const insights   = loadJson<any>(path.join(boardDir, 'output/data/insights.json'));
+    const sprintRetro = loadJson<any[]>(path.join(boardDir, 'output/data/sprint_retro.json'));
+    const cycleTime  = loadJson<any>(path.join(boardDir, 'output/metrics/cycle_time.json'));
+    const leadTime   = loadJson<any>(path.join(boardDir, 'output/metrics/lead_time.json'));
+    const tic        = loadJson<any>(path.join(boardDir, 'output/metrics/time_in_columns.json'));
 
     const columns        = (ctx?.columns ?? []).map((c: any) => c.name).join(' → ');
     const activeColumns  = (cfg?.flow_efficiency?.active_columns  ?? []).join(', ');
@@ -68,14 +73,18 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
     const cycleEnd       = cfg?.cycle_time?.clock_end?.value   ?? 'unknown';
     const rawConfig      = cfg ? JSON.stringify(cfg, null, 2) : 'Not yet configured.';
 
+    const truncate = (obj: unknown, limit: number) => {
+        const s = JSON.stringify(obj);
+        return s.length > limit ? s.slice(0, limit) + '\n... (truncated)' : s;
+    };
+
     let itemsText: string;
     if (items?.length) {
         const compact = items.map((i: any) => ({
             id: i.id, title: i.title, type: i.type, column: i.column,
             assignee: i.assignee ?? null, tags: i.tags ?? [], state: i.state,
         }));
-        const raw = JSON.stringify(compact);
-        itemsText = raw.length > 80_000 ? raw.slice(0, 80_000) + '\n... (truncated)' : raw;
+        itemsText = truncate(compact, 80_000);
     } else {
         itemsText = 'No cached data available — use fetch_live_work_items to get current items.';
     }
@@ -91,9 +100,21 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
                 to: c.left?.slice(0, 10) ?? null,
             })),
         }));
-        const raw = JSON.stringify(compact);
-        historyText = raw.length > 60_000 ? raw.slice(0, 60_000) + '\n... (truncated)' : raw;
+        historyText = truncate(compact, 60_000);
     }
+
+    // Metrics: summary only — skip per-item arrays to stay within context limits
+    const cycleTimeSummary = cycleTime
+        ? truncate({ overall: cycleTime.overall, weekly_stats: cycleTime.weekly_stats }, 30_000)
+        : 'Not available.';
+    const leadTimeSummary = leadTime
+        ? truncate({ overall: leadTime.overall, weekly_stats: leadTime.weekly_stats }, 30_000)
+        : 'Not available.';
+    const ticSummary = tic
+        ? truncate({ columns: tic.columns }, 30_000)
+        : 'Not available.';
+    const insightsText = insights ? truncate(insights, 55_000) : 'Not available.';
+    const sprintRetroText = sprintRetro ? truncate(sprintRetro, 35_000) : 'Not available.';
 
     let dataAge = 'unknown';
     try {
@@ -114,8 +135,23 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `Cached work items (as of ${dataAge}):`,
         itemsText,
         ``,
-        `Column movement history — each item's column transitions with entry/exit dates (use this to answer questions about when items moved, completed, or were stuck):`,
+        `Column movement history — each item's column transitions with entry/exit dates:`,
         historyText,
+        ``,
+        `Cycle time metrics (overall summary + weekly throughput):`,
+        cycleTimeSummary,
+        ``,
+        `Lead time metrics (overall summary + weekly):`,
+        leadTimeSummary,
+        ``,
+        `Time in columns (per-column dwell time statistics):`,
+        ticSummary,
+        ``,
+        `AI insights (executive summary, chart insights, diagnostic findings, outlier patterns):`,
+        insightsText,
+        ``,
+        `Sprint retrospective data:`,
+        sprintRetroText,
         ``,
         `Tools available:`,
         `- fetch_live_work_items: fetches fresh work items directly from ADO`,
