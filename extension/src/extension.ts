@@ -1308,41 +1308,9 @@ export function activate(context: vscode.ExtensionContext) {
                 { label: 'Weekly — Monday 9am UTC',   cron: '0 9 * * 1', description: 'Every Monday at 09:00 UTC' },
                 { label: 'Weekly — Friday 9am UTC',   cron: '0 9 * * 5', description: 'Every Friday at 09:00 UTC' },
                 { label: '$(edit) Custom cron…',      cron: '',          description: 'Enter a cron expression' },
-                ...(isConfigured ? [{ label: '$(trash) Remove schedule', cron: 'remove', description: 'Delete the workflow from the repo' }] : []),
             ];
             const pick = await vscode.window.showQuickPick(SCHEDULES, { title: 'Schedule', ignoreFocusOut: true });
             if (!pick) { return; }
-
-            // ── Remove ────────────────────────────────────────────────────
-            if (pick.cron === 'remove') {
-                await vscode.window.withProgress(
-                    { location: vscode.ProgressLocation.Notification, title: 'Remove Schedule', cancellable: false },
-                    async (progress) => {
-                        const tmpDir = path.join(os.tmpdir(), `aiflowmetrics-schedule-${Date.now()}`);
-                        progress.report({ message: 'Cloning repository…' });
-                        try { await runGh(`gh repo clone "${cleanRepo}" "${tmpDir}"`); }
-                        catch (e) { vscode.window.showErrorMessage(`Clone failed: ${e}`); return; }
-                        try {
-                            const workflowFile = path.join(tmpDir, '.github', 'workflows', 'update-dashboard.yml');
-                            if (fs.existsSync(workflowFile)) { fs.unlinkSync(workflowFile); }
-                            const gitCmds = [
-                                `git -C "${tmpDir}" config user.email "aiflowmetrics@users.noreply.github.com"`,
-                                `git -C "${tmpDir}" config user.name "AI Flow Metrics"`,
-                                `git -C "${tmpDir}" add -A`,
-                                `git -C "${tmpDir}" commit -m "Remove scheduled update workflow"`,
-                                `git -C "${tmpDir}" push`,
-                            ];
-                            for (const cmd of gitCmds) { await runGh(cmd).catch(() => {}); }
-                        } finally {
-                            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
-                        }
-                        await context.globalState.update(`publishSchedule.${activeId}`, undefined);
-                        publishProvider.refresh();
-                        vscode.window.showInformationMessage('Schedule removed.');
-                    }
-                );
-                return;
-            }
 
             // ── Add / Edit ────────────────────────────────────────────────
             let cronExpr = pick.cron;
@@ -1442,6 +1410,47 @@ export function activate(context: vscode.ExtensionContext) {
                         : `Schedule configured. Add ADO_PAT as a repository secret to enable data fetching.`;
                     vscode.window.showInformationMessage(msg, ...(hasAdoPat ? [] : ['Set ADO_PAT Secret']))
                         .then(c => { if (c === 'Set ADO_PAT Secret') { vscode.env.openExternal(vscode.Uri.parse(secretsUrl)); } });
+                }
+            );
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.removeSchedule', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { return; }
+            const fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
+            if (!fullRepo) { return; }
+            const cleanRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
+
+            const confirm = await vscode.window.showWarningMessage(
+                'Remove the scheduled workflow from GitHub?',
+                { modal: true }, 'Remove'
+            );
+            if (confirm !== 'Remove') { return; }
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Remove Schedule', cancellable: false },
+                async (progress) => {
+                    const tmpDir = path.join(os.tmpdir(), `aiflowmetrics-schedule-${Date.now()}`);
+                    progress.report({ message: 'Cloning repository\u2026' });
+                    try { await runGh(`gh repo clone "${cleanRepo}" "${tmpDir}"`); }
+                    catch (e) { vscode.window.showErrorMessage(`Clone failed: ${e}`); return; }
+                    try {
+                        const workflowFile = path.join(tmpDir, '.github', 'workflows', 'update-dashboard.yml');
+                        if (fs.existsSync(workflowFile)) { fs.unlinkSync(workflowFile); }
+                        const gitCmds = [
+                            `git -C "${tmpDir}" config user.email "aiflowmetrics@users.noreply.github.com"`,
+                            `git -C "${tmpDir}" config user.name "AI Flow Metrics"`,
+                            `git -C "${tmpDir}" add -A`,
+                            `git -C "${tmpDir}" commit -m "Remove scheduled update workflow"`,
+                            `git -C "${tmpDir}" push`,
+                        ];
+                        for (const cmd of gitCmds) { await runGh(cmd).catch(() => {}); }
+                    } finally {
+                        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+                    }
+                    await context.globalState.update(`publishSchedule.${activeId}`, undefined);
+                    publishProvider.refresh();
+                    vscode.window.showInformationMessage('Schedule removed.');
                 }
             );
         }),

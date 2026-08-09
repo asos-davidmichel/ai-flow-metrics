@@ -152,6 +152,11 @@
         "icon": "$(calendar)"
       },
       {
+        "command": "ai-flow-metrics.removeSchedule",
+        "title": "Remove Schedule",
+        "icon": "$(trash)"
+      },
+      {
         "command": "ai-flow-metrics.runScheduleNow",
         "title": "Run Workflow Now",
         "icon": "$(run)"
@@ -272,6 +277,11 @@
         {
           "command": "ai-flow-metrics.configureSchedule",
           "when": "view == aiFlowMetrics.publish && (viewItem == publish.schedule || viewItem == publish.schedule.configured)",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.removeSchedule",
+          "when": "view == aiFlowMetrics.publish && viewItem == publish.schedule.configured",
           "group": "inline"
         },
         {
