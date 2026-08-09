@@ -113,6 +113,11 @@
         "icon": "$(run-all)"
       },
       {
+        "command": "ai-flow-metrics.configureWindow",
+        "title": "Configure Time Window",
+        "icon": "$(settings-gear)"
+      },
+      {
         "command": "ai-flow-metrics.runCalculationsGroup",
         "title": "Run All Calculations",
         "icon": "$(run-all)"
@@ -266,6 +271,11 @@
         {
           "command": "ai-flow-metrics.runFetchAndCheckGroup",
           "when": "view == aiFlowMetrics.pipeline && viewItem == group.fetchAndCheck",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.configureWindow",
+          "when": "view == aiFlowMetrics.pipeline && viewItem == group.calculateMetrics",
           "group": "inline"
         },
         {

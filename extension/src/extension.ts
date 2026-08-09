@@ -288,10 +288,14 @@ class PipelineItem extends vscode.TreeItem {
     }
 }
 
+function getWindowConfig(state: vscode.Memento, boardId: string): { label: string; args: string } {
+    return state.get<{ label: string; args: string }>(`window.${boardId}`) ?? { label: '6m', args: '--window 6m' };
+}
+
 class PipelineGroupItem extends vscode.TreeItem {
-    constructor(readonly group: PipelineGroup, allDone: boolean, isRunning = false) {
+    constructor(readonly group: PipelineGroup, allDone: boolean, isRunning = false, windowLabel?: string) {
         super(group.label, isRunning ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
-        this.description = group.description;
+        this.description = windowLabel ? `${group.description} · ${windowLabel}` : group.description;
         this.contextValue = group.contextValue;
         this.iconPath = isRunning
             ? new vscode.ThemeIcon('loading~spin')
@@ -378,7 +382,10 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 seenGroups.add(s.group);
                 const grp = PIPELINE_GROUPS.find(g => g.contextValue === s.group)!;
                 const allDone = PIPELINE_STEPS.filter(x => x.group === s.group).every(stepDone);
-                items.push(new PipelineGroupItem(grp, allDone, this.runningGroups.has(s.group)));
+                const windowLabel = grp.contextValue === 'group.calculateMetrics' && activeId
+                    ? getWindowConfig(this.state, activeId).label
+                    : undefined;
+                items.push(new PipelineGroupItem(grp, allDone, this.runningGroups.has(s.group), windowLabel));
             }
         }
         return items;
@@ -889,7 +896,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Calculate Time in Columns', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
-                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`python "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -917,7 +924,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Calculate Cycle Time', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
-                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`python "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -945,7 +952,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Calculate Lead Time', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
-                    cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`python "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -1089,6 +1096,52 @@ export function activate(context: vscode.ExtensionContext) {
             pipelineProvider.setGroupRunning('group.fetchAndCheck', true);
         }),
 
+        vscode.commands.registerCommand('ai-flow-metrics.configureWindow', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { vscode.window.showErrorMessage('Select a board first.'); return; }
+
+            const PRESETS = [
+                { label: 'Last 4 weeks',                args: '--window 4w' },
+                { label: 'Last 3 months',               args: '--window 3m' },
+                { label: 'Last 6 months',               args: '--window 6m', description: 'default' },
+                { label: 'Last year',                   args: '--window 1y' },
+                { label: '$(calendar) Custom range\u2026', args: '' },
+            ];
+
+            const pick = await vscode.window.showQuickPick(PRESETS, {
+                title: 'Analysis time window',
+                ignoreFocusOut: true,
+            });
+            if (!pick) { return; }
+
+            let label = pick.label.replace(/^\$\([^)]+\)\s*/, '');
+            let args  = pick.args;
+
+            if (!args) {
+                const from = await vscode.window.showInputBox({
+                    prompt: 'Start date (YYYY-MM-DD)',
+                    placeHolder: '2026-01-01',
+                    ignoreFocusOut: true,
+                    validateInput: v => /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? undefined : 'Use YYYY-MM-DD format',
+                });
+                if (!from) { return; }
+                const to = await vscode.window.showInputBox({
+                    prompt: 'End date (YYYY-MM-DD), leave blank for today',
+                    placeHolder: new Date().toISOString().slice(0, 10),
+                    ignoreFocusOut: true,
+                    validateInput: v => !v.trim() || /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? undefined : 'Use YYYY-MM-DD format',
+                });
+                if (to === undefined) { return; }
+                const toArg  = to.trim() ? ` --to ${to.trim()}` : '';
+                args  = `--from ${from.trim()}${toArg}`;
+                label = to.trim() ? `${from.trim()} \u2192 ${to.trim()}` : `${from.trim()} \u2192 today`;
+            }
+
+            await context.globalState.update(`window.${activeId}`, { label, args });
+            pipelineProvider.refresh();
+            vscode.window.showInformationMessage(`Analysis window set to: ${label}. Re-run Step 4 to apply.`);
+        }),
+
         vscode.commands.registerCommand('ai-flow-metrics.runCalculationsGroup', async () => {
             const activeId = context.globalState.get<string>('activeBoardId');
             const board = boardsProvider.getBoards().find(b => b.id === activeId);
@@ -1097,12 +1150,13 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             if (!assertPrereq('group.calculateMetrics', outputDir)) { return; }
             const env = { ...process.env, PYTHONUTF8: '1' };
+            const windowArgs = getWindowConfig(context.globalState, activeId ?? '').args;
 
             pipelineProvider.setGroupRunning('group.calculateMetrics', true);
             const runStep = (scriptName: string, outputFile: string, stepNum: number) =>
                 new Promise<boolean>(resolve => {
                     const script = path.join(context.extensionPath, 'resources', 'scripts', scriptName);
-                    cp.exec(`python "${script}"`, { cwd: outputDir, env }, (error, stdout, stderr) => {
+                    cp.exec(`python "${script}" ${windowArgs}`, { cwd: outputDir, env }, (error, stdout, stderr) => {
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(path.join(outputDir, outputFile))) {
                             vscode.window.showErrorMessage(`Step ${stepNum} failed: ${output || 'No output.'}`);
