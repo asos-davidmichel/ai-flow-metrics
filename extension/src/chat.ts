@@ -1,0 +1,201 @@
+import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+
+interface Board { id: string; name: string; url: string; }
+
+const TOOLS: vscode.LanguageModelChatTool[] = [
+    {
+        name: 'fetch_live_work_items',
+        description:
+            'Fetch up-to-date work items directly from ADO. Use when the cached data may be stale or when you need to confirm the current board state.',
+        inputSchema: { type: 'object', properties: {} },
+    },
+    {
+        name: 'fetch_item_history',
+        description:
+            'Fetch the full column and state-change history for a specific work item. Use when asked how long an item has been somewhere, when it moved, or details about its journey.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                id: { type: 'number', description: 'The numeric ADO work item ID' },
+            },
+            required: ['id'],
+        },
+    },
+];
+
+function runPython(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+    return new Promise((resolve, reject) =>
+        cp.execFile('python', [script, ...args], { cwd, env, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) =>
+            err ? reject(new Error(stderr || err.message)) : resolve(stdout)
+        )
+    );
+}
+
+function loadJson<T>(filePath: string): T | undefined {
+    try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); }
+    catch { return undefined; }
+}
+
+function buildSystemPrompt(board: Board, boardDir: string): string {
+    const ctx   = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
+    const cfg   = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
+    const items = loadJson<any[]>(path.join(boardDir, 'output/data/work_items.json'));
+
+    const columns        = (ctx?.columns ?? []).map((c: any) => c.name).join(' → ');
+    const activeColumns  = (cfg?.flow_efficiency?.active_columns  ?? []).join(', ');
+    const waitingColumns = (cfg?.flow_efficiency?.waiting_columns ?? []).join(', ');
+    const cycleStart     = cfg?.cycle_time?.clock_start?.value ?? 'unknown';
+    const cycleEnd       = cfg?.cycle_time?.clock_end?.value   ?? 'unknown';
+
+    let itemsText: string;
+    if (items?.length) {
+        const compact = items.map((i: any) => ({
+            id: i.id, title: i.title, type: i.type, column: i.column,
+            assignee: i.assignee ?? null, tags: i.tags ?? [], state: i.state,
+        }));
+        const raw = JSON.stringify(compact);
+        itemsText = raw.length > 80_000 ? raw.slice(0, 80_000) + '\n... (truncated)' : raw;
+    } else {
+        itemsText = 'No cached data available — use fetch_live_work_items to get current items.';
+    }
+
+    let dataAge = 'unknown';
+    try {
+        dataAge = fs.statSync(path.join(boardDir, 'output/data/work_items.json')).mtime.toLocaleString();
+    } catch { /* file absent */ }
+
+    return [
+        `You are a flow metrics assistant for the "${board.name}" board (team: ${ctx?.team ?? ''}, project: ${ctx?.project ?? ''}).`,
+        ``,
+        `Board columns (left to right): ${columns}`,
+        `Active (in-progress) columns: ${activeColumns || 'not configured'}`,
+        `Waiting columns: ${waitingColumns || 'not configured'}`,
+        `Cycle time clock: ${cycleStart} → ${cycleEnd}`,
+        ``,
+        `Cached work items (as of ${dataAge}):`,
+        itemsText,
+        ``,
+        `Tools available:`,
+        `- fetch_live_work_items: fetches fresh work items directly from ADO`,
+        `- fetch_item_history: fetches column/state change history for one item by ID`,
+        ``,
+        `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns.`,
+        `Be specific — include work item IDs and titles. Offer to fetch live data if the cache looks stale.`,
+    ].join('\n');
+}
+
+async function resolveBoard(
+    state: vscode.Memento,
+    globalStoragePath: string,
+    getBoards: () => Board[],
+    stream: vscode.ChatResponseStream,
+): Promise<{ board: Board; boardDir: string } | undefined> {
+    const boards = getBoards();
+    if (!boards.length) {
+        stream.markdown('No boards configured. Add a board in the AI Flow Metrics panel first.');
+        return undefined;
+    }
+
+    // 1. Active board selected in sidebar
+    const activeId = state.get<string>('activeBoardId');
+    let board = boards.find(b => b.id === activeId);
+
+    // 2. Infer from the currently open editor (check if path is under globalStorage/<boardId>)
+    if (!board) {
+        const openPath = vscode.window.activeTextEditor?.document.uri.fsPath;
+        if (openPath) {
+            board = boards.find(b => openPath.startsWith(path.join(globalStoragePath, b.id)));
+        }
+    }
+
+    // 3. Ask the user
+    if (!board && boards.length === 1) {
+        board = boards[0];
+    } else if (!board) {
+        const pick = await vscode.window.showQuickPick(
+            boards.map(b => ({ label: b.name, board: b })),
+            { placeHolder: 'Which board are you asking about?' }
+        );
+        if (!pick) {
+            stream.markdown('No board selected — select a board in the AI Flow Metrics panel and try again.');
+            return undefined;
+        }
+        board = pick.board;
+    }
+
+    return { board, boardDir: path.join(globalStoragePath, board.id) };
+}
+
+export function registerChatParticipant(
+    context: vscode.ExtensionContext,
+    getBoards: () => Board[],
+): void {
+    const participant = vscode.chat.createChatParticipant(
+        'ai-flow-metrics.chat',
+        async (request, _ctx, stream, token) => {
+            const resolved = await resolveBoard(
+                context.globalState, context.globalStorageUri.fsPath, getBoards, stream
+            );
+            if (!resolved) { return {}; }
+            const { board, boardDir } = resolved;
+
+            const model = request.model;
+
+            const adoPat = await context.secrets.get('ADO_PAT') ?? process.env['ADO_PAT'] ?? '';
+            const scriptPath = path.join(context.extensionPath, 'resources', 'scripts', 'query_ado.py');
+            const env = { ...process.env, ADO_PAT: adoPat, PYTHONUTF8: '1' };
+
+            const messages: vscode.LanguageModelChatMessage[] = [
+                vscode.LanguageModelChatMessage.User(buildSystemPrompt(board, boardDir)),
+                vscode.LanguageModelChatMessage.User(request.prompt),
+            ];
+
+            // Tool-calling loop — max 3 rounds to prevent runaway calls
+            for (let round = 0; round < 3; round++) {
+                const response = await model.sendRequest(messages, { tools: TOOLS }, token);
+                const toolCalls: vscode.LanguageModelToolCallPart[] = [];
+
+                for await (const part of response.stream) {
+                    if (part instanceof vscode.LanguageModelTextPart) {
+                        stream.markdown(part.value);
+                    } else if (part instanceof vscode.LanguageModelToolCallPart) {
+                        toolCalls.push(part);
+                    }
+                }
+
+                if (!toolCalls.length) { break; }
+
+                const toolResults: vscode.LanguageModelToolResultPart[] = [];
+                for (const call of toolCalls) {
+                    stream.progress(`Querying ADO (${call.name.replace(/_/g, ' ')})…`);
+                    let result: string;
+                    try {
+                        if (call.name === 'fetch_live_work_items') {
+                            result = await runPython(scriptPath, ['work-items'], boardDir, env);
+                        } else if (call.name === 'fetch_item_history') {
+                            const id = (call.input as { id: number }).id;
+                            result = await runPython(scriptPath, ['item-history', '--id', String(id)], boardDir, env);
+                        } else {
+                            result = JSON.stringify({ error: `Unknown tool: ${call.name}` });
+                        }
+                    } catch (e) {
+                        result = JSON.stringify({ error: String(e) });
+                    }
+                    toolResults.push(
+                        new vscode.LanguageModelToolResultPart(call.callId, [new vscode.LanguageModelTextPart(result)])
+                    );
+                }
+
+                messages.push(vscode.LanguageModelChatMessage.Assistant(toolCalls));
+                messages.push(vscode.LanguageModelChatMessage.User(toolResults));
+            }
+
+            return {};
+        }
+    );
+    participant.iconPath = new vscode.ThemeIcon('graph');
+    context.subscriptions.push(participant);
+}

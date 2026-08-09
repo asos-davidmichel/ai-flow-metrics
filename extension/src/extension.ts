@@ -4,6 +4,7 @@ import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { registerChatParticipant } from './chat';
 import { openPreview } from './preview';
 
 interface Board {
@@ -1658,6 +1659,8 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
     );
+
+    registerChatParticipant(context, () => boardsProvider.getBoards());
 }
 
 export function deactivate() {}
