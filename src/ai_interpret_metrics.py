@@ -1492,13 +1492,64 @@ in 3-5 bullet points.
 # CLI
 # ---------------------------------------------------------------------------
 
+def _parse_insights(content: str) -> dict:
+    """Parse JSON from an AI response, stripping accidental markdown fences."""
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        stripped = "\n".join(stripped.splitlines()[1:])
+        if stripped.endswith("```"):
+            stripped = stripped[: stripped.rfind("```")]
+    return json.loads(stripped.strip())
+
+
+def _write_insights(content: str):
+    insights = _parse_insights(content)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    INSIGHTS_PATH.write_text(json.dumps(insights, indent=2), encoding="utf-8")
+    print(f"Written: {INSIGHTS_PATH}")
+
+
+async def _copilot_call(prompt_text: str) -> str:
+    from copilot import CopilotClient
+    from copilot.session import PermissionHandler
+    client = CopilotClient()
+    await client.start()
+    try:
+        session = await client.create_session(
+            on_permission_request=PermissionHandler.approve_all,
+            model="auto",
+        )
+        return await session.send_and_wait(prompt_text)
+    finally:
+        await client.stop()
+
+
 def auto_interpret(summary):
-    """Call an AI API and write insights.json directly — CI/automation mode."""
+    """Write insights.json directly — CI/automation mode.
+
+    Tries GitHub Copilot SDK first (GITHUB_TOKEN, no extra secrets).
+    Falls back to an OpenAI-compatible HTTP API if AI_API_KEY is set.
+    """
     import os
     import urllib.request
     import urllib.error
 
-    # GitHub Models (free, uses GITHUB_TOKEN) is the default; override with AI_API_KEY + AI_API_ENDPOINT.
+    prompt_text = build_prompt_text(summary)
+
+    # Prefer Copilot SDK — works with GITHUB_TOKEN, no extra secrets needed
+    if os.environ.get('GITHUB_TOKEN'):
+        try:
+            import asyncio
+            print("Calling GitHub Copilot SDK…")
+            content = asyncio.run(_copilot_call(prompt_text))
+            _write_insights(content)
+            return
+        except ImportError:
+            print("github-copilot-sdk not installed, falling back to AI_API_KEY.")
+        except Exception as exc:
+            print(f"Copilot SDK error ({exc}), falling back to AI_API_KEY.", file=sys.stderr)
+
+    # Fallback: any OpenAI-compatible API
     token = os.environ.get('AI_API_KEY')
     endpoint = os.environ.get('AI_API_ENDPOINT') or 'https://api.openai.com/v1'
     model = os.environ.get('AI_MODEL') or 'gpt-4o-mini'
@@ -1507,7 +1558,6 @@ def auto_interpret(summary):
         print("Skipping AI interpretation: set AI_API_KEY as a repository secret to enable automated insights.")
         return
 
-    prompt_text = build_prompt_text(summary)
     payload = json.dumps({
         "model": model,
         "messages": [{"role": "user", "content": prompt_text}],
@@ -1532,19 +1582,7 @@ def auto_interpret(summary):
         print(f"AI API error {exc.code}: {body}", file=sys.stderr)
         sys.exit(1)
 
-    content = data["choices"][0]["message"]["content"]
-
-    # Strip accidental markdown fences the model may add despite instructions
-    stripped = content.strip()
-    if stripped.startswith("```"):
-        stripped = "\n".join(stripped.splitlines()[1:])
-        if stripped.endswith("```"):
-            stripped = stripped[: stripped.rfind("```")]
-
-    insights = json.loads(stripped)
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    INSIGHTS_PATH.write_text(json.dumps(insights, indent=2), encoding="utf-8")
-    print(f"Written: {INSIGHTS_PATH}")
+    _write_insights(data["choices"][0]["message"]["content"])
 
 
 def main():
