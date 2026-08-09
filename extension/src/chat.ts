@@ -56,9 +56,10 @@ function loadJson<T>(filePath: string): T | undefined {
 }
 
 function buildSystemPrompt(board: Board, boardDir: string): string {
-    const ctx   = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
-    const cfg   = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
-    const items = loadJson<any[]>(path.join(boardDir, 'output/data/work_items.json'));
+    const ctx     = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
+    const cfg     = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
+    const items   = loadJson<any[]>(path.join(boardDir, 'output/data/work_items.json'));
+    const history = loadJson<any[]>(path.join(boardDir, 'output/data/work_item_history.json'));
 
     const columns        = (ctx?.columns ?? []).map((c: any) => c.name).join(' → ');
     const activeColumns  = (cfg?.flow_efficiency?.active_columns  ?? []).join(', ');
@@ -79,6 +80,21 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         itemsText = 'No cached data available — use fetch_live_work_items to get current items.';
     }
 
+    // Compact column history: strip tag/state history, keep only column moves with dates
+    let historyText = 'Not available.';
+    if (history?.length) {
+        const compact = history.map((item: any) => ({
+            id: item.id,
+            cols: (item.column_history ?? []).map((c: any) => ({
+                col: c.value,
+                from: c.entered?.slice(0, 10) ?? null,
+                to: c.left?.slice(0, 10) ?? null,
+            })),
+        }));
+        const raw = JSON.stringify(compact);
+        historyText = raw.length > 60_000 ? raw.slice(0, 60_000) + '\n... (truncated)' : raw;
+    }
+
     let dataAge = 'unknown';
     try {
         dataAge = fs.statSync(path.join(boardDir, 'output/data/work_items.json')).mtime.toLocaleString();
@@ -97,6 +113,9 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         ``,
         `Cached work items (as of ${dataAge}):`,
         itemsText,
+        ``,
+        `Column movement history — each item's column transitions with entry/exit dates (use this to answer questions about when items moved, completed, or were stuck):`,
+        historyText,
         ``,
         `Tools available:`,
         `- fetch_live_work_items: fetches fresh work items directly from ADO`,
