@@ -1338,34 +1338,48 @@ export function activate(context: vscode.ExtensionContext) {
             // Re-use saved repo; only prompt on first publish (or after re-link)
             let fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
             if (!fullRepo) {
-                // Step 1: resolve candidate owners from gh CLI, then let user pick
-                let ownerChoices: vscode.QuickPickItem[] = [];
-                try {
-                    const [loginJson, orgsJson] = await Promise.all([
-                        runGh('gh api user --jq .login').catch(() => '""'),
-                        runGh('gh api orgs --jq "[.[].login]"').catch(() => '[]'),
-                    ]);
+                const MANUAL = '$(edit) Enter manually…';
+
+                // Step 1: show picker immediately while accounts load in the background
+                const qp = vscode.window.createQuickPick();
+                qp.title = 'Who should own the repository?';
+                qp.placeholder = 'Select your account or an organisation';
+                qp.ignoreFocusOut = true;
+                qp.busy = true;
+                qp.items = [{ label: MANUAL, description: 'Type a GitHub username or org name' }];
+                qp.show();
+
+                Promise.all([
+                    runGh('gh api user --jq .login').catch(() => '""'),
+                    runGh('gh api orgs --jq "[.[].login]"').catch(() => '[]'),
+                ]).then(([loginJson, orgsJson]) => {
                     const login: string = JSON.parse(loginJson.trim());
                     const orgs: string[] = JSON.parse(orgsJson.trim());
-                    if (login) { ownerChoices.push({ label: login, description: 'Your personal account' }); }
-                    orgs.forEach(o => ownerChoices.push({ label: o, description: 'Organisation' }));
-                } catch { /* leave ownerChoices empty — fall through to manual entry */ }
+                    const loaded: vscode.QuickPickItem[] = [];
+                    if (login) { loaded.push({ label: login, description: 'Your personal account' }); }
+                    orgs.forEach(o => loaded.push({ label: o, description: 'Organisation' }));
+                    loaded.push({ label: MANUAL, description: 'Type a GitHub username or org name' });
+                    qp.items = loaded;
+                    qp.busy = false;
+                }).catch(() => { qp.busy = false; });
 
-                let owner: string | undefined;
-                if (ownerChoices.length) {
-                    const picked = await vscode.window.showQuickPick(ownerChoices, {
-                        title: 'Who should own the repository?',
-                        ignoreFocusOut: true,
-                    });
-                    if (!picked) { return; }
-                    owner = picked.label;
-                } else {
-                    owner = await vscode.window.showInputBox({
-                        prompt: 'Repository owner (your GitHub username or an org name)',
+                const rawOwner = await new Promise<string | undefined>(resolve => {
+                    qp.onDidAccept(() => { resolve(qp.selectedItems[0]?.label); qp.dispose(); });
+                    qp.onDidHide(() => { resolve(undefined); qp.dispose(); });
+                });
+                if (!rawOwner) { return; }
+
+                let owner: string;
+                if (rawOwner === MANUAL) {
+                    const typed = await vscode.window.showInputBox({
+                        prompt: 'GitHub username or organisation name',
                         ignoreFocusOut: true,
                         validateInput: v => v.trim() ? undefined : 'Required',
                     });
-                    if (!owner) { return; }
+                    if (!typed) { return; }
+                    owner = typed.trim();
+                } else {
+                    owner = rawOwner;
                 }
 
                 // Step 2: repo name
