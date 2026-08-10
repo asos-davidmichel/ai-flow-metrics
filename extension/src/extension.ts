@@ -654,6 +654,23 @@ export function activate(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push(boardsTreeView);
 
+    // Auto-select board when focusing a file that belongs to one
+    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(async editor => {
+        if (!editor) { return; }
+        const filePath = editor.document.uri.fsPath;
+        const storageRoot = context.globalStorageUri.fsPath;
+        if (!filePath.startsWith(storageRoot)) { return; }
+        const rel = filePath.slice(storageRoot.length).replace(/^[\\/]/, '');
+        const boardId = rel.split(/[\\/]/)[0];
+        if (!boardId || boardId === context.globalState.get<string>('activeBoardId')) { return; }
+        const boards = boardsProvider.getBoards();
+        if (!boards.find(b => b.id === boardId)) { return; }
+        await context.globalState.update('activeBoardId', boardId);
+        boardsProvider.refresh();
+        pipelineProvider.refresh();
+        publishProvider.refresh();
+    }));
+
     // Refresh trees whenever output files are created or deleted
     const watcher = vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(context.globalStorageUri, '**/*.{json,html}')
