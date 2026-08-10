@@ -483,7 +483,8 @@ function describeCron(expr: string): string {
     return expr;
 }
 
-function generateWorkflowYaml(cronExpr: string): string {
+function generateWorkflowYaml(cronExpr: string, windowArgs: string): string {
+    const calcSuffix = windowArgs ? ` ${windowArgs}` : '';
     return [
         'name: Update Dashboard',
         'on:',
@@ -523,9 +524,9 @@ function generateWorkflowYaml(cronExpr: string): string {
         '        run: python scripts/check_data.py',
         '      - name: Calculate metrics',
         '        run: |',
-        '          python scripts/calc_columns.py',
-        '          python scripts/calc_cycle_time.py',
-        '          python scripts/calc_lead_time.py',
+        `          python scripts/calc_columns.py${calcSuffix}`,
+        `          python scripts/calc_cycle_time.py${calcSuffix}`,
+        `          python scripts/calc_lead_time.py${calcSuffix}`,
         '      - name: Interpret metrics (AI)',
         '        env:',
         '          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}',
@@ -1625,7 +1626,7 @@ export function activate(context: vscode.ExtensionContext) {
                         // Write workflow
                         const workflowDir = path.join(tmpDir, '.github', 'workflows');
                         fs.mkdirSync(workflowDir, { recursive: true });
-                        fs.writeFileSync(path.join(workflowDir, 'update-dashboard.yml'), generateWorkflowYaml(cronExpr));
+                        fs.writeFileSync(path.join(workflowDir, 'update-dashboard.yml'), generateWorkflowYaml(cronExpr, getWindowConfig(context.globalState, activeId ?? '').args));
 
                         // Copy Python scripts + dashboard template
                         const scriptsDir = path.join(tmpDir, 'scripts');
