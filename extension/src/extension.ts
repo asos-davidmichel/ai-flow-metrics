@@ -643,9 +643,16 @@ export function activate(context: vscode.ExtensionContext) {
     const pipelineProvider  = new PipelineProvider(context.globalState, context.globalStorageUri.fsPath);
     const publishProvider   = new PublishProvider(context.globalState);
 
-    vscode.window.registerTreeDataProvider('aiFlowMetrics.boards',   boardsProvider);
     vscode.window.registerTreeDataProvider('aiFlowMetrics.pipeline', pipelineProvider);
     vscode.window.registerTreeDataProvider('aiFlowMetrics.publish',  publishProvider);
+
+    const boardsTreeView = vscode.window.createTreeView('aiFlowMetrics.boards', { treeDataProvider: boardsProvider });
+    boardsTreeView.onDidExpandElement(e => {
+        if (e.element instanceof BoardItem) {
+            vscode.commands.executeCommand('ai-flow-metrics.selectBoard', e.element.board);
+        }
+    });
+    context.subscriptions.push(boardsTreeView);
 
     // Refresh trees whenever output files are created or deleted
     const watcher = vscode.workspace.createFileSystemWatcher(
