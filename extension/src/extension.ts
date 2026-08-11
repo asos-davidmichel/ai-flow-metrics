@@ -96,6 +96,24 @@ function handleScriptError(output: string, fallbackMsg: string): void {
 // Resolved on activate — 'python3' on systems where 'python' is not on PATH
 let pythonCmd = 'python';
 
+function saveBoardState(state: vscode.Memento, storageRoot: string, boardId: string): void {
+    const boardState = {
+        id:              boardId,
+        name:            (state.get<Board[]>('boards') ?? []).find(b => b.id === boardId)?.name ?? '',
+        url:             (state.get<Board[]>('boards') ?? []).find(b => b.id === boardId)?.url ?? '',
+        publishRepo:     state.get<string>(`publishRepo.${boardId}`),
+        publishedAt:     state.get<string>(`publishedAt.${boardId}`),
+        publishIsPublic: state.get<boolean>(`publishIsPublic.${boardId}`),
+        publishSchedule: state.get<string>(`publishSchedule.${boardId}`),
+        window:          state.get<{ label: string; args: string }>(`window.${boardId}`),
+    };
+    try {
+        const dir = path.join(storageRoot, boardId);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'board_state.json'), JSON.stringify(boardState, null, 2));
+    } catch { /* non-fatal */ }
+}
+
 function slugify(name: string): string {
     return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'board';
 }
@@ -693,6 +711,17 @@ export function activate(context: vscode.ExtensionContext) {
                         const dstDir = path.join(context.globalStorageUri.fsPath, entry.name);
                         fs.cpSync(srcDir, dstDir, { recursive: true });
                         migrated.push({ id: entry.name, name: inferBoardName(boardUrl) || entry.name, url: boardUrl });
+                        // Restore publish/window state from board_state.json if present
+                        const stateFile = path.join(dstDir, 'board_state.json');
+                        if (fs.existsSync(stateFile)) {
+                            const s = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+                            if (s.name) { migrated[migrated.length - 1].name = s.name; }
+                            if (s.publishRepo)     { await context.globalState.update(`publishRepo.${entry.name}`, s.publishRepo); }
+                            if (s.publishedAt)     { await context.globalState.update(`publishedAt.${entry.name}`, s.publishedAt); }
+                            if (s.publishIsPublic !== undefined) { await context.globalState.update(`publishIsPublic.${entry.name}`, s.publishIsPublic); }
+                            if (s.publishSchedule) { await context.globalState.update(`publishSchedule.${entry.name}`, s.publishSchedule); }
+                            if (s.window)          { await context.globalState.update(`window.${entry.name}`, s.window); }
+                        }
                     } catch { /* skip unreadable dirs */ }
                 }
                 if (migrated.length > 0) {
@@ -780,6 +809,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             await boardsProvider.addBoard({ id, name, url });
             await context.globalState.update('activeBoardId', id);
+            saveBoardState(context.globalState, context.globalStorageUri.fsPath, id);
             boardsProvider.refresh();
             pipelineProvider.refresh();
             publishProvider.refresh();
@@ -1224,6 +1254,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             await context.globalState.update(`window.${activeId}`, { label, args });
+            saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
             pipelineProvider.refresh();
             vscode.window.showInformationMessage(`Analysis window set to: ${label}. Re-run Step 4 to apply.`);
         }),
@@ -1641,6 +1672,7 @@ export function activate(context: vscode.ExtensionContext) {
                     await context.globalState.update(`publishRepo.${activeId}`, fullRepo);
                     await context.globalState.update(`publishedAt.${activeId}`, new Date().toISOString());
                     await context.globalState.update(`publishIsPublic.${activeId}`, isPublic);
+                    if (activeId) { saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId); }
                     publishProvider.refresh();
 
                     const pagesUrl = `https://${owner}.github.io/${repoName}`;
@@ -1775,6 +1807,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     const scheduleLabel = pick.cron ? pick.label : describeCron(cronExpr);
                     await context.globalState.update(`publishSchedule.${activeId}`, scheduleLabel);
+                    if (activeId) { saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId); }
                     publishProvider.refresh();
 
                     const secretsUrl = `https://github.com/${cleanRepo}/settings/secrets/actions/new`;
@@ -1823,6 +1856,7 @@ export function activate(context: vscode.ExtensionContext) {
                         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
                     }
                     await context.globalState.update(`publishSchedule.${activeId}`, undefined);
+                    saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
                     publishProvider.refresh();
                     vscode.window.showInformationMessage('Schedule removed.');
                 }
@@ -1942,6 +1976,7 @@ export function activate(context: vscode.ExtensionContext) {
                 await context.globalState.update(`publishRepo.${activeId}`, previousRepo);
                 await context.globalState.update(`publishedAt.${activeId}`, previousAt);
                 await context.globalState.update(`publishIsPublic.${activeId}`, previousIsPublic);
+                saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
                 publishProvider.refresh();
             }
         }),
