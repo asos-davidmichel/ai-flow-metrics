@@ -655,6 +655,11 @@ class PublishProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 // ── Activate ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
+    // Ensure Python dependencies are present; runs silently if already installed
+    cp.exec('pip install requests jinja2 -q', err => {
+        if (err) { cp.exec('pip3 install requests jinja2 -q', () => {}); }
+    });
+
     const boardsProvider   = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
     const pipelineProvider  = new PipelineProvider(context.globalState, context.globalStorageUri.fsPath);
     const publishProvider   = new PublishProvider(context.globalState);
