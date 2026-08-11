@@ -1453,8 +1453,11 @@ Do NOT repeat the metrics back. Focus entirely on what to do and why.
 
 
 def build_prompt_text(summary):
+    import re
     template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
-    return template.replace("{{SUMMARY_JSON}}", json.dumps(summary, indent=2))
+    text = template.replace("{{SUMMARY_JSON}}", json.dumps(summary, indent=2))
+    # Remove control characters that are illegal in JSON strings (keep \t \n \r)
+    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
 
 
 # ---------------------------------------------------------------------------

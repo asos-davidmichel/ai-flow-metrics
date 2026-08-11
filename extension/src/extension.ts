@@ -668,6 +668,42 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerTreeDataProvider('aiFlowMetrics.publish',  publishProvider);
 
     const boardsTreeView = vscode.window.createTreeView('aiFlowMetrics.boards', { treeDataProvider: boardsProvider });
+
+    // One-time migration from undefined_publisher storage (triggered by publisher rename)
+    if (!context.globalState.get('migrated_from_undefined_publisher')) {
+        (async () => {
+            const storageParent = path.dirname(context.globalStorageUri.fsPath);
+            const oldStorage = path.join(storageParent, 'undefined_publisher.ai-flow-metrics');
+            const hasExisting = (context.globalState.get<Board[]>('boards') ?? []).length > 0;
+            if (!hasExisting && fs.existsSync(oldStorage)) {
+                const migrated: Board[] = [];
+                for (const entry of fs.readdirSync(oldStorage, { withFileTypes: true })) {
+                    if (!entry.isDirectory()) { continue; }
+                    const srcDir = path.join(oldStorage, entry.name);
+                    const ctxFile = path.join(srcDir, 'output', 'data', 'context.json');
+                    if (!fs.existsSync(ctxFile)) { continue; }
+                    try {
+                        const ctx = JSON.parse(fs.readFileSync(ctxFile, 'utf-8'));
+                        const boardUrl: string = ctx.board_url;
+                        if (!boardUrl) { continue; }
+                        const dstDir = path.join(context.globalStorageUri.fsPath, entry.name);
+                        fs.cpSync(srcDir, dstDir, { recursive: true });
+                        migrated.push({ id: entry.name, name: inferBoardName(boardUrl) || entry.name, url: boardUrl });
+                    } catch { /* skip unreadable dirs */ }
+                }
+                if (migrated.length > 0) {
+                    await context.globalState.update('boards', migrated);
+                    await context.globalState.update('activeBoardId', migrated[0].id);
+                    boardsProvider.refresh();
+                    pipelineProvider.refresh();
+                    publishProvider.refresh();
+                    vscode.window.showInformationMessage(`Migrated ${migrated.length} board(s) from previous installation.`);
+                }
+            }
+            await context.globalState.update('migrated_from_undefined_publisher', true);
+        })();
+    }
+
     boardsTreeView.onDidExpandElement(e => {
         if (e.element instanceof BoardItem) {
             vscode.commands.executeCommand('ai-flow-metrics.selectBoard', e.element.board);
