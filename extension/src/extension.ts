@@ -86,12 +86,15 @@ function handleScriptError(output: string, fallbackMsg: string): void {
             if (choice !== 'Install dependencies') { return; }
             const terminal = vscode.window.createTerminal('AI Flow Metrics – pip install');
             terminal.show();
-            terminal.sendText('pip install requests jinja2');
+            terminal.sendText(`${pythonCmd} -m pip install requests jinja2`);
         });
     } else {
         vscode.window.showErrorMessage(fallbackMsg);
     }
 }
+
+// Resolved on activate — 'python3' on systems where 'python' is not on PATH
+let pythonCmd = 'python';
 
 function slugify(name: string): string {
     return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'board';
@@ -655,9 +658,10 @@ class PublishProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 // ── Activate ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
-    // Ensure Python dependencies are present; runs silently if already installed
-    cp.exec('pip install requests jinja2 -q', err => {
-        if (err) { cp.exec('pip3 install requests jinja2 -q', () => {}); }
+    // Detect python command and install deps silently
+    cp.exec('python --version', err => {
+        if (err) { pythonCmd = 'python3'; }
+        cp.exec(`${pythonCmd} -m pip install requests jinja2 -q`, () => {});
     });
 
     const boardsProvider   = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
@@ -864,7 +868,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (!adoPat) { return; }
             const terminal = getOrCreateTerminal(outputDir, adoPat);
             terminal.show();
-            terminal.sendText(`pip install requests -q ; python "${script}" --context-only "${board.url}"`);
+            terminal.sendText(`${pythonCmd} -m pip install requests -q ; ${pythonCmd} "${script}" --context-only "${board.url}"`);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.fetchWorkItems', async () => {
@@ -881,7 +885,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (!adoPat) { return; }
             const terminal = getOrCreateTerminal(outputDir, adoPat);
             terminal.show();
-            terminal.sendText(`pip install requests -q ; python "${script}" "${board.url}"`);
+            terminal.sendText(`${pythonCmd} -m pip install requests -q ; ${pythonCmd} "${script}" "${board.url}"`);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.configureBoard', async () => {
@@ -901,7 +905,7 @@ export function activate(context: vscode.ExtensionContext) {
                 async (progress) => {
                     progress.report({ message: 'Generating prompt…' });
                     const genError = await new Promise<string | null>(resolve =>
-                        cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
+                        cp.exec(`${pythonCmd} "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
                             resolve(err ? (stderr || err.message) : null)
                         )
                     );
@@ -961,7 +965,7 @@ export function activate(context: vscode.ExtensionContext) {
                 terminal = vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd: outputDir });
             }
             terminal.show();
-            terminal.sendText(`python "${script}"`);
+            terminal.sendText(`${pythonCmd} "${script}"`);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.calculateTimeInColumns', async () => {
@@ -978,7 +982,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Calculate Time in Columns', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
-                    cp.exec(`python "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -1006,7 +1010,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Calculate Cycle Time', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
-                    cp.exec(`python "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -1034,7 +1038,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Calculate Lead Time', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
-                    cp.exec(`python "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -1062,7 +1066,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Generate Dashboard', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Rendering…' });
-                    cp.exec(`python "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`${pythonCmd} "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -1093,7 +1097,7 @@ export function activate(context: vscode.ExtensionContext) {
                 async (progress) => {
                     progress.report({ message: 'Generating prompt…' });
                     const genError = await new Promise<string | null>(resolve =>
-                        cp.exec(`python "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
+                        cp.exec(`${pythonCmd} "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
                             resolve(err ? (stderr || err.message) : null)
                         )
                     );
@@ -1146,7 +1150,7 @@ export function activate(context: vscode.ExtensionContext) {
                 { location: vscode.ProgressLocation.Notification, title: 'Re-generate Dashboard', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Rendering…' });
-                    cp.exec(`python "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
+                    cp.exec(`${pythonCmd} "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
@@ -1174,7 +1178,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (!adoPat) { return; }
             const terminal = getOrCreateTerminal(outputDir, adoPat);
             terminal.show();
-            terminal.sendText(`pip install requests -q ; python "${fetchScript}" "${board.url}" ; python "${checkScript}"`);
+            terminal.sendText(`${pythonCmd} -m pip install requests -q ; ${pythonCmd} "${fetchScript}" "${board.url}" ; ${pythonCmd} "${checkScript}"`);
             pipelineProvider.setGroupRunning('group.fetchAndCheck', true);
         }),
 
@@ -1238,7 +1242,7 @@ export function activate(context: vscode.ExtensionContext) {
             const runStep = (scriptName: string, outputFile: string, stepNum: number) =>
                 new Promise<boolean>(resolve => {
                     const script = path.join(context.extensionPath, 'resources', 'scripts', scriptName);
-                    cp.exec(`python "${script}" ${windowArgs}`, { cwd: outputDir, env }, (error, stdout, stderr) => {
+                    cp.exec(`${pythonCmd} "${script}" ${windowArgs}`, { cwd: outputDir, env }, (error, stdout, stderr) => {
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(path.join(outputDir, outputFile))) {
                             handleScriptError(output, `Step ${stepNum} failed: ${output || 'No output.'}`);
