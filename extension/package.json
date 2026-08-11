@@ -3,7 +3,7 @@
   "displayName": "AI Flow Metrics",
   "description": "Run the AI Flow Metrics pipeline from VS Code",
   "version": "0.0.1",
-  "publisher": "david-michel",
+  "publisher": "undefined_publisher",
   "repository": {
     "type": "git",
     "url": "https://github.com/asos-davidmichel/ai-flow-metrics"
