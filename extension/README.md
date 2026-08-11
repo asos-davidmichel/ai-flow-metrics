@@ -1,8 +1,30 @@
-# ai-flow-metrics README
+# AI Flow Metrics
 
-This is the README for your extension "ai-flow-metrics". After writing up a brief description, we recommend including the following sections.
+Run the AI Flow Metrics pipeline directly from VS Code.
+
+Fetch Azure DevOps board data, calculate cycle time, lead time, and time-in-columns, then generate an interactive dashboard — all from the Activity Bar.
 
 ## Features
+
+- **Pipeline view** — run each step individually or as a group
+- **Configurable time window** — rolling (4w / 3m / 6m / 1y) or custom date range
+- **AI steps** — configure board columns and interpret metrics using GitHub Copilot
+- **Dashboard preview** — live Chart.js dashboard rendered inside VS Code
+- **GitHub Actions publish** — schedule automated dashboard updates in a GitHub repo
+- **@flowmetrics chat participant** — ask questions about your metrics in Copilot Chat
+
+## Requirements
+
+- Python 3.10+
+- An Azure DevOps Personal Access Token stored as `ADO_PAT` in your environment
+- GitHub Copilot (for AI steps and `@flowmetrics` chat)
+
+## Getting Started
+
+1. Open the **AI Flow Metrics** panel in the Activity Bar
+2. Click **Add Board** and paste your Azure DevOps board URL
+3. Run each pipeline step in order, or use **Run All** on each group
+
 
 Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
 
