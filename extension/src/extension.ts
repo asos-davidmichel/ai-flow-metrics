@@ -77,6 +77,22 @@ function assertPrereq(key: string, boardDir: string): boolean {
     return true;
 }
 
+function handleScriptError(output: string, fallbackMsg: string): void {
+    if (/ModuleNotFoundError|No module named/i.test(output)) {
+        vscode.window.showErrorMessage(
+            'Missing Python dependencies. Install them to continue.',
+            'Install dependencies'
+        ).then(choice => {
+            if (choice !== 'Install dependencies') { return; }
+            const terminal = vscode.window.createTerminal('AI Flow Metrics – pip install');
+            terminal.show();
+            terminal.sendText('pip install requests jinja2');
+        });
+    } else {
+        vscode.window.showErrorMessage(fallbackMsg);
+    }
+}
+
 function slugify(name: string): string {
     return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'board';
 }
@@ -925,7 +941,7 @@ export function activate(context: vscode.ExtensionContext) {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
-                            vscode.window.showErrorMessage(`Step 5 failed: ${output || 'No output. Ensure Steps 1–4 have run successfully.'}`);
+                            handleScriptError(output, `Step 5 failed: ${output || 'No output. Ensure Steps 1–4 have run successfully.'}`);
                         } else {
                             boardsProvider.refresh();
                             pipelineProvider.refresh();
@@ -953,7 +969,7 @@ export function activate(context: vscode.ExtensionContext) {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
-                            vscode.window.showErrorMessage(`Step 6 failed: ${output || 'No output. Ensure Steps 1–5 have run successfully.'}`);
+                            handleScriptError(output, `Step 6 failed: ${output || 'No output. Ensure Steps 1–5 have run successfully.'}`);
                         } else {
                             boardsProvider.refresh();
                             pipelineProvider.refresh();
@@ -981,7 +997,7 @@ export function activate(context: vscode.ExtensionContext) {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
-                            vscode.window.showErrorMessage(`Step 7 failed: ${output || 'No output. Ensure Steps 1–6 have run successfully.'}`);
+                            handleScriptError(output, `Step 7 failed: ${output || 'No output. Ensure Steps 1–6 have run successfully.'}`);
                         } else {
                             boardsProvider.refresh();
                             pipelineProvider.refresh();
@@ -1009,7 +1025,7 @@ export function activate(context: vscode.ExtensionContext) {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
-                            vscode.window.showErrorMessage(`Step 8 failed: ${output || 'No output. Ensure Steps 1–7 have run successfully.'}`);
+                            handleScriptError(output, `Step 8 failed: ${output || 'No output. Ensure Steps 1–7 have run successfully.'}`);
                         } else {
                             boardsProvider.refresh();
                             pipelineProvider.refresh();
@@ -1093,7 +1109,7 @@ export function activate(context: vscode.ExtensionContext) {
                         resolve();
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(outputPath)) {
-                            vscode.window.showErrorMessage(`Step 10 failed: ${output || 'No output. Ensure Steps 1–9 have run successfully.'}`);
+                            handleScriptError(output, `Step 10 failed: ${output || 'No output. Ensure Steps 1–9 have run successfully.'}`);
                         } else {
                             boardsProvider.refresh();
                             pipelineProvider.refresh();
@@ -1184,7 +1200,7 @@ export function activate(context: vscode.ExtensionContext) {
                     cp.exec(`python "${script}" ${windowArgs}`, { cwd: outputDir, env }, (error, stdout, stderr) => {
                         const output = (stdout + stderr).trim();
                         if (error && !fs.existsSync(path.join(outputDir, outputFile))) {
-                            vscode.window.showErrorMessage(`Step ${stepNum} failed: ${output || 'No output.'}`);
+                            handleScriptError(output, `Step ${stepNum} failed: ${output || 'No output.'}`);
                             resolve(false);
                         } else { resolve(true); }
                     });
