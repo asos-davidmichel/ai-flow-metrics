@@ -196,10 +196,26 @@ class FileItem extends vscode.TreeItem {
     constructor(readonly filePath: string, boardDir: string) {
         const filename = path.basename(filePath);
         super(FILE_LABELS[filename] ?? filename, vscode.TreeItemCollapsibleState.None);
-        this.description = path.relative(path.join(boardDir, 'output'), path.dirname(filePath));
+        const subfolder = path.relative(path.join(boardDir, 'output'), path.dirname(filePath));
+        this.description = subfolder || undefined;
+        this.tooltip = FileItem.timestamp(filePath);
         this.resourceUri = vscode.Uri.file(filePath);
         this.command = { command: 'ai-flow-metrics.previewFile', title: 'Preview', arguments: [filePath] };
         this.contextValue = 'outputFile';
+    }
+
+    private static timestamp(filePath: string): string {
+        let date: Date | undefined;
+        if (filePath.endsWith('.json')) {
+            try {
+                const iso = JSON.parse(fs.readFileSync(filePath, 'utf-8')).generated_at as string | undefined;
+                if (iso) { date = new Date(iso); }
+            } catch { /* fall through to mtime */ }
+        }
+        if (!date) {
+            try { date = new Date(fs.statSync(filePath).mtimeMs); } catch { return ''; }
+        }
+        return `Generated: ${date.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
     }
 }
 
