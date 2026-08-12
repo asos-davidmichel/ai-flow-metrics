@@ -816,10 +816,10 @@ export function activate(context: vscode.ExtensionContext) {
     watcher.onDidCreate((uri) => {
         boardsProvider.refresh();
         pipelineProvider.refresh();
-        openPreview(uri.fsPath, context);
+        if (uri.fsPath.endsWith('.html')) { openPreview(uri.fsPath, context); }
     });
     watcher.onDidChange((uri) => {
-        openPreview(uri.fsPath, context);
+        if (uri.fsPath.endsWith('.html')) { openPreview(uri.fsPath, context); }
     });
     watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
     context.subscriptions.push(watcher);
