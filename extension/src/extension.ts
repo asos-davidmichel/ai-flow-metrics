@@ -1836,6 +1836,32 @@ export function activate(context: vscode.ExtensionContext) {
             );
         }),
 
+        vscode.commands.registerCommand('ai-flow-metrics.syncSchedule', async () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { return; }
+            const fullRepo = context.globalState.get<string>(`publishRepo.${activeId}`);
+            if (!fullRepo) { vscode.window.showErrorMessage('Publish the dashboard first.'); return; }
+            const cleanRepo = fullRepo.replace(/^https?:\/\/github\.com\//, '');
+
+            try {
+                // Fetch raw workflow file from GitHub without cloning
+                const content = await runGh(`gh api repos/${cleanRepo}/contents/.github/workflows/update-dashboard.yml --jq .content`);
+                const decoded = Buffer.from(content.replace(/\s/g, ''), 'base64').toString('utf-8');
+                const cronMatch = decoded.match(/- cron:\s*['"]([^'"]+)['"]/);
+                if (!cronMatch) {
+                    vscode.window.showInformationMessage('No schedule found in the workflow file.');
+                    return;
+                }
+                const label = describeCron(cronMatch[1]);
+                await context.globalState.update(`publishSchedule.${activeId}`, label);
+                saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
+                publishProvider.refresh();
+                vscode.window.showInformationMessage(`Schedule synced: ${label}`);
+            } catch {
+                vscode.window.showErrorMessage('Could not read workflow from GitHub. Make sure the repo exists and you are authenticated.');
+            }
+        }),
+
         vscode.commands.registerCommand('ai-flow-metrics.removeSchedule', async () => {
             const activeId = context.globalState.get<string>('activeBoardId');
             if (!activeId) { return; }

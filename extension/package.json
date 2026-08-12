@@ -177,6 +177,11 @@
         "icon": "$(run)"
       },
       {
+        "command": "ai-flow-metrics.syncSchedule",
+        "title": "Sync Schedule from GitHub",
+        "icon": "$(sync)"
+      },
+      {
         "command": "ai-flow-metrics.setAdoPat",
         "title": "AI Flow Metrics: Set ADO Personal Access Token"
       },
@@ -306,6 +311,11 @@
         {
           "command": "ai-flow-metrics.relinkRepo",
           "when": "view == aiFlowMetrics.publish && viewItem == publish.repo",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.syncSchedule",
+          "when": "view == aiFlowMetrics.publish && (viewItem == publish.schedule || viewItem == publish.schedule.configured)",
           "group": "inline"
         },
         {
