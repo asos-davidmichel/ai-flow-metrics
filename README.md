@@ -39,9 +39,26 @@ A VS Code extension that connects to your Azure DevOps board, calculates flow me
 
 ---
 
-## Autoplay pipeline
+## Running the pipeline
 
-Autoplay runs all six steps in sequence, skipping any that are already complete:
+There are three ways to run the pipeline:
+
+### 1 · Step by step
+Click each step individually in the Pipeline panel. Useful when you want full control, or need to re-run a single step after changing something.
+
+### 2 · Autoplay — fully automated
+Click **▶ Autoplay**. The extension runs all six steps in sequence, with Copilot handling both AI steps automatically. No interruptions.
+
+### 3 · Autoplay — human in the loop
+Click **▶ Autoplay**, then use `@flowmetrics` in Copilot Chat to review or override AI decisions *before* continuing. For example, if Copilot classified the **Review** column as *waiting* but your team treats it as active work, ask:
+
+> *`@flowmetrics` change the Review column to active, then continue*
+
+The participant updates `config.json` directly and the pipeline picks up the corrected configuration.
+
+---
+
+### Pipeline steps
 
 | Step | What it does |
 |------|-------------|
@@ -52,7 +69,7 @@ Autoplay runs all six steps in sequence, skipping any that are already complete:
 | **5 · Generate Dashboard** | Renders the Chart.js dashboard and opens it in the preview panel |
 | **6 · Interpret Metrics (AI)** | Copilot writes chart-by-chart insights, then re-generates the dashboard with them embedded |
 
-Each step shows a green tick when done. Individual steps can also be run or re-run on their own.
+Each step shows a green tick when done.
 
 ![Pipeline panel](docs/pipeline.png)
 
@@ -117,13 +134,13 @@ The participant reads your cached output files and can fetch live work item data
 
 ## Publishing to GitHub
 
-Connect a board to a GitHub repository to publish the dashboard as a GitHub Pages site and schedule automatic updates via GitHub Actions.
+Connect a board to a GitHub repository to publish the dashboard as a GitHub Pages site, with automated updates powered by **GitHub Actions**.
 
 1. Open the **Publish** panel and click **Publish to GitHub**
 2. Choose an existing repo or let the extension create one
-3. Optionally configure a schedule — the workflow runs `fetch → check → calculate → interpret → publish` on cron
+3. Optionally configure a schedule — the extension generates a GitHub Actions workflow that runs `fetch → check → calculate → interpret → publish` on a cron schedule (daily, weekly, or a custom cron expression)
 
-A sync indicator in the Boards panel shows whether your local files are up to date with the latest GitHub commit.
+The workflow runs entirely in GitHub Actions — no local machine needed after the initial setup. A sync indicator in the Boards panel shows whether your local files are up to date with the latest commit.
 
 ![Publish panel](docs/publish.png)
 
