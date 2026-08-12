@@ -1854,7 +1854,6 @@ export function activate(context: vscode.ExtensionContext) {
                 }
                 const label = describeCron(cronMatch[1]);
                 await context.globalState.update(`publishSchedule.${activeId}`, label);
-                saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
                 publishProvider.refresh();
                 vscode.window.showInformationMessage(`Schedule synced: ${label}`);
             } catch {
