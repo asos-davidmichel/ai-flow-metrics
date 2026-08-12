@@ -4,8 +4,6 @@ A VS Code extension that connects to your Azure DevOps board, calculates flow me
 
 ![Dashboard screenshot](docs/screenshot.png)
 
-> *Flow tab showing CFD, Arrival/Departure ratio, Net Flow, and Time in Columns*
-
 ---
 
 ## What it produces
@@ -56,6 +54,8 @@ Autoplay runs all six steps in sequence, skipping any that are already complete:
 
 Each step shows a green tick when done. Individual steps can also be run or re-run on their own.
 
+![Pipeline panel](docs/pipeline.png)
+
 ---
 
 ## AI: Configure Board (Step 3)
@@ -91,13 +91,7 @@ Copilot analyses the board's column structure, historical column names, tag usag
 
 Copilot reads the calculated metrics and writes chart-by-chart insights including evidence, watch-outs, and a leadership narrative. These are embedded directly into the dashboard.
 
-<img src="docs/screenshot_insight.png" width="450" alt="Chart insight box">
-
-> *Each chart has a collapsible insight box with evidence and a watch-out signal*
-
-![AI analysis overview](docs/screenshot_analysis.png)
-
-> *Overview tab: AI-generated diagnostic findings, outlier patterns, investigation questions, and recommendations*
+![Chart insight](docs/insights.png)
 
 ---
 
@@ -123,6 +117,8 @@ Connect a board to a GitHub repository to publish the dashboard as a GitHub Page
 3. Optionally configure a schedule — the workflow runs `fetch → check → calculate → interpret → publish` on cron
 
 A sync indicator in the Boards panel shows whether your local files are up to date with the latest GitHub commit.
+
+![Publish panel](docs/publish.png)
 
 ---
 
