@@ -1695,7 +1695,7 @@ export function activate(context: vscode.ExtensionContext) {
                         progress.report({ message: 'Pushing to GitHub…' });
                         const pushCmd = isNew
                             ? `git -C "${tmpDir}" push -u origin HEAD:main`
-                            : `git -C "${tmpDir}" push --force-with-lease`;
+                            : `git -C "${tmpDir}" push --force`;
                         try { await runGh(pushCmd); }
                         catch (e) { vscode.window.showErrorMessage(`Push failed: ${e}`); return; }
 
@@ -1722,20 +1722,25 @@ export function activate(context: vscode.ExtensionContext) {
                     publishProvider.refresh();
                     boardsProvider.refresh();
 
-                    const pagesUrl = `https://${owner}.github.io/${repoName}`;
-                    const repoUrl  = `https://github.com/${fullRepo}`;
+                    const pagesUrl  = `https://${owner}.github.io/${repoName}`;
+                    const repoUrl   = `https://github.com/${fullRepo}`;
+                    const actionsUrl = `https://github.com/${fullRepo}/actions`;
                     if (isNew && isPublic) {
                         vscode.window.showInformationMessage(
                             `Published to ${fullRepo}. GitHub Pages will be live at ${pagesUrl} in ~1 minute.`,
-                            'Open Repository'
-                        ).then(c => { if (c === 'Open Repository') { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); } });
+                            'Open Repository', 'View Deployment'
+                        ).then(c => {
+                            if (c === 'Open Repository') { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); }
+                            if (c === 'View Deployment') { vscode.env.openExternal(vscode.Uri.parse(actionsUrl)); }
+                        });
                     } else {
                         vscode.window.showInformationMessage(
                             `Dashboard published to ${fullRepo}`,
-                            ...(isPublic ? ['Open Dashboard' as const] : []), 'Open Repository' as const
+                            ...(isPublic ? ['Open Dashboard' as const] : []), 'Open Repository' as const, 'View Deployment' as const
                         ).then(c => {
-                            if (c === 'Open Dashboard')  { vscode.env.openExternal(vscode.Uri.parse(pagesUrl)); }
-                            if (c === 'Open Repository') { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); }
+                            if (c === 'Open Dashboard')   { vscode.env.openExternal(vscode.Uri.parse(pagesUrl)); }
+                            if (c === 'Open Repository')  { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); }
+                            if (c === 'View Deployment')  { vscode.env.openExternal(vscode.Uri.parse(actionsUrl)); }
                         });
                     }
                   } catch (e) {
