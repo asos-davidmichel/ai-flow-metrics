@@ -97,6 +97,31 @@ function handleScriptError(output: string, fallbackMsg: string): void {
 let pythonCmd = 'python';
 
 function saveBoardState(state: vscode.Memento, storageRoot: string, boardId: string): void {
+    const boardDir = path.join(storageRoot, boardId);
+
+    // Snapshot which pipeline output files exist and their generated_at (if embedded)
+    const PIPELINE_FILES = [
+        'output/data/context.json',
+        'output/data/work_items.json',
+        'output/data/data_quality_report.json',
+        'output/data/config.json',
+        'output/metrics/time_in_columns.json',
+        'output/metrics/cycle_time.json',
+        'output/metrics/lead_time.json',
+        'output/dashboard.html',
+        'output/data/insights.json',
+    ];
+    const pipeline: Record<string, { exists: boolean; generated_at?: string }> = {};
+    for (const rel of PIPELINE_FILES) {
+        const full = path.join(boardDir, rel);
+        if (!fs.existsSync(full)) { pipeline[rel] = { exists: false }; continue; }
+        let generated_at: string | undefined;
+        if (rel.endsWith('.json')) {
+            try { generated_at = JSON.parse(fs.readFileSync(full, 'utf-8')).generated_at; } catch { /* skip */ }
+        }
+        pipeline[rel] = generated_at ? { exists: true, generated_at } : { exists: true };
+    }
+
     const boardState = {
         id:              boardId,
         name:            (state.get<Board[]>('boards') ?? []).find(b => b.id === boardId)?.name ?? '',
@@ -105,12 +130,13 @@ function saveBoardState(state: vscode.Memento, storageRoot: string, boardId: str
         publishedAt:     state.get<string>(`publishedAt.${boardId}`),
         publishIsPublic: state.get<boolean>(`publishIsPublic.${boardId}`),
         publishSchedule: state.get<string>(`publishSchedule.${boardId}`),
+        localSyncedAt:   state.get<string>(`localSyncedAt.${boardId}`),
         window:          state.get<{ label: string; args: string }>(`window.${boardId}`),
+        pipeline,
     };
     try {
-        const dir = path.join(storageRoot, boardId);
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, 'board_state.json'), JSON.stringify(boardState, null, 2));
+        fs.mkdirSync(boardDir, { recursive: true });
+        fs.writeFileSync(path.join(boardDir, 'board_state.json'), JSON.stringify(boardState, null, 2));
     } catch { /* non-fatal */ }
 }
 
@@ -725,6 +751,7 @@ export function activate(context: vscode.ExtensionContext) {
                             if (s.publishedAt)     { await context.globalState.update(`publishedAt.${entry.name}`, s.publishedAt); }
                             if (s.publishIsPublic !== undefined) { await context.globalState.update(`publishIsPublic.${entry.name}`, s.publishIsPublic); }
                             if (s.publishSchedule) { await context.globalState.update(`publishSchedule.${entry.name}`, s.publishSchedule); }
+                            if (s.localSyncedAt)   { await context.globalState.update(`localSyncedAt.${entry.name}`, s.localSyncedAt); }
                             if (s.window)          { await context.globalState.update(`window.${entry.name}`, s.window); }
                         }
                     } catch { /* skip unreadable dirs */ }
