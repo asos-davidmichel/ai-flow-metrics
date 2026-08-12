@@ -820,6 +820,8 @@ export function activate(context: vscode.ExtensionContext) {
             boardsProvider.refresh();
             pipelineProvider.refresh();
             publishProvider.refresh();
+            const dashboardPath = path.join(context.globalStorageUri.fsPath, board.id, 'output', 'dashboard.html');
+            if (fs.existsSync(dashboardPath)) { openPreview(dashboardPath, context); }
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.removeBoard', async (item?: BoardItem) => {
