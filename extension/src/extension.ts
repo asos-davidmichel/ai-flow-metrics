@@ -237,6 +237,11 @@ class BoardsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         this.checkedAt.delete(boardId);
     }
 
+    markUpToDate(boardId: string): void {
+        this.staleCache.set(boardId, 'uptodate');
+        this.checkedAt.set(boardId, Date.now());
+    }
+
     private async checkStaleness(boardId: string): Promise<void> {
         const fullRepo = this.state.get<string>(`publishRepo.${boardId}`);
         if (!fullRepo) { return; }
@@ -1704,8 +1709,13 @@ export function activate(context: vscode.ExtensionContext) {
                     await context.globalState.update(`publishRepo.${activeId}`, fullRepo);
                     await context.globalState.update(`publishedAt.${activeId}`, new Date().toISOString());
                     await context.globalState.update(`publishIsPublic.${activeId}`, isPublic);
-                    if (activeId) { saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId); }
+                    if (activeId) {
+                        await context.globalState.update(`localSyncedAt.${activeId}`, new Date().toISOString());
+                        boardsProvider.markUpToDate(activeId);
+                        saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
+                    }
                     publishProvider.refresh();
+                    boardsProvider.refresh();
 
                     const pagesUrl = `https://${owner}.github.io/${repoName}`;
                     const repoUrl  = `https://github.com/${fullRepo}`;
@@ -1975,7 +1985,7 @@ export function activate(context: vscode.ExtensionContext) {
                         progress.report({ message: 'Copying files…' });
                         copyDirSync(srcOutput, path.join(boardDir, 'output'));
                         await context.globalState.update(`localSyncedAt.${activeId}`, new Date().toISOString());
-                        boardsProvider.clearStaleCache(activeId);
+                        boardsProvider.markUpToDate(activeId);
                         boardsProvider.refresh();
                         vscode.window.showInformationMessage('Local files updated from GitHub.');
                     } finally {
