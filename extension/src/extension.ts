@@ -1124,6 +1124,21 @@ export function activate(context: vscode.ExtensionContext) {
             const promptPath = path.join(dataDir, 'ai_interpret_metrics.prompt.md');
             const insightsPath = path.join(dataDir, 'insights.json');
 
+            if (fs.existsSync(insightsPath)) {
+                const pick = await vscode.window.showQuickPick(
+                    [
+                        { label: '$(sync) Regenerate dashboard only', description: 'Re-inject existing insights into the dashboard', value: 'regen' },
+                        { label: '$(sparkle) Overwrite — re-run AI', description: 'Discard current insights and call AI again',   value: 'overwrite' },
+                    ],
+                    { title: 'insights.json already exists', ignoreFocusOut: true }
+                );
+                if (!pick) { return; }
+                if ((pick as { value: string }).value === 'regen') {
+                    await vscode.commands.executeCommand('ai-flow-metrics.regenerateDashboard');
+                    return;
+                }
+            }
+
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Interpret Metrics (AI)', cancellable: false },
                 async (progress) => {
@@ -1163,7 +1178,9 @@ export function activate(context: vscode.ExtensionContext) {
                     }
 
                     fs.mkdirSync(dataDir, { recursive: true });
-                    fs.writeFileSync(insightsPath, jsonStr, 'utf-8');
+                    const parsed = JSON.parse(jsonStr);
+                    parsed.generated_at = new Date().toISOString();
+                    fs.writeFileSync(insightsPath, JSON.stringify(parsed, null, 2), 'utf-8');
                     await vscode.commands.executeCommand('ai-flow-metrics.regenerateDashboard');
                 }
             );

@@ -1507,6 +1507,7 @@ def _parse_insights(content: str) -> dict:
 
 def _write_insights(content: str):
     insights = _parse_insights(content)
+    insights["generated_at"] = datetime.now(timezone.utc).isoformat()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     INSIGHTS_PATH.write_text(json.dumps(insights, indent=2), encoding="utf-8")
     print(f"Written: {INSIGHTS_PATH}")
