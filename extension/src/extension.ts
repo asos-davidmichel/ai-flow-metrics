@@ -44,8 +44,10 @@ const PIPELINE_STEPS: PipelineStep[] = [
         doneCheck: (boardDir) => {
             const dashboard = path.join(boardDir, 'output/dashboard.html');
             const insights  = path.join(boardDir, 'output/data/insights.json');
-            return fs.existsSync(dashboard) && fs.existsSync(insights) &&
-                fs.statSync(dashboard).mtimeMs >= fs.statSync(insights).mtimeMs;
+            if (!fs.existsSync(dashboard) || !fs.existsSync(insights)) { return false; }
+            // 5s tolerance: Node.js writes insights.json then Python writes dashboard.html
+            // within the same OS clock second, causing insights to appear newer by a few ms
+            return fs.statSync(dashboard).mtimeMs + 5000 >= fs.statSync(insights).mtimeMs;
         },
     },
 ];

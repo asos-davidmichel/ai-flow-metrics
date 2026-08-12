@@ -1,53 +1,95 @@
 # AI Flow Metrics
 
-Run the AI Flow Metrics pipeline directly from VS Code.
-
-Fetch Azure DevOps board data, calculate cycle time, lead time, and time-in-columns, then generate an interactive dashboard — all from the Activity Bar.
-
-## Features
-
-- **Pipeline view** — run each step individually or as a group
-- **Configurable time window** — rolling (4w / 3m / 6m / 1y) or custom date range
-- **AI steps** — configure board columns and interpret metrics using GitHub Copilot
-- **Dashboard preview** — live Chart.js dashboard rendered inside VS Code
-- **GitHub Actions publish** — schedule automated dashboard updates in a GitHub repo
-- **@flowmetrics chat participant** — ask questions about your metrics in Copilot Chat
+Fetch Azure DevOps board data, calculate flow metrics, and generate an interactive dashboard — all from the VS Code Activity Bar, with GitHub Copilot doing the two AI steps automatically.
 
 ## Requirements
 
-- Python 3.10+
-- An Azure DevOps Personal Access Token stored as `ADO_PAT` in your environment
-- GitHub Copilot (for AI steps and `@flowmetrics` chat)
+- **Python 3.10+** on your PATH (`python` or `python3`)
+- **Azure DevOps Personal Access Token** — read-only access to your board. Either set `ADO_PAT` in your environment, or the extension will prompt you securely on first use.
+- **GitHub Copilot** — required for the two AI steps (Configure Board and Interpret Metrics) and the `@flowmetrics` chat participant.
 
-## Getting Started
+## Getting started
 
-1. Open the **AI Flow Metrics** panel in the Activity Bar
-2. Click **Add Board** and paste your Azure DevOps board URL
-3. Run each pipeline step in order, or use **Run All** on each group
+1. Open the **AI Flow Metrics** Activity Bar panel.
+2. Click **+** (Add Board) and paste your Azure DevOps board URL.
+3. Click **▶ Autoplay** to run the full pipeline automatically, or run each step individually.
 
+---
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+## The pipeline
 
-For example if there is an image subfolder under your extension project workspace:
+The extension runs a six-step pipeline. Each step shows a green tick when done. Steps that are already complete are skipped by Autoplay.
 
-\!\[feature X\]\(images/feature-x.png\)
+| Step | What it does |
+|------|-------------|
+| **1 · Fetch Board Context** | Fetches the board structure and column definitions from ADO. |
+| **2 · Fetch & Check** | Fetches all work item history, runs data quality checks, and writes `data_quality_report.json`. |
+| **3 · Configure Board (AI)** | Uses GitHub Copilot to analyse the board structure and generate `config.json` — clock start/end columns, active vs waiting column classification, and blocker signals. Opens `config.json` for review after writing it. |
+| **4 · Calculate Metrics** | Calculates time-in-columns, cycle time, and lead time for the selected analysis window. |
+| **5 · Generate Dashboard** | Renders the interactive Chart.js dashboard to `dashboard.html` and opens it in the preview panel. |
+| **6 · Interpret Metrics (AI)** | Uses GitHub Copilot to write a chart-by-chart analysis with evidence, watch-outs, and a leadership narrative. Re-generates the dashboard with insights embedded. |
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+### Analysis window
 
-## Requirements
+The default window is the last 6 months. Click the window label next to **Step 4** to change it:
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- Rolling periods: 4 weeks, 3 months, 6 months, 1 year
+- Custom date range: pick a start and end date
 
-## Extension Settings
+The window setting is persisted per board. Re-run Step 4 after changing it.
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+### Re-running steps
 
-For example:
+Individual steps can be re-run at any time. Step 3 (Configure Board) asks before overwriting an existing `config.json` — choose **Regenerate dashboard only** to re-inject existing insights without calling the AI again.
 
-This extension contributes the following settings:
+---
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+## Boards panel
+
+The **Boards** panel lists all your boards. Expand a board to see its output files and when each was last generated. Click any file to open a formatted preview.
+
+- **Add** — paste any Azure DevOps board URL (`https://dev.azure.com/org/project/_boards/...`)
+- **Remove** — deletes the board and all its output files
+- **Clear output** — deletes output files but keeps the board registered
+
+Multiple boards are supported. The active board (shown with a filled circle) drives the Pipeline and Publish panels.
+
+---
+
+## @flowmetrics chat
+
+Type `@flowmetrics` in GitHub Copilot Chat to ask questions about your board data:
+
+- *"What is our current P85 cycle time?"*
+- *"Which items have been in progress the longest?"*
+- *"Show me blockers from the last month."*
+- *"Change the cycle time clock start to the Refinement column."*
+
+The participant reads your cached output files and can fetch live work item data directly from ADO when the cached data may be stale. It can also update `config.json` when you ask it to change column classifications or blocker signals.
+
+---
+
+## GitHub publishing
+
+Connect a board to a GitHub repository to publish the dashboard as a GitHub Pages site and schedule automatic daily or weekly updates via GitHub Actions.
+
+1. Open the **Publish** panel and click **Publish to GitHub**.
+2. Choose an existing repo or let the extension create one.
+3. Optionally configure a schedule — the workflow runs `fetch → check → calculate → interpret → publish` on cron.
+
+A `sync` indicator in the Boards panel shows whether your local files are up to date with the latest commit in the linked repo.
+
+---
+
+## Data & privacy
+
+All board data is stored locally in VS Code's extension storage (`~/.vscode/extensions/...`). Nothing is sent anywhere except:
+
+- ADO API calls when fetching board data (using your PAT)
+- GitHub Copilot API calls during the two AI steps (metrics data only — no work item titles or assignees)
+- GitHub API calls when publishing
+
+Your ADO PAT is stored in VS Code's encrypted secret storage.
 
 ## Known Issues
 
