@@ -89,7 +89,14 @@ Copilot analyses the board's column structure, historical column names, tag usag
 
 ## AI: Interpret Metrics (Step 6)
 
-Copilot reads the calculated metrics and writes chart-by-chart insights including evidence, watch-outs, and a leadership narrative. These are embedded directly into the dashboard.
+Copilot reads the calculated metrics and produces a full analysis embedded directly in the dashboard:
+
+- **Per-chart insights** — each chart gets a collapsible insight box with a plain-English finding, supporting evidence, and a watch-out signal
+- **Executive summary** — a leadership-facing narrative describing the team's delivery health and the main constraint
+- **Diagnostic findings** — specific bottlenecks and systemic issues identified from the data
+- **Outlier patterns** — unusual items or behaviours worth investigating
+- **Investigation questions** — suggested follow-up questions for the team
+- **Recommendations** — prioritised actions to improve flow
 
 ![Chart insight](docs/insights.png)
 
