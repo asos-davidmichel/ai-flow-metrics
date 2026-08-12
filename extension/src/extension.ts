@@ -1681,18 +1681,23 @@ export function activate(context: vscode.ExtensionContext) {
                         fs.copyFileSync(dashboardSrc, path.join(tmpDir, 'index.html'));
 
                         progress.report({ message: 'Publishing to GitHub…' });
-                        const gitCmds = [
+                        const setupCmds = [
                             `git -C "${tmpDir}" config user.email "aiflowmetrics@users.noreply.github.com"`,
                             `git -C "${tmpDir}" config user.name "AI Flow Metrics"`,
                             `git -C "${tmpDir}" add -A`,
                             `git -C "${tmpDir}" commit -m "Dashboard published ${new Date().toISOString()}"`,
-                            isNew
-                                ? `git -C "${tmpDir}" push -u origin HEAD:main`
-                                : `git -C "${tmpDir}" push`,
                         ];
-                        for (const cmd of gitCmds) {
-                            await runGh(cmd).catch(() => {}); // commit is a no-op if nothing changed
+                        for (const cmd of setupCmds) {
+                            await runGh(cmd).catch(() => {}); // commit is benign no-op when nothing changed
                         }
+
+                        // Force-push so a workflow commit on the remote never blocks a manual publish
+                        progress.report({ message: 'Pushing to GitHub…' });
+                        const pushCmd = isNew
+                            ? `git -C "${tmpDir}" push -u origin HEAD:main`
+                            : `git -C "${tmpDir}" push --force-with-lease`;
+                        try { await runGh(pushCmd); }
+                        catch (e) { vscode.window.showErrorMessage(`Push failed: ${e}`); return; }
 
                         if (isNew) {
                             progress.report({ message: 'Enabling GitHub Pages…' });
