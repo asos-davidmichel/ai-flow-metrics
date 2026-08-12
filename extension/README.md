@@ -1,6 +1,6 @@
 # AI Flow Metrics
 
-Fetch Azure DevOps board data, calculate flow metrics, and generate an interactive dashboard — all from the VS Code Activity Bar, with GitHub Copilot doing the two AI steps automatically.
+A VS Code extension that fetches Azure DevOps board data, calculates flow metrics, and generates an interactive dashboard — all from the Activity Bar, with GitHub Copilot doing the two AI steps automatically.
 
 ## Requirements
 
