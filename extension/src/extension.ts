@@ -1642,6 +1642,17 @@ export function activate(context: vscode.ExtensionContext) {
                             if (item === '.git' || item === '.github' || item === 'scripts') { continue; }
                             fs.rmSync(path.join(tmpDir, item), { recursive: true });
                         }
+
+                        // Import schedule from existing workflow when not locally configured
+                        const workflowFile = path.join(tmpDir, '.github', 'workflows', 'update-dashboard.yml');
+                        if (fs.existsSync(workflowFile) && !context.globalState.get<string>(`publishSchedule.${activeId}`)) {
+                            const yaml = fs.readFileSync(workflowFile, 'utf-8');
+                            const cronMatch = yaml.match(/- cron:\s*['"]([^'"]+)['"]/);
+                            if (cronMatch && activeId) {
+                                await context.globalState.update(`publishSchedule.${activeId}`, describeCron(cronMatch[1]));
+                            }
+                        }
+
                         copyOutputFiles(path.join(boardDir, 'output'), path.join(tmpDir, 'output'));
                         fs.copyFileSync(dashboardSrc, path.join(tmpDir, 'index.html'));
 
