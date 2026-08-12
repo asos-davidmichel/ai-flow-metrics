@@ -193,11 +193,9 @@ const FILE_LABELS: Record<string, string> = {
 };
 
 class FileItem extends vscode.TreeItem {
-    constructor(readonly filePath: string, boardDir: string) {
+    constructor(readonly filePath: string) {
         const filename = path.basename(filePath);
         super(FILE_LABELS[filename] ?? filename, vscode.TreeItemCollapsibleState.None);
-        const subfolder = path.relative(path.join(boardDir, 'output'), path.dirname(filePath));
-        this.description = subfolder || undefined;
         this.tooltip = FileItem.timestamp(filePath);
         this.resourceUri = vscode.Uri.file(filePath);
         this.command = { command: 'ai-flow-metrics.previewFile', title: 'Preview', arguments: [filePath] };
@@ -344,7 +342,7 @@ class BoardsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 empty.iconPath = new vscode.ThemeIcon('info');
                 items.push(empty);
             } else {
-                items.push(...files.map(f => new FileItem(f, boardDir)));
+                items.push(...files.map(f => new FileItem(f)));
             }
             return items;
         }
