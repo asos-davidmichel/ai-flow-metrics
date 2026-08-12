@@ -1554,7 +1554,8 @@ export function activate(context: vscode.ExtensionContext) {
                 }).catch(() => { qp.busy = false; });
 
                 const rawOwner = await new Promise<string | undefined>(resolve => {
-                    qp.onDidAccept(() => { resolve(qp.selectedItems[0]?.label); qp.dispose(); });
+                    // Fall back to typed text when the filter hides all list items
+                    qp.onDidAccept(() => { resolve(qp.selectedItems[0]?.label ?? (qp.value.trim() || undefined)); qp.dispose(); });
                     qp.onDidHide(() => { resolve(undefined); qp.dispose(); });
                 });
                 if (!rawOwner) { return; }
@@ -1589,6 +1590,7 @@ export function activate(context: vscode.ExtensionContext) {
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Publish Dashboard', cancellable: false },
                 async (progress) => {
+                  try {
                     // 1. Check gh CLI + auth
                     progress.report({ message: 'Checking GitHub CLI…' });
                     try { await runGh('gh --version'); }
@@ -1691,10 +1693,12 @@ export function activate(context: vscode.ExtensionContext) {
                             if (c === 'Open Repository') { vscode.env.openExternal(vscode.Uri.parse(repoUrl)); }
                         });
                     }
+                  } catch (e) {
+                    vscode.window.showErrorMessage(`Publish failed: ${e instanceof Error ? e.message : String(e)}`);
+                  }
                 }
             );
         }),
-
         vscode.commands.registerCommand('ai-flow-metrics.configureSchedule', async () => {
             const activeId = context.globalState.get<string>('activeBoardId');
             const board = boardsProvider.getBoards().find(b => b.id === activeId);
