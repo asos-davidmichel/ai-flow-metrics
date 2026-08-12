@@ -795,7 +795,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Refresh trees whenever output files are created or deleted
     const watcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(context.globalStorageUri, '**/*.{json,html}')
+        new vscode.RelativePattern(context.globalStorageUri, '*/output/**/*.{json,html}')
     );
     watcher.onDidCreate((uri) => {
         boardsProvider.refresh();
