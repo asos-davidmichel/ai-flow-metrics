@@ -3208,7 +3208,7 @@ function updateChart() {
     const sortedMs = [], maxIdxAt = [];
     let runMax = -1;
     events.forEach(e => { runMax = Math.max(runMax, e.idx); sortedMs.push(e.ms); maxIdxAt.push(runMax); });
-    itemProgressions.push({ sortedMs, maxIdxAt });
+    itemProgressions.push({ id: entry.id, sortedMs, maxIdxAt });
   });
 
   function maxIdxAtSnap(prog, snapMs) {
@@ -3282,6 +3282,25 @@ function updateChart() {
   // Δstarted  = items newly entering the first inProgress column
   const closedCum  = cumAtOrBeyond[lastCol];
   const startedCum = cumAtOrBeyond[firstInProgressCol];
+
+  // Build per-week item lists for the net flow tooltip
+  const nfWiMap          = Object.fromEntries((dashboard.work_items || []).map(i => [i.id, i]));
+  const nfLastColIdx      = allCols.length - 1;
+  const nfFirstProgColIdx = allCols.indexOf(firstInProgressCol);
+  const nfAdoBase         = ct.ado_url_base || '';
+  const nfFinishedByWeek  = cfdWeeks.map((_, i) => {
+    if (i === 0) return [];
+    return itemProgressions
+      .filter(p => maxIdxAtSnap(p, cfdWeekEndMs[i]) >= nfLastColIdx && maxIdxAtSnap(p, cfdWeekEndMs[i - 1]) < nfLastColIdx)
+      .map(p => nfWiMap[p.id]).filter(Boolean);
+  });
+  const nfStartedByWeek   = cfdWeeks.map((_, i) => {
+    if (i === 0) return [];
+    return itemProgressions
+      .filter(p => maxIdxAtSnap(p, cfdWeekEndMs[i]) >= nfFirstProgColIdx && maxIdxAtSnap(p, cfdWeekEndMs[i - 1]) < nfFirstProgColIdx)
+      .map(p => nfWiMap[p.id]).filter(Boolean);
+  });
+
   const netFlowVals = cfdWeeks.map((_, i) => {
     if (i === 0) return 0;
     const finished = (closedCum[i]  || 0) - (closedCum[i-1]  || 0);
@@ -3318,11 +3337,15 @@ function updateChart() {
           const v = netFlowVals[idx];
           const finished = idx > 0 ? (closedCum[idx]||0)-(closedCum[idx-1]||0) : 0;
           const started  = idx > 0 ? (startedCum[idx]||0)-(startedCum[idx-1]||0) : 0;
+          const nfFinishedItems = nfFinishedByWeek[idx] || [];
+          const nfStartedItems  = nfStartedByWeek[idx]  || [];
           sharedTooltip.show(
             `<div class="tt-total" style="font-weight:600;">${escapeHtml(cfdLabels[idx]??'')}</div>` +
-            `<div class="tt-total">Finished: ${finished}</div>` +
-            `<div class="tt-total">Started: ${started}</div>` +
             `<div class="tt-total" style="font-weight:600;color:${v>=0?'#2d3748':'#ed8936'};">Net: ${v>=0?'+':''}${v}</div>` +
+            `<div class="tt-total">Finished: ${finished}</div>` +
+            (nfFinishedItems.length ? '<div class="tt-items">' + nfFinishedItems.map(i => ttItemRow(typeStyles[i.type]||{}, nfAdoBase+'/'+i.id, i.id, i.title||'', null)).join('') + '</div>' : '') +
+            `<div class="tt-total">Started: ${started}</div>` +
+            (nfStartedItems.length  ? '<div class="tt-items">' + nfStartedItems.map(i => ttItemRow(typeStyles[i.type]||{}, nfAdoBase+'/'+i.id, i.id, i.title||'', null)).join('') + '</div>' : '') +
             TT_HINT, c
           );
         }},
