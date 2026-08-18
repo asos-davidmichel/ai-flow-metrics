@@ -22,6 +22,7 @@ Usage:
   python src/ai_configure_board.py
 """
 
+import argparse
 import json
 import sys
 from collections import defaultdict
@@ -300,7 +301,63 @@ def _findings_as_text(findings):
     return "\n".join(lines)
 
 
-def build_prompt(findings):
+def _format_corrections_block(log_path) -> str:
+    """Return a markdown section of learned corrections, or empty string if none."""
+    if not log_path or not Path(log_path).exists():
+        return ""
+    try:
+        log = json.loads(Path(log_path).read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    corrections = log.get("corrections", [])
+    if not corrections:
+        return ""
+
+    lines = [
+        "## Corrections learned from past configurations",
+        "",
+        "Users confirmed these corrections on previous boards. Apply them when you see similar patterns.",
+        "",
+    ]
+
+    fe = [c for c in corrections if c.get("section") == "flow_efficiency"]
+    if fe:
+        lines += [
+            "### Flow efficiency reclassifications",
+            "| Column keyword | AI classified as | Correct classification | Confirmed on |",
+            "|---|---|---|---|",
+        ]
+        for c in sorted(fe, key=lambda x: x.get("count", 1), reverse=True):
+            examples = ", ".join(f'"{e}"' for e in c.get("example_columns", [c.get("column", "")])[:2])
+            lines.append(
+                f"| {c.get('name_keyword', '')} | {c['ai_said']} "
+                f"| **{c['corrected_to']}** "
+                f"| {c.get('count', 1)} board(s) — e.g. {examples} |"
+            )
+        lines.append("")
+
+    clock = [c for c in corrections if c.get("section") in ("lead_time", "cycle_time")]
+    if clock:
+        lines.append("### Clock boundary adjustments")
+        for c in clock:
+            lines.append(
+                f"- {c['section']}.{c['field']}: was `{json.dumps(c['ai_said'])}` "
+                f"→ corrected to `{json.dumps(c['corrected_to'])}` ({c.get('count', 1)} time(s))"
+            )
+        lines.append("")
+
+    hcm = [c for c in corrections if c.get("section") == "historical_column_mapping"]
+    if hcm:
+        lines.append("### Historical column mapping corrections")
+        for c in hcm:
+            lines.append(f"- `{c['key']}` → `{c['corrected_to']}` ({c.get('count', 1)} time(s))")
+        lines.append("")
+
+    lines += ["---", ""]
+    return "\n".join(lines)
+
+
+def build_prompt(findings, corrections_block: str = ""):
     """Build prompt content with inline context data (works in VS Code and when pasted elsewhere)."""
     template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
 
@@ -322,6 +379,7 @@ def build_prompt(findings):
 
     return (
         template
+        .replace("{{CORRECTIONS}}", corrections_block)
         .replace("{{BOARD_CONTEXT}}", context_block)
         .replace("{{DATA_QUALITY}}", quality_block)
         .replace("{{FINDINGS}}", _findings_as_text(findings))
@@ -333,7 +391,7 @@ def build_prompt(findings):
 # ---------------------------------------------------------------------------
 
 
-def write_prompt(findings):
+def write_prompt(findings, corrections_block: str = ""):
     import subprocess
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
@@ -343,7 +401,7 @@ description: "Flow metrics — interpret board structure and write config.json"
 ---
 
 """
-    content = header + build_prompt(findings)
+    content = header + build_prompt(findings, corrections_block)
     PROMPT_MD_PATH.write_text(content, encoding="utf-8")
     print(f"Written: {PROMPT_MD_PATH}")
     try:
@@ -363,6 +421,11 @@ description: "Flow metrics — interpret board structure and write config.json"
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--corrections-log", metavar="PATH", default=None,
+                        help="Path to corrections_log.json (global learning log)")
+    args = parser.parse_args()
+
     if CONFIG_PATH.exists():
         print(f"Skipping: {CONFIG_PATH} already exists. Delete it to regenerate.")
         sys.exit(0)
@@ -373,7 +436,8 @@ def main():
     work_items = json.loads(WORK_ITEMS_PATH.read_text(encoding="utf-8")) if WORK_ITEMS_PATH.exists() else None
 
     findings = analyse(context, history, work_items)
-    write_prompt(findings)
+    corrections_block = _format_corrections_block(args.corrections_log)
+    write_prompt(findings, corrections_block)
 
 
 if __name__ == "__main__":

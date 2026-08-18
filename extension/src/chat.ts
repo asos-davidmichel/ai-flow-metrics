@@ -41,6 +41,23 @@ const TOOLS: vscode.LanguageModelChatTool[] = [
         },
     },
     {
+        name: 'check_config_draft',
+        description:
+            'Check whether the board config was modified from the AI\'s original proposal after the user reviewed it. ' +
+            'Call this when the user indicates they have reviewed and approved the config at step 3, before continuing the pipeline. ' +
+            'Returns a diff summary if anything changed.',
+        inputSchema: { type: 'object', properties: {} },
+    },
+    {
+        name: 'save_config_corrections',
+        description:
+            'Record the config corrections to the global learning log so future boards benefit from them. ' +
+            'IMPORTANT: call this immediately when the user says yes — all file paths are resolved internally. ' +
+            'Do NOT search for files, read scripts, or run terminal commands before calling this. ' +
+            'Shows a VS Code confirmation notification before writing to disk.',
+        inputSchema: { type: 'object', properties: {} },
+    },
+    {
         name: 'read_output_file',
         description:
             'Read a cached output data file. Call this when you need detailed data to answer a question — ' +
@@ -118,8 +135,26 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `- update_board_config: save a modified board config to disk`,
         ``,
         `Strategy: first read the cached files that are most relevant to the question. If the cached data is insufficient, stale, or missing the detail needed, use fetch_live_work_items or fetch_item_history to query ADO directly. For questions about a specific item's journey, prefer fetch_item_history over loading the full history file.`,
+        `Data honesty rule: never state any figures, item counts, tag values, or distributions without first loading the relevant data file or fetching live data in the current response. Do not speculate or recall values from earlier in the conversation — always re-check the source. If you are about to state a number or list, it must come from a tool call made in this response.`,
         `Honesty rule: never invent or guess data. If none of the tools or files can provide what is asked, say so clearly. You may then offer to write a standalone Python script (using util_ado.py or the ADO REST API directly) that the user can run themselves to retrieve the missing information.`,
         `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns. Be specific — include work item IDs and titles.`,
+        ``,
+        `Correction learning workflow — two triggers:`,
+        ``,
+        `A) After step 3 pipeline approval (user says config looks good / ready to continue):`,
+        `1. Call check_config_draft to detect whether they edited anything from the AI's original proposal.`,
+        `2. If there are changes, explain them conversationally — e.g. "I noticed you reclassified 'Amigo' from waiting to active".`,
+        `3. Ask: "Would you like me to save these as corrections so future boards start with better defaults?"`,
+        `4. If the user says yes: your ONLY action is to call save_config_corrections. Do not search for files, read scripts, or run commands first.`,
+        `5. Whether or not corrections are saved, continue with the pipeline.`,
+        ``,
+        `B) After any direct update_board_config call made at the user's explicit request (not during step 3 auto-config):`,
+        `1. After confirming the change to the user, ask: "Would you like me to save this as a correction so future boards start with better defaults?"`,
+        `2. If the user says yes: your ONLY action is to call save_config_corrections. The draft snapshot and log path are already set up — no file searching or script reading needed.`,
+        ``,
+        `RULE: when the user answers yes to saving corrections, the correct response is a single save_config_corrections tool call. Any file exploration before that call is wrong.`,
+        ``,
+        `Metrics re-run hint: after any update_board_config call, check the available data files listed above. If any output/metrics/ files are present (meaning the pipeline has already run metrics for this board), tell the user the dashboard is now stale and suggest: "To recalculate, run: python aiflowmetrics.py metrics". If no output/metrics/ files are listed, the pipeline hasn't run yet — say nothing.`,
     ].join('\n');
 }
 
@@ -172,7 +207,7 @@ export function registerChatParticipant(
 ): void {
     const participant = vscode.chat.createChatParticipant(
         'ai-flow-metrics.chat',
-        async (request, _ctx, stream, token) => {
+        async (request, ctx, stream, token) => {
             const resolved = await resolveBoard(
                 context.globalState, context.globalStorageUri.fsPath, getBoards, stream
             );
@@ -187,8 +222,45 @@ export function registerChatParticipant(
 
             const messages: vscode.LanguageModelChatMessage[] = [
                 vscode.LanguageModelChatMessage.User(buildSystemPrompt(board, boardDir)),
-                vscode.LanguageModelChatMessage.User(request.prompt),
             ];
+
+            // Replay prior turns so the model has full conversation context
+            for (const turn of ctx.history) {
+                if (turn instanceof vscode.ChatRequestTurn) {
+                    messages.push(vscode.LanguageModelChatMessage.User(turn.prompt));
+                } else if (turn instanceof vscode.ChatResponseTurn) {
+                    const text = turn.response
+                        .filter((p): p is vscode.ChatResponseMarkdownPart => p instanceof vscode.ChatResponseMarkdownPart)
+                        .map(p => p.value.value)
+                        .join('');
+                    if (text) { messages.push(vscode.LanguageModelChatMessage.Assistant(text)); }
+                }
+            }
+
+            // Collect image attachments from references
+            const imageParts: vscode.LanguageModelDataPart[] = [];
+            const imageExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+            for (const ref of request.references) {
+                if (ref.value instanceof vscode.Uri && imageExts.has(path.extname(ref.value.fsPath).toLowerCase())) {
+                    try {
+                        const ext = path.extname(ref.value.fsPath).toLowerCase();
+                        const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+                            : ext === '.gif' ? 'image/gif'
+                            : ext === '.webp' ? 'image/webp'
+                            : 'image/png';
+                        imageParts.push(new vscode.LanguageModelDataPart(fs.readFileSync(ref.value.fsPath), mime));
+                    } catch { /* non-fatal — skip unreadable attachment */ }
+                }
+            }
+
+            if (imageParts.length > 0) {
+                messages.push(vscode.LanguageModelChatMessage.User([
+                    ...imageParts,
+                    new vscode.LanguageModelTextPart(request.prompt),
+                ]));
+            } else {
+                messages.push(vscode.LanguageModelChatMessage.User(request.prompt));
+            }
 
             // Tool-calling loop — up to 5 rounds (read_output_file may need multiple fetches)
             for (let round = 0; round < 5; round++) {
@@ -220,11 +292,15 @@ export function registerChatParticipant(
                             const newConfig = (call.input as { config: unknown }).config;
                             const jsonStr = JSON.stringify(newConfig, null, 2);
                             const configPath = path.join(boardDir, 'output', 'data', 'config.json');
+                            const draftPath  = path.join(boardDir, 'output', 'data', 'config.ai_draft.json');
+                            // snapshot pre-edit config so save_config_corrections can diff it
+                            if (fs.existsSync(configPath) && !fs.existsSync(draftPath)) {
+                                fs.copyFileSync(configPath, draftPath);
+                            }
                             fs.writeFileSync(configPath, jsonStr, 'utf-8');
                             refresh?.();
-                            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(configPath));
-                            vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
-                            result = JSON.stringify({ success: true });
+                            vscode.commands.executeCommand('ai-flow-metrics.previewFile', configPath);
+                            result = JSON.stringify({ success: true, offerCorrections: true });
                         } catch (e) {
                             result = JSON.stringify({ error: String(e) });
                         }                        } else if (call.name === 'read_output_file') {
@@ -240,7 +316,33 @@ export function registerChatParticipant(
                                     const raw = fs.readFileSync(absPath, 'utf-8');
                                     result = raw.length > 100_000 ? raw.slice(0, 100_000) + '\n... (truncated)' : raw;
                                 }
-                            }                    } else {
+                            }
+                        } else if (call.name === 'check_config_draft') {
+                            const draftPath = path.join(boardDir, 'output', 'data', 'config.ai_draft.json');
+                            const finalPath = path.join(boardDir, 'output', 'data', 'config.json');
+                            if (!fs.existsSync(draftPath)) {
+                                result = JSON.stringify({ hasDraft: false, message: 'No draft saved — written automatically when autoplay runs step 3.' });
+                            } else {
+                                const corrScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_corrections.py');
+                                const logPath = path.join(context.globalStorageUri.fsPath, 'corrections_log.json');
+                                result = await runPython(corrScript, ['--draft', draftPath, '--final', finalPath, '--log', logPath, '--dry-run'], boardDir, env);
+                            }
+                        } else if (call.name === 'save_config_corrections') {
+                            const draftPath = path.join(boardDir, 'output', 'data', 'config.ai_draft.json');
+                            const finalPath = path.join(boardDir, 'output', 'data', 'config.json');
+                            const logPath   = path.join(context.globalStorageUri.fsPath, 'corrections_log.json');
+                            const choice = await vscode.window.showInformationMessage(
+                                'Save corrections to the learning log for future boards?',
+                                'Save', 'Skip'
+                            );
+                            if (choice !== 'Save') {
+                                result = JSON.stringify({ saved: false });
+                            } else {
+                                const corrScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_corrections.py');
+                                result = await runPython(corrScript, ['--draft', draftPath, '--final', finalPath, '--log', logPath], boardDir, env);
+                                try { fs.unlinkSync(draftPath); } catch { /* non-fatal */ }
+                            }
+                        } else {
                             result = JSON.stringify({ error: `Unknown tool: ${call.name}` });
                         }
                     } catch (e) {

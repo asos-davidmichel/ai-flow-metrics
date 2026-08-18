@@ -2,7 +2,7 @@
   "name": "ai-flow-metrics",
   "displayName": "AI Flow Metrics",
   "description": "Run the AI Flow Metrics pipeline from VS Code",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "ai-flow-metrics",
   "repository": {
     "type": "git",
@@ -137,14 +137,24 @@
         "title": "Preview File"
       },
       {
+        "command": "ai-flow-metrics.stopPipeline",
+        "title": "Stop Pipeline",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "ai-flow-metrics.autoplay",
-        "title": "Autoplay: run all steps uninterrupted",
-        "icon": "$(run-all)"
+        "title": "Run all steps without pausing",
+        "icon": "$(debug-start)"
       },
       {
         "command": "ai-flow-metrics.autoplayWithReview",
-        "title": "Autoplay: pause after board config for review",
-        "icon": "$(debug-step-over)"
+        "title": "Run pipeline (pauses after board config for review)",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "ai-flow-metrics.continueAutoplay",
+        "title": "Continue Pipeline",
+        "icon": "$(debug-continue)"
       },
       {
         "command": "ai-flow-metrics.publishDashboard",
@@ -199,6 +209,7 @@
         "isSticky": false
       }
     ],
+    "submenus": [],
     "menus": {
       "view/title": [
         {
@@ -207,13 +218,23 @@
           "group": "navigation"
         },
         {
-          "command": "ai-flow-metrics.autoplay",
-          "when": "view == aiFlowMetrics.pipeline",
+          "command": "ai-flow-metrics.autoplayWithReview",
+          "when": "view == aiFlowMetrics.pipeline && !aiFlowMetrics.running",
           "group": "navigation"
         },
         {
-          "command": "ai-flow-metrics.autoplayWithReview",
-          "when": "view == aiFlowMetrics.pipeline",
+          "command": "ai-flow-metrics.autoplay",
+          "when": "view == aiFlowMetrics.pipeline && !aiFlowMetrics.running",
+          "group": "navigation"
+        },
+        {
+          "command": "ai-flow-metrics.continueAutoplay",
+          "when": "view == aiFlowMetrics.pipeline && aiFlowMetrics.paused",
+          "group": "navigation"
+        },
+        {
+          "command": "ai-flow-metrics.stopPipeline",
+          "when": "view == aiFlowMetrics.pipeline && aiFlowMetrics.running",
           "group": "navigation"
         }
       ],
@@ -227,6 +248,11 @@
           "command": "ai-flow-metrics.removeBoard",
           "when": "view == aiFlowMetrics.boards && viewItem =~ /^board/",
           "group": "1_manage"
+        },
+        {
+          "command": "ai-flow-metrics.stopPipeline",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /\\.running$/",
+          "group": "inline"
         },
         {
           "command": "ai-flow-metrics.fetchContext",
@@ -339,7 +365,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "npm run copy-scripts && npm run compile",
-    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts/prompts',{recursive:true});require('fs').mkdirSync('resources/scripts/templates',{recursive:true});['fetch_data.py','util_ado.py','check_data.py','ai_configure_board.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py','ai_interpret_metrics.py','query_ado.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));require('fs').copyFileSync(require('path').join('..','src','prompts','ai_configure_board.prompt.md'),'resources/scripts/prompts/ai_configure_board.prompt.md');require('fs').copyFileSync(require('path').join('..','src','prompts','ai_interpret_metrics.prompt.md'),'resources/scripts/prompts/ai_interpret_metrics.prompt.md');require('fs').copyFileSync(require('path').join('..','src','templates','dashboard.html'),'resources/scripts/templates/dashboard.html');\"",
+    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts/prompts',{recursive:true});require('fs').mkdirSync('resources/scripts/templates',{recursive:true});['fetch_data.py','util_ado.py','check_data.py','ai_configure_board.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py','ai_interpret_metrics.py','query_ado.py','record_corrections.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));require('fs').copyFileSync(require('path').join('..','src','prompts','ai_configure_board.prompt.md'),'resources/scripts/prompts/ai_configure_board.prompt.md');require('fs').copyFileSync(require('path').join('..','src','prompts','ai_interpret_metrics.prompt.md'),'resources/scripts/prompts/ai_interpret_metrics.prompt.md');require('fs').copyFileSync(require('path').join('..','src','templates','dashboard.html'),'resources/scripts/templates/dashboard.html');\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",

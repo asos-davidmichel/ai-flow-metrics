@@ -363,7 +363,7 @@ class PipelineItem extends vscode.TreeItem {
     constructor(config: { label: string; description: string; contextValue: string }, done: boolean, isSubstep = false, isRunning = false) {
         super(config.label, vscode.TreeItemCollapsibleState.None);
         this.description = config.description;
-        this.contextValue = config.contextValue;
+        this.contextValue = isRunning ? config.contextValue + '.running' : config.contextValue;
         this.iconPath = isRunning
             ? new vscode.ThemeIcon('loading~spin')
             : done
@@ -380,7 +380,7 @@ class PipelineGroupItem extends vscode.TreeItem {
     constructor(readonly group: PipelineGroup, allDone: boolean, isRunning = false, windowLabel?: string) {
         super(group.label, isRunning ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
         this.description = windowLabel ? `${group.description} · ${windowLabel}` : group.description;
-        this.contextValue = group.contextValue;
+        this.contextValue = isRunning ? group.contextValue + '.running' : group.contextValue;
         this.iconPath = isRunning
             ? new vscode.ThemeIcon('loading~spin')
             : allDone
@@ -423,6 +423,12 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         this._onDidChangeTreeData.fire();
     }
 
+    clearRunning(): void {
+        this.runningGroups.clear();
+        this.runningStep = null;
+        this._onDidChangeTreeData.fire();
+    }
+
     getTreeItem(element: vscode.TreeItem): vscode.TreeItem { return element; }
 
     getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
@@ -438,8 +444,14 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             : false;
 
         if (element instanceof PipelineGroupItem) {
-            return PIPELINE_STEPS.filter(s => s.group === element.contextValue).map(s =>
-                new PipelineItem(s, stepDone(s), true, this.runningStep === s.contextValue)
+            const steps = PIPELINE_STEPS.filter(s => s.group === element.contextValue);
+            // First incomplete substep is the active one when the group is running
+            const groupRunning = !!element.contextValue && this.runningGroups.has(element.contextValue) && !steps.every(stepDone);
+            const activeSubstep = groupRunning ? steps.find(s => !stepDone(s)) : undefined;
+            return steps.map(s =>
+                new PipelineItem(s, stepDone(s), true,
+                    (!stepDone(s) && this.runningStep === s.contextValue) || s === activeSubstep
+                )
             );
         }
 
@@ -461,7 +473,7 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         const items: vscode.TreeItem[] = [new PipelineProgressItem(doneTopLevel, totalTopLevel)];
         for (const s of PIPELINE_STEPS) {
             if (!s.group) {
-                items.push(new PipelineItem(s, stepDone(s), false, this.runningStep === s.contextValue));
+                items.push(new PipelineItem(s, stepDone(s), false, !stepDone(s) && this.runningStep === s.contextValue));
             } else if (!seenGroups.has(s.group)) {
                 seenGroups.add(s.group);
                 const grp = PIPELINE_GROUPS.find(g => g.contextValue === s.group)!;
@@ -469,7 +481,7 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 const windowLabel = grp.contextValue === 'group.calculateMetrics' && activeId
                     ? getWindowConfig(this.state, activeId).label
                     : undefined;
-                items.push(new PipelineGroupItem(grp, allDone, this.runningGroups.has(s.group), windowLabel));
+                items.push(new PipelineGroupItem(grp, allDone, !allDone && this.runningGroups.has(s.group), windowLabel));
             }
         }
         return items;
@@ -496,13 +508,18 @@ async function getAdoPat(context: vscode.ExtensionContext): Promise<string | und
 
 // Creates or reuses the AI Flow Metrics terminal, injecting ADO_PAT when it's not in process.env
 function getOrCreateTerminal(cwd: string, adoPat?: string): vscode.Terminal {
-    if (process.env.ADO_PAT || !adoPat) {
-        return vscode.window.terminals.find(t => t.name === 'AI Flow Metrics')
-            ?? vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd });
+    const existing = vscode.window.terminals.find(t => t.name === 'AI Flow Metrics');
+    if (adoPat && !process.env.ADO_PAT) {
+        // PAT from storage — must inject via terminal env; dispose stale terminal that lacks it
+        existing?.dispose();
+        return vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd, env: { ADO_PAT: adoPat } });
     }
-    // PAT from storage — must inject via terminal env; dispose stale terminal that lacks it
-    vscode.window.terminals.find(t => t.name === 'AI Flow Metrics')?.dispose();
-    return vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd, env: { ADO_PAT: adoPat } });
+    if (existing) {
+        // Reuse terminal but ensure it's in the correct board directory
+        existing.sendText(`cd "${cwd}"`);
+        return existing;
+    }
+    return vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd });
 }
 
 function copyDirSync(src: string, dest: string): void {
@@ -778,7 +795,6 @@ export function activate(context: vscode.ExtensionContext) {
                     boardsProvider.refresh();
                     pipelineProvider.refresh();
                     publishProvider.refresh();
-                    vscode.window.showInformationMessage(`Migrated ${migrated.length} board(s) from previous installation.`);
                 }
             }
             await context.globalState.update('migrated_from_undefined_publisher', true);
@@ -823,6 +839,9 @@ export function activate(context: vscode.ExtensionContext) {
     });
     watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
     context.subscriptions.push(watcher);
+
+    let _autoplayCts: vscode.CancellationTokenSource | undefined;
+    let _continuePipeline: (() => void) | undefined;
 
     context.subscriptions.push(
         vscode.commands.registerCommand('ai-flow-metrics.previewFile', (filePath: string) => {
@@ -949,6 +968,7 @@ export function activate(context: vscode.ExtensionContext) {
             const terminal = getOrCreateTerminal(outputDir, adoPat);
             terminal.show();
             terminal.sendText(`${pythonCmd} -m pip install requests -q ; ${pythonCmd} "${script}" --context-only "${board.url}"`);
+            pipelineProvider.setStepRunning('step.fetchContext');
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.fetchWorkItems', async () => {
@@ -979,13 +999,15 @@ export function activate(context: vscode.ExtensionContext) {
             const dataDir = path.join(outputDir, 'output', 'data');
             const promptPath = path.join(dataDir, 'ai_configure_board.prompt.md');
             const configPath = path.join(dataDir, 'config.json');
+            const correctionsLogPath = path.join(context.globalStorageUri.fsPath, 'corrections_log.json');
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Configure Board (AI)', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Configure Board (AI)', cancellable: false },
                 async (progress) => {
+                    pipelineProvider.setStepRunning('step.configureBoard');
                     progress.report({ message: 'Generating prompt…' });
                     const genError = await new Promise<string | null>(resolve =>
-                        cp.exec(`${pythonCmd} "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
+                        cp.exec(`${pythonCmd} "${script}" --corrections-log "${correctionsLogPath}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
                             resolve(err ? (stderr || err.message) : null)
                         )
                     );
@@ -1004,7 +1026,9 @@ export function activate(context: vscode.ExtensionContext) {
                     let responseText = '';
                     try {
                         const lmResponse = await model.sendRequest(
-                            [vscode.LanguageModelChatMessage.User(promptText)], {}, cts.token
+                            [vscode.LanguageModelChatMessage.User(promptText)],
+                            { justification: 'AI Flow Metrics uses Copilot to configure the board from your ADO column structure.' },
+                            cts.token
                         );
                         for await (const part of lmResponse.text) { responseText += part; }
                     } finally { cts.dispose(); }
@@ -1024,9 +1048,7 @@ export function activate(context: vscode.ExtensionContext) {
                     boardsProvider.refresh();
                     pipelineProvider.refresh();
 
-                    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(configPath));
-                    await vscode.window.showTextDocument(doc);
-                    vscode.window.showInformationMessage('Board configured! Review config.json and adjust if needed, then continue autoplay.');
+                    openPreview(configPath, context);
                 }
             );
         }),
@@ -1059,7 +1081,7 @@ export function activate(context: vscode.ExtensionContext) {
             const outputPath = path.join(outputDir, 'output', 'metrics', 'time_in_columns.json');
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Calculate Time in Columns', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Calculate Time in Columns', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
                     cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
@@ -1087,7 +1109,7 @@ export function activate(context: vscode.ExtensionContext) {
             const outputPath = path.join(outputDir, 'output', 'metrics', 'cycle_time.json');
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Calculate Cycle Time', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Calculate Cycle Time', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
                     cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
@@ -1115,7 +1137,7 @@ export function activate(context: vscode.ExtensionContext) {
             const outputPath = path.join(outputDir, 'output', 'metrics', 'lead_time.json');
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Calculate Lead Time', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Calculate Lead Time', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Running…' });
                     cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
@@ -1141,9 +1163,10 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             const outputPath = path.join(outputDir, 'output', 'dashboard.html');
             if (!assertPrereq('step.generateDashboard', outputDir)) { return; }
+            pipelineProvider.setStepRunning('step.generateDashboard');
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Generate Dashboard', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Generate Dashboard', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Rendering…' });
                     cp.exec(`${pythonCmd} "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
@@ -1188,8 +1211,9 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Interpret Metrics (AI)', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Interpret Metrics (AI)', cancellable: false },
                 async (progress) => {
+                    pipelineProvider.setStepRunning('step.interpretMetrics');
                     progress.report({ message: 'Generating prompt…' });
                     const genError = await new Promise<string | null>(resolve =>
                         cp.exec(`${pythonCmd} "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
@@ -1211,7 +1235,9 @@ export function activate(context: vscode.ExtensionContext) {
                     let responseText = '';
                     try {
                         const lmResponse = await model.sendRequest(
-                            [vscode.LanguageModelChatMessage.User(promptText)], {}, cts.token
+                            [vscode.LanguageModelChatMessage.User(promptText)],
+                            { justification: 'AI Flow Metrics uses Copilot to generate chart insights from your flow metrics.' },
+                            cts.token
                         );
                         for await (const part of lmResponse.text) { responseText += part; }
                     } finally { cts.dispose(); }
@@ -1244,7 +1270,7 @@ export function activate(context: vscode.ExtensionContext) {
             const outputPath = path.join(outputDir, 'output', 'dashboard.html');
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Re-generate Dashboard', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Re-generate Dashboard', cancellable: false },
                 (progress) => new Promise<void>((resolve) => {
                     progress.report({ message: 'Rendering…' });
                     cp.exec(`${pythonCmd} "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
@@ -1323,7 +1349,6 @@ export function activate(context: vscode.ExtensionContext) {
             await context.globalState.update(`window.${activeId}`, { label, args });
             saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
             pipelineProvider.refresh();
-            vscode.window.showInformationMessage(`Analysis window set to: ${label}. Re-run Step 4 to apply.`);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.runCalculationsGroup', async () => {
@@ -1350,7 +1375,7 @@ export function activate(context: vscode.ExtensionContext) {
                 });
 
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Calculate Metrics (3 steps)', cancellable: false },
+                { location: vscode.ProgressLocation.Window, title: 'Calculate Metrics (3 steps)', cancellable: false },
                 async (progress) => {
                     progress.report({ message: 'Time in Columns (5/7)…' });
                     if (!await runStep('calc_columns.py', 'output/metrics/time_in_columns.json', 5)) return;
@@ -1364,6 +1389,26 @@ export function activate(context: vscode.ExtensionContext) {
             );
         }),
 
+        vscode.commands.registerCommand('ai-flow-metrics.stopPipeline', () => {
+            _autoplayCts?.cancel();
+            if (_continuePipeline) {
+                _continuePipeline();
+                _continuePipeline = undefined;
+            }
+            vscode.commands.executeCommand('setContext', 'aiFlowMetrics.running', false);
+            vscode.commands.executeCommand('setContext', 'aiFlowMetrics.paused', false);
+            vscode.window.terminals.find(t => t.name === 'AI Flow Metrics')?.dispose();
+            pipelineProvider.clearRunning();
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.continueAutoplay', () => {
+            if (_continuePipeline) {
+                vscode.commands.executeCommand('setContext', 'aiFlowMetrics.paused', false);
+                _continuePipeline();
+                _continuePipeline = undefined;
+            }
+        }),
+
         vscode.commands.registerCommand('ai-flow-metrics.autoplay', async () => {
             const activeId = context.globalState.get<string>('activeBoardId');
             const board = boardsProvider.getBoards().find(b => b.id === activeId);
@@ -1372,12 +1417,14 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
 
             // Polls every 2 s — file watchers don't fire reliably outside the workspace folder
+            let _cancelToken: vscode.CancellationToken | undefined;
             function waitForFile(relPath: string, timeoutMs: number): Promise<boolean> {
                 const absPath = path.join(outputDir, relPath);
                 if (fs.existsSync(absPath)) { return Promise.resolve(true); }
                 return new Promise<boolean>(resolve => {
                     const start = Date.now();
                     const interval = setInterval(() => {
+                        if (_cancelToken?.isCancellationRequested) { clearInterval(interval); resolve(false); return; }
                         if (fs.existsSync(absPath)) {
                             clearInterval(interval);
                             resolve(true);
@@ -1391,9 +1438,14 @@ export function activate(context: vscode.ExtensionContext) {
 
             const exists = (rel: string) => fs.existsSync(path.join(outputDir, rel));
 
+            vscode.commands.executeCommand('setContext', 'aiFlowMetrics.running', true);
+            try {
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'AI Flow Metrics — Autoplay', cancellable: false },
-                async (progress) => {
+                { location: vscode.ProgressLocation.Window, title: 'AI Flow Metrics — Autoplay', cancellable: false },
+                async (progress, token) => {
+                    _autoplayCts?.dispose();
+                    _autoplayCts = new vscode.CancellationTokenSource();
+                    _cancelToken = _autoplayCts.token;
                     const yield50 = () => new Promise<void>(r => setTimeout(r, 50));
 
                     // Step 1: Fetch Board Context
@@ -1404,11 +1456,12 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.fetchContext');
                         if (!await waitForFile('output/data/context.json', 2 * 60 * 1000)) {
                             pipelineProvider.setStepRunning(null);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 1 timed out.');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 1 timed out.'); }
                             return;
                         }
                         pipelineProvider.setStepRunning(null);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     // Step 2: Fetch & Check group (terminal-based)
                     if (!exists('output/data/data_quality_report.json')) {
@@ -1418,11 +1471,12 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.runFetchAndCheckGroup');
                         if (!await waitForFile('output/data/data_quality_report.json', 10 * 60 * 1000)) {
                             pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.'); }
                             return;
                         }
                         pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     // Step 3: Configure Board (AI)
                     if (!exists('output/data/config.json')) {
@@ -1432,11 +1486,12 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
                         if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
                             pipelineProvider.setStepRunning(null);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).'); }
                             return;
                         }
                         pipelineProvider.setStepRunning(null);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     // Step 4: Calculate Metrics group
                     if (!exists('output/metrics/lead_time.json')) {
@@ -1446,11 +1501,12 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.runCalculationsGroup');
                         if (!await waitForFile('output/metrics/lead_time.json', 5 * 60 * 1000)) {
                             pipelineProvider.setGroupRunning('group.calculateMetrics', false);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.'); }
                             return;
                         }
                         pipelineProvider.setGroupRunning('group.calculateMetrics', false);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     // Step 5: Generate Dashboard
                     progress.report({ message: 'Step 5 — Generating dashboard…' });
@@ -1459,6 +1515,7 @@ export function activate(context: vscode.ExtensionContext) {
                     await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
                     await waitForFile('output/dashboard.html', 2 * 60 * 1000);
                     pipelineProvider.setStepRunning(null);
+                    if (token.isCancellationRequested) { return; }
 
                     // Step 6: Interpret — auto-regenerates dashboard when Copilot writes insights.json
                     progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
@@ -1469,6 +1526,9 @@ export function activate(context: vscode.ExtensionContext) {
 
                 }
             );
+            } finally {
+                vscode.commands.executeCommand('setContext', 'aiFlowMetrics.running', false);
+            }
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.autoplayWithReview', async () => {
@@ -1479,12 +1539,14 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
 
             // Polls every 2 s — file watchers don't fire reliably outside the workspace folder
+            let _cancelToken: vscode.CancellationToken | undefined;
             function waitForFile(relPath: string, timeoutMs: number): Promise<boolean> {
                 const absPath = path.join(outputDir, relPath);
                 if (fs.existsSync(absPath)) { return Promise.resolve(true); }
                 return new Promise<boolean>(resolve => {
                     const start = Date.now();
                     const interval = setInterval(() => {
+                        if (_cancelToken?.isCancellationRequested) { clearInterval(interval); resolve(false); return; }
                         if (fs.existsSync(absPath)) {
                             clearInterval(interval);
                             resolve(true);
@@ -1498,9 +1560,14 @@ export function activate(context: vscode.ExtensionContext) {
 
             const exists = (rel: string) => fs.existsSync(path.join(outputDir, rel));
 
+            vscode.commands.executeCommand('setContext', 'aiFlowMetrics.running', true);
+            try {
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'AI Flow Metrics — Autoplay', cancellable: false },
-                async (progress) => {
+                { location: vscode.ProgressLocation.Window, title: 'AI Flow Metrics — Autoplay', cancellable: false },
+                async (progress, token) => {
+                    _autoplayCts?.dispose();
+                    _autoplayCts = new vscode.CancellationTokenSource();
+                    _cancelToken = _autoplayCts.token;
                     const yield50 = () => new Promise<void>(r => setTimeout(r, 50));
 
                     if (!exists('output/data/context.json')) {
@@ -1510,11 +1577,12 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.fetchContext');
                         if (!await waitForFile('output/data/context.json', 2 * 60 * 1000)) {
                             pipelineProvider.setStepRunning(null);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 1 timed out.');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 1 timed out.'); }
                             return;
                         }
                         pipelineProvider.setStepRunning(null);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     if (!exists('output/data/data_quality_report.json')) {
                         progress.report({ message: 'Step 2 — Fetching work items & data quality check…' });
@@ -1523,11 +1591,12 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.runFetchAndCheckGroup');
                         if (!await waitForFile('output/data/data_quality_report.json', 10 * 60 * 1000)) {
                             pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 2 timed out.'); }
                             return;
                         }
                         pipelineProvider.setGroupRunning('group.fetchAndCheck', false);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     if (!exists('output/data/config.json')) {
                         progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
@@ -1536,19 +1605,20 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
                         if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
                             pipelineProvider.setStepRunning(null);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).'); }
                             return;
                         }
+                        // Save the AI's initial proposal before the user can edit it
+                        try { fs.copyFileSync(path.join(outputDir, 'output/data/config.json'), path.join(outputDir, 'output/data/config.ai_draft.json')); } catch { /* non-fatal */ }
                         pipelineProvider.setStepRunning(null);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     // Pause for human review before continuing
-                    progress.report({ message: 'Step 3 complete — review board config, then continue.' });
-                    const choice = await vscode.window.showInformationMessage(
-                        'Board configured (Step 3 complete). Review config.json, then continue autoplay.',
-                        { modal: true }, 'Continue', 'Stop'
-                    );
-                    if (choice !== 'Continue') { return; }
+                    vscode.commands.executeCommand('setContext', 'aiFlowMetrics.paused', true);
+                    await new Promise<void>(resolve => { _continuePipeline = resolve; });
+                    _continuePipeline = undefined;
+                    if (_cancelToken?.isCancellationRequested) { return; }
 
                     if (!exists('output/metrics/lead_time.json')) {
                         progress.report({ message: 'Step 4 — Calculating metrics…' });
@@ -1557,11 +1627,12 @@ export function activate(context: vscode.ExtensionContext) {
                         await vscode.commands.executeCommand('ai-flow-metrics.runCalculationsGroup');
                         if (!await waitForFile('output/metrics/lead_time.json', 5 * 60 * 1000)) {
                             pipelineProvider.setGroupRunning('group.calculateMetrics', false);
-                            vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.');
+                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 4 timed out.'); }
                             return;
                         }
                         pipelineProvider.setGroupRunning('group.calculateMetrics', false);
                     }
+                    if (token.isCancellationRequested) { return; }
 
                     progress.report({ message: 'Step 5 — Generating dashboard…' });
                     pipelineProvider.setStepRunning('step.generateDashboard');
@@ -1569,6 +1640,7 @@ export function activate(context: vscode.ExtensionContext) {
                     await vscode.commands.executeCommand('ai-flow-metrics.generateDashboard');
                     await waitForFile('output/dashboard.html', 2 * 60 * 1000);
                     pipelineProvider.setStepRunning(null);
+                    if (token.isCancellationRequested) { return; }
 
                     progress.report({ message: 'Step 6 — Interpreting metrics (AI)…' });
                     pipelineProvider.setStepRunning('step.interpretMetrics');
@@ -1578,6 +1650,10 @@ export function activate(context: vscode.ExtensionContext) {
 
                 }
             );
+            } finally {
+                vscode.commands.executeCommand('setContext', 'aiFlowMetrics.running', false);
+                vscode.commands.executeCommand('setContext', 'aiFlowMetrics.paused', false);
+            }
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.publishDashboard', async () => {

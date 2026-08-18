@@ -30,7 +30,9 @@ When the pipeline pauses at step 3, act immediately — do not wait for the user
 
 1. **Run a subagent** with the full path `output/data/ai_configure_board.prompt.md` — tell it to read the file and write `output/data/config.json`. Do not read the file yourself first.
 2. **Show the user the resulting config** — clock starts/ends, active/waiting column classification, and blocker signals — for review.
-3. **Wait for the user to explicitly approve** before sending Enter to the terminal to continue.
+3. **Wait for the user to explicitly approve** before continuing.
+4. **Before continuing**, call `check_config_draft` to detect any changes the user made. If there are changes, explain them conversationally (e.g. "I noticed you reclassified 'Amigo' from waiting to active"). Ask if they'd like to save these as corrections for future boards. If yes, call `save_config_corrections`.
+5. **Send Enter** to the terminal (or click Continue in the pipeline toolbar) to resume.
 
 ---
 

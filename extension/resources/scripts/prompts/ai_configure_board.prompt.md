@@ -6,6 +6,7 @@ Analyse the board data below and return a JSON object that resolves all four dec
 
 ---
 
+{{CORRECTIONS}}
 {{BOARD_CONTEXT}}
 {{DATA_QUALITY}}
 {{FINDINGS}}
