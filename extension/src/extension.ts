@@ -726,11 +726,13 @@ class PublishProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             items.push(pagesItem);
         }
 
-        const schedule = this.globalState.get<string>(`publishSchedule.${activeId}`);
+        const schedule    = this.globalState.get<string>(`publishSchedule.${activeId}`);
+        const scheduleCron = this.globalState.get<string>(`publishScheduleCron.${activeId}`);
         const schedItem = new vscode.TreeItem('Schedule', vscode.TreeItemCollapsibleState.None);
         schedItem.description  = schedule ?? 'not configured';
         schedItem.iconPath     = new vscode.ThemeIcon('calendar');
         schedItem.contextValue = schedule ? 'publish.schedule.configured' : 'publish.schedule';
+        schedItem.tooltip      = scheduleCron;
         items.push(schedItem);
 
         return items;
@@ -1448,6 +1450,19 @@ export function activate(context: vscode.ExtensionContext) {
                     _cancelToken = _autoplayCts.token;
                     const yield50 = () => new Promise<void>(r => setTimeout(r, 50));
 
+                    // Clear stale outputs so each step's waitForFile waits for the fresh write
+                    const staleFiles = [
+                        'output/data/context.json', 'output/data/work_items.json',
+                        'output/data/work_item_history.json', 'output/data/work_item_rework.json',
+                        'output/data/excluded_items.json', 'output/data/sprint_retro.json',
+                        'output/data/data_quality_report.json', 'output/data/insights.json',
+                        'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json',
+                        'output/metrics/lead_time.json', 'output/dashboard.html',
+                    ];
+                    for (const f of staleFiles) {
+                        try { fs.unlinkSync(path.join(outputDir, f)); } catch { /* missing is fine */ }
+                    }
+
                     // Step 1: Fetch Board Context
                     if (!exists('output/data/context.json')) {
                         progress.report({ message: 'Step 1 — Fetching board context…' });
@@ -1569,6 +1584,19 @@ export function activate(context: vscode.ExtensionContext) {
                     _autoplayCts = new vscode.CancellationTokenSource();
                     _cancelToken = _autoplayCts.token;
                     const yield50 = () => new Promise<void>(r => setTimeout(r, 50));
+
+                    // Clear stale outputs so each step's waitForFile waits for the fresh write
+                    const staleFiles = [
+                        'output/data/context.json', 'output/data/work_items.json',
+                        'output/data/work_item_history.json', 'output/data/work_item_rework.json',
+                        'output/data/excluded_items.json', 'output/data/sprint_retro.json',
+                        'output/data/data_quality_report.json', 'output/data/insights.json',
+                        'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json',
+                        'output/metrics/lead_time.json', 'output/dashboard.html',
+                    ];
+                    for (const f of staleFiles) {
+                        try { fs.unlinkSync(path.join(outputDir, f)); } catch { /* missing is fine */ }
+                    }
 
                     if (!exists('output/data/context.json')) {
                         progress.report({ message: 'Step 1 — Fetching board context…' });
@@ -1793,6 +1821,7 @@ export function activate(context: vscode.ExtensionContext) {
                             const cronMatch = yaml.match(/- cron:\s*['"]([^'"]+)['"]/);
                             if (cronMatch && activeId) {
                                 await context.globalState.update(`publishSchedule.${activeId}`, describeCron(cronMatch[1]));
+                                await context.globalState.update(`publishScheduleCron.${activeId}`, cronMatch[1]);
                             }
                         }
 
@@ -1980,6 +2009,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     const scheduleLabel = pick.cron ? pick.label : describeCron(cronExpr);
                     await context.globalState.update(`publishSchedule.${activeId}`, scheduleLabel);
+                    await context.globalState.update(`publishScheduleCron.${activeId}`, cronExpr);
                     if (activeId) { saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId); }
                     publishProvider.refresh();
 
@@ -2012,6 +2042,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
                 const label = describeCron(cronMatch[1]);
                 await context.globalState.update(`publishSchedule.${activeId}`, label);
+                await context.globalState.update(`publishScheduleCron.${activeId}`, cronMatch[1]);
                 publishProvider.refresh();
                 vscode.window.showInformationMessage(`Schedule synced: ${label}`);
             } catch {
@@ -2054,6 +2085,7 @@ export function activate(context: vscode.ExtensionContext) {
                         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
                     }
                     await context.globalState.update(`publishSchedule.${activeId}`, undefined);
+                    await context.globalState.update(`publishScheduleCron.${activeId}`, undefined);
                     saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
                     publishProvider.refresh();
                     vscode.window.showInformationMessage('Schedule removed.');
