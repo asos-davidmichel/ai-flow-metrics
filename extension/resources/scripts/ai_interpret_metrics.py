@@ -1565,6 +1565,9 @@ in 3-5 bullet points.
 
 def _parse_insights(content: str) -> dict:
     """Parse JSON from an AI response, stripping accidental markdown fences."""
+    import re
+    # Strip control characters illegal in JSON strings (same set as build_prompt_text)
+    content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', content)
     stripped = content.strip()
     if stripped.startswith("```"):
         stripped = "\n".join(stripped.splitlines()[1:])
