@@ -192,6 +192,11 @@
         "icon": "$(sync)"
       },
       {
+        "command": "ai-flow-metrics.clearStep",
+        "title": "Clear Step (and downstream)",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "ai-flow-metrics.setAdoPat",
         "title": "AI Flow Metrics: Set ADO Personal Access Token"
       },
@@ -245,6 +250,11 @@
           "group": "1_manage"
         },
         {
+          "command": "ai-flow-metrics.clearStep",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^(step|group)\\./",
+          "group": "1_manage"
+        },
+        {
           "command": "ai-flow-metrics.removeBoard",
           "when": "view == aiFlowMetrics.boards && viewItem =~ /^board/",
           "group": "1_manage"
@@ -256,67 +266,72 @@
         },
         {
           "command": "ai-flow-metrics.fetchContext",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.fetchContext",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.fetchContext/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.fetchWorkItems",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.fetchItems",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.fetchItems/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.checkData",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.checkData",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.checkData/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.configureBoard",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.configureBoard",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.configureBoard/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.calculateTimeInColumns",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.calcColumns",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.calcColumns/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.calculateCycleTime",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.calcCycleTime",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.calcCycleTime/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.calculateLeadTime",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.calcLeadTime",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.calcLeadTime/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.generateDashboard",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.generateDashboard",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.generateDashboard/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.interpretMetrics",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.interpretMetrics",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.interpretMetrics/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.regenerateDashboard",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == step.regenerateDashboard",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^step\\.regenerateDashboard/",
+          "group": "inline"
+        },
+        {
+          "command": "ai-flow-metrics.clearStep",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /\\.done$/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.runFetchAndCheckGroup",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == group.fetchAndCheck",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^group\\.fetchAndCheck/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.configureWindow",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == group.calculateMetrics",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^group\\.calculateMetrics/",
           "group": "inline"
         },
         {
           "command": "ai-flow-metrics.runCalculationsGroup",
-          "when": "view == aiFlowMetrics.pipeline && viewItem == group.calculateMetrics",
+          "when": "view == aiFlowMetrics.pipeline && viewItem =~ /^group\\.calculateMetrics/",
           "group": "inline"
         },
         {

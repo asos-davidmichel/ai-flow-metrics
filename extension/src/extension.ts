@@ -52,6 +52,54 @@ const PIPELINE_STEPS: PipelineStep[] = [
     },
 ];
 
+// Files deleted when clearing a step — includes all downstream outputs
+const STEP_CLEAR_FILES: Record<string, string[]> = {
+    'step.fetchContext': [
+        'output/data/context.json',
+        'output/data/work_items.json', 'output/data/work_item_history.json',
+        'output/data/work_item_rework.json', 'output/data/excluded_items.json',
+        'output/data/sprint_retro.json', 'output/data/data_quality_report.json',
+        'output/data/config.json',
+        'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json', 'output/metrics/lead_time.json',
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+    'group.fetchAndCheck': [
+        'output/data/work_items.json', 'output/data/work_item_history.json',
+        'output/data/work_item_rework.json', 'output/data/excluded_items.json',
+        'output/data/sprint_retro.json', 'output/data/data_quality_report.json',
+        'output/data/config.json',
+        'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json', 'output/metrics/lead_time.json',
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+    'step.configureBoard': [
+        'output/data/config.json',
+        'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json', 'output/metrics/lead_time.json',
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+    'group.calculateMetrics': [
+        'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json', 'output/metrics/lead_time.json',
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+    'step.calcColumns': [
+        'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json', 'output/metrics/lead_time.json',
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+    'step.calcCycleTime': [
+        'output/metrics/cycle_time.json', 'output/metrics/lead_time.json',
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+    'step.calcLeadTime': [
+        'output/metrics/lead_time.json',
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+    'step.generateDashboard': [
+        'output/dashboard.html', 'output/data/insights.json',
+    ],
+    'step.interpretMetrics': [
+        'output/data/insights.json', 'output/dashboard.html',
+    ],
+};
+
 const PIPELINE_GROUPS: PipelineGroup[] = [
     { label: 'Fetch & Check',     contextValue: 'group.fetchAndCheck',    description: 'Step 2', requires: 'output/data/context.json' },
     { label: 'Calculate Metrics', contextValue: 'group.calculateMetrics', description: 'Step 4', requires: 'output/data/config.json'   },
@@ -363,7 +411,7 @@ class PipelineItem extends vscode.TreeItem {
     constructor(config: { label: string; description: string; contextValue: string }, done: boolean, isSubstep = false, isRunning = false) {
         super(config.label, vscode.TreeItemCollapsibleState.None);
         this.description = config.description;
-        this.contextValue = isRunning ? config.contextValue + '.running' : config.contextValue;
+        this.contextValue = isRunning ? config.contextValue + '.running' : done ? config.contextValue + '.done' : config.contextValue;
         this.iconPath = isRunning
             ? new vscode.ThemeIcon('loading~spin')
             : done
@@ -380,7 +428,7 @@ class PipelineGroupItem extends vscode.TreeItem {
     constructor(readonly group: PipelineGroup, allDone: boolean, isRunning = false, windowLabel?: string) {
         super(group.label, isRunning ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
         this.description = windowLabel ? `${group.description} · ${windowLabel}` : group.description;
-        this.contextValue = isRunning ? group.contextValue + '.running' : group.contextValue;
+        this.contextValue = isRunning ? group.contextValue + '.running' : allDone ? group.contextValue + '.done' : group.contextValue;
         this.iconPath = isRunning
             ? new vscode.ThemeIcon('loading~spin')
             : allDone
@@ -444,9 +492,10 @@ class PipelineProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             : false;
 
         if (element instanceof PipelineGroupItem) {
-            const steps = PIPELINE_STEPS.filter(s => s.group === element.contextValue);
-            // First incomplete substep is the active one when the group is running
-            const groupRunning = !!element.contextValue && this.runningGroups.has(element.contextValue) && !steps.every(stepDone);
+            // Strip .done/.running suffix before comparing against PIPELINE_STEPS base contextValues
+            const cv = (element.contextValue ?? '').replace(/\.(running|done)$/, '');
+            const steps = PIPELINE_STEPS.filter(s => s.group === cv);
+            const groupRunning = !!cv && this.runningGroups.has(cv) && !steps.every(stepDone);
             const activeSubstep = groupRunning ? steps.find(s => !stepDone(s)) : undefined;
             return steps.map(s =>
                 new PipelineItem(s, stepDone(s), true,
@@ -582,6 +631,70 @@ function describeCron(expr: string): string {
         return `${n}${s} of every month at ${time}`;
     }
     return expr;
+}
+
+async function buildScheduleWizard(): Promise<string | undefined> {
+    const freq = await vscode.window.showQuickPick([
+        { label: 'Every day',                 value: 'daily'   },
+        { label: 'Specific days of the week', value: 'weekly'  },
+        { label: 'Monthly on a specific day', value: 'monthly' },
+    ], { title: 'Build schedule — How often?', ignoreFocusOut: true });
+    if (!freq) { return; }
+
+    let dowExpr = '*';
+    if (freq.value === 'weekly') {
+        const dayMap: Record<string, string> = {
+            Monday: '1', Tuesday: '2', Wednesday: '3', Thursday: '4',
+            Friday: '5', Saturday: '6', Sunday: '0',
+        };
+        const days = await vscode.window.showQuickPick(
+            Object.keys(dayMap).map(name => ({ label: name, picked: false })),
+            { title: 'Build schedule — Which days?', canPickMany: true, ignoreFocusOut: true }
+        );
+        if (!days || days.length === 0) { return; }
+        dowExpr = days.map(d => dayMap[d.label]).join(',');
+    }
+
+    let domExpr = '*';
+    if (freq.value === 'monthly') {
+        const dom = await vscode.window.showInputBox({
+            prompt: 'Day of month (1–28)', placeHolder: '1', ignoreFocusOut: true,
+            validateInput: v => {
+                const n = parseInt(v.trim(), 10);
+                return (!isNaN(n) && n >= 1 && n <= 28) ? undefined : 'Enter a number between 1 and 28';
+            },
+        });
+        if (!dom) { return; }
+        domExpr = dom.trim();
+    }
+
+    const timePick = await vscode.window.showQuickPick([
+        { label: '6:00 AM UTC',           hour: 6,  minute: 0  },
+        { label: '9:00 AM UTC',           hour: 9,  minute: 0  },
+        { label: '12:00 PM UTC',          hour: 12, minute: 0  },
+        { label: '3:00 PM UTC',           hour: 15, minute: 0  },
+        { label: '6:00 PM UTC',           hour: 18, minute: 0  },
+        { label: '$(clock) Custom time…', hour: -1, minute: -1 },
+    ], { title: 'Build schedule — What time (UTC)?', ignoreFocusOut: true });
+    if (!timePick) { return; }
+
+    let h = timePick.hour, m = timePick.minute;
+    if (h === -1) {
+        const hourInput = await vscode.window.showInputBox({
+            prompt: 'Hour (0–23, UTC)', placeHolder: '9', ignoreFocusOut: true,
+            validateInput: v => { const n = parseInt(v.trim(), 10); return (!isNaN(n) && n >= 0 && n <= 23) ? undefined : 'Enter 0–23'; },
+        });
+        if (hourInput === undefined) { return; }
+        const minInput = await vscode.window.showInputBox({
+            prompt: 'Minute (0–59)', placeHolder: '0', ignoreFocusOut: true,
+            validateInput: v => { const n = parseInt(v.trim(), 10); return (!isNaN(n) && n >= 0 && n <= 59) ? undefined : 'Enter 0–59'; },
+        });
+        if (minInput === undefined) { return; }
+        h = parseInt(hourInput.trim(), 10);
+        m = parseInt(minInput.trim() || '0', 10);
+    }
+
+    return `${m} ${h} ${domExpr} * ${dowExpr}`;
 }
 
 function generateWorkflowYaml(cronExpr: string, windowArgs: string): string {
@@ -1350,6 +1463,26 @@ export function activate(context: vscode.ExtensionContext) {
 
             await context.globalState.update(`window.${activeId}`, { label, args });
             saveBoardState(context.globalState, context.globalStorageUri.fsPath, activeId);
+            // Invalidate stale metrics, insights, and dashboard for the new window
+            const winOutputDir = path.join(context.globalStorageUri.fsPath, activeId);
+            for (const f of STEP_CLEAR_FILES['group.calculateMetrics']) {
+                try { fs.unlinkSync(path.join(winOutputDir, f)); } catch { /* missing is fine */ }
+            }
+            boardsProvider.refresh();
+            pipelineProvider.refresh();
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.clearStep', (item: vscode.TreeItem) => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { return; }
+            const outputDir = path.join(context.globalStorageUri.fsPath, activeId);
+            const cv = (item?.contextValue ?? '').replace(/\.(running|done)$/, '');
+            const files = STEP_CLEAR_FILES[cv];
+            if (!files) { return; }
+            for (const f of files) {
+                try { fs.unlinkSync(path.join(outputDir, f)); } catch { /* missing is fine */ }
+            }
+            boardsProvider.refresh();
             pipelineProvider.refresh();
         }),
 
@@ -1455,7 +1588,8 @@ export function activate(context: vscode.ExtensionContext) {
                         'output/data/context.json', 'output/data/work_items.json',
                         'output/data/work_item_history.json', 'output/data/work_item_rework.json',
                         'output/data/excluded_items.json', 'output/data/sprint_retro.json',
-                        'output/data/data_quality_report.json', 'output/data/insights.json',
+                        'output/data/data_quality_report.json', 'output/data/config.json',
+                        'output/data/insights.json',
                         'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json',
                         'output/metrics/lead_time.json', 'output/dashboard.html',
                     ];
@@ -1493,19 +1627,17 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                     if (token.isCancellationRequested) { return; }
 
-                    // Step 3: Configure Board (AI)
-                    if (!exists('output/data/config.json')) {
-                        progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
-                        pipelineProvider.setStepRunning('step.configureBoard');
-                        await yield50();
-                        await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
-                        if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
-                            pipelineProvider.setStepRunning(null);
-                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).'); }
-                            return;
-                        }
+                    // Step 3: Configure Board (AI) — always re-runs to get fresh suggestions
+                    progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
+                    pipelineProvider.setStepRunning('step.configureBoard');
+                    await yield50();
+                    await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
+                    if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
                         pipelineProvider.setStepRunning(null);
+                        if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).'); }
+                        return;
                     }
+                    pipelineProvider.setStepRunning(null);
                     if (token.isCancellationRequested) { return; }
 
                     // Step 4: Calculate Metrics group
@@ -1590,7 +1722,8 @@ export function activate(context: vscode.ExtensionContext) {
                         'output/data/context.json', 'output/data/work_items.json',
                         'output/data/work_item_history.json', 'output/data/work_item_rework.json',
                         'output/data/excluded_items.json', 'output/data/sprint_retro.json',
-                        'output/data/data_quality_report.json', 'output/data/insights.json',
+                        'output/data/data_quality_report.json', 'output/data/config.json',
+                        'output/data/insights.json',
                         'output/metrics/time_in_columns.json', 'output/metrics/cycle_time.json',
                         'output/metrics/lead_time.json', 'output/dashboard.html',
                     ];
@@ -1626,26 +1759,25 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                     if (token.isCancellationRequested) { return; }
 
-                    if (!exists('output/data/config.json')) {
-                        progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
-                        pipelineProvider.setStepRunning('step.configureBoard');
-                        await yield50();
-                        await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
-                        if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
-                            pipelineProvider.setStepRunning(null);
-                            if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).'); }
-                            return;
-                        }
-                        // Save the AI's initial proposal before the user can edit it
-                        try { fs.copyFileSync(path.join(outputDir, 'output/data/config.json'), path.join(outputDir, 'output/data/config.ai_draft.json')); } catch { /* non-fatal */ }
+                    // Step 3: Configure Board (AI) — always re-runs to get fresh suggestions
+                    progress.report({ message: 'Step 3 — Configure Board (AI) — waiting for config.json…' });
+                    pipelineProvider.setStepRunning('step.configureBoard');
+                    await yield50();
+                    await vscode.commands.executeCommand('ai-flow-metrics.configureBoard');
+                    if (!await waitForFile('output/data/config.json', 30 * 60 * 1000)) {
                         pipelineProvider.setStepRunning(null);
+                        if (!_cancelToken?.isCancellationRequested) { vscode.window.showErrorMessage('Autoplay stopped: Step 3 timed out (config.json not written).'); }
+                        return;
                     }
+                    try { fs.copyFileSync(path.join(outputDir, 'output/data/config.json'), path.join(outputDir, 'output/data/config.ai_draft.json')); } catch { /* non-fatal */ }
+                    pipelineProvider.setStepRunning(null);
                     if (token.isCancellationRequested) { return; }
 
                     // Pause for human review before continuing
                     vscode.commands.executeCommand('setContext', 'aiFlowMetrics.paused', true);
                     await new Promise<void>(resolve => { _continuePipeline = resolve; });
                     _continuePipeline = undefined;
+                    pipelineProvider.setStepRunning(null);
                     if (_cancelToken?.isCancellationRequested) { return; }
 
                     if (!exists('output/metrics/lead_time.json')) {
@@ -1912,17 +2044,21 @@ export function activate(context: vscode.ExtensionContext) {
             const isConfigured = !!context.globalState.get<string>(`publishSchedule.${activeId}`);
 
             const SCHEDULES = [
-                { label: 'Daily at 9am UTC',          cron: '0 9 * * *', description: 'Every day at 09:00 UTC' },
-                { label: 'Weekly — Monday 9am UTC',   cron: '0 9 * * 1', description: 'Every Monday at 09:00 UTC' },
-                { label: 'Weekly — Friday 9am UTC',   cron: '0 9 * * 5', description: 'Every Friday at 09:00 UTC' },
-                { label: '$(edit) Custom cron…',      cron: '',          description: 'Enter a cron expression' },
+                { label: 'Daily at 9am UTC',               cron: '0 9 * * *', description: 'Every day at 09:00 UTC' },
+                { label: 'Weekly — Monday 9am UTC',        cron: '0 9 * * 1', description: 'Every Monday at 09:00 UTC' },
+                { label: 'Weekly — Friday 9am UTC',        cron: '0 9 * * 5', description: 'Every Friday at 09:00 UTC' },
+                { label: '$(wand) Build custom schedule…', cron: 'wizard',    description: 'Step-by-step — no cron knowledge needed' },
+                { label: '$(edit) Enter cron expression…', cron: '',          description: 'Advanced: enter raw cron syntax' },
             ];
             const pick = await vscode.window.showQuickPick(SCHEDULES, { title: 'Schedule', ignoreFocusOut: true });
             if (!pick) { return; }
 
-            // ── Add / Edit ────────────────────────────────────────────────
             let cronExpr = pick.cron;
-            if (!cronExpr) {
+            if (cronExpr === 'wizard') {
+                const result = await buildScheduleWizard();
+                if (!result) { return; }
+                cronExpr = result;
+            } else if (!cronExpr) {
                 const input = await vscode.window.showInputBox({
                     prompt: 'Cron expression (UTC)',
                     placeHolder: '0 9 * * 1',
