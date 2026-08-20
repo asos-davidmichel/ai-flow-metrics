@@ -759,6 +759,14 @@ function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): vo
     if (html) { panel.webview.html = html; }
     _panels.set(filePath, panel);
     panel.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
+    panel.webview.onDidReceiveMessage(msg => {
+        if (msg.type === 'askAI') {
+            vscode.commands.executeCommand('workbench.action.chat.open', {
+                query: msg.context,
+                isPartialQuery: true,
+            });
+        }
+    }, null, context.subscriptions);
 }
 
 export function openPreview(filePath: string, context: vscode.ExtensionContext): void {

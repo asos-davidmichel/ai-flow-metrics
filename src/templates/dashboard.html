@@ -439,6 +439,8 @@
     .ib-watch { color: #c05621; }
     .copy-btn { background:none; border:none; cursor:pointer; font-size:13px; opacity:0.4; padding:1px 5px; border-radius:4px; transition:opacity .15s; flex-shrink:0; line-height:1; color:inherit; }
     .copy-btn:hover { opacity:0.85; }
+    .ask-ai-btn { background:none; border:1px solid rgba(102,126,234,0.35); cursor:pointer; font-size:11px; opacity:0.45; padding:1px 7px; border-radius:4px; transition:opacity .15s; flex-shrink:0; color:#667eea; font-family:inherit; }
+    .ask-ai-btn:hover { opacity:1; background:rgba(102,126,234,0.08); }
 
     /* ── Overview AI Insights Layout ────────────────────────────── */
     .insights-grid {
@@ -6240,6 +6242,7 @@ if (_savedTab) {
 }
 
 // ── AI Insights ──────────────────────────────────────────────────────
+const _vscApi = typeof acquireVsCodeApi !== 'undefined' ? acquireVsCodeApi() : null;
 (function renderInsights() {
   const ins = dashboard.insights;
   if (!ins) return;
@@ -6270,16 +6273,25 @@ if (_savedTab) {
   function makeCopyBtn(text) {
     return '<button class="copy-btn" data-enc="' + encodeURIComponent(text) + '" onclick="event.stopPropagation();_copyBI(this)" title="Copy to clipboard">' + _copyIcon + '</button>';
   }
+  window._askAI = function(btn) {
+    if (!_vscApi) return;
+    _vscApi.postMessage({ type: 'askAI', context: decodeURIComponent(btn.dataset.enc) });
+  };
+  function makeAskAIBtn(text) {
+    if (!_vscApi) return '';
+    return '<button class="ask-ai-btn" data-enc="' + encodeURIComponent(text) + '" onclick="event.stopPropagation();_askAI(this)" title="Ask AI about this">✨ Ask AI</button>';
+  }
 
-  function makeChartInsightBox(insight) {
+  function makeChartInsightBox(insight, chartLabel) {
     const box = document.createElement('details');
     box.className = 'insight-box';
     // Short preview: first sentence of the insight
     const preview = (insight.insight || '').split(/(?<=\.\s)/)[0].trim();
     const copyText = [insight.insight, (insight.evidence||[]).length ? 'Evidence:\n'+(insight.evidence||[]).map(e=>'\u2022 '+e).join('\n') : '', insight.watch_out ? 'Watch out: '+insight.watch_out : ''].filter(Boolean).join('\n\n');
+    const askText = (chartLabel ? chartLabel + ' chart:\n\n' : '') + copyText;
     box.innerHTML = '<summary class="ib-summary">\uD83D\uDCA1 <strong>Insight</strong>'
       + '<span class="ib-preview">' + escapeHtml(preview) + '</span>'
-      + '<span style="flex:1;min-width:0"></span>' + makeCopyBtn(copyText)
+      + '<span style="flex:1;min-width:0"></span>' + makeCopyBtn(copyText) + makeAskAIBtn(askText)
       + '</summary>'
       + '<div class="ib-body">';
     let body = '<div class="ib-section">' + escapeHtml(insight.insight) + '</div>';
@@ -6297,14 +6309,14 @@ if (_savedTab) {
     return box;
   }
 
-  function injectIntoCard(canvasId, key) {
+  function injectIntoCard(canvasId, key, chartLabel) {
     const insight = ci[key];
     if (!insight) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const card = canvas.closest('.card');
     if (!card || card.querySelector('.insight-box')) return;
-    card.appendChild(makeChartInsightBox(insight));
+    card.appendChild(makeChartInsightBox(insight, chartLabel));
   }
 
   function makeSameAsBox(primaryLabel) {
@@ -6353,7 +6365,7 @@ if (_savedTab) {
     { key: 'cfd',                   primary: 'cfdChart',             secondary: [],                                                                              primaryLabel: 'Cumulative Flow' },
     { key: 'wip_level_distribution', primary: 'wipLevelDistChart',   secondary: [],                                                                              primaryLabel: 'WIP Level Distribution' },
   ].forEach(({ key, primary, secondary, primaryLabel }) => {
-    injectIntoCard(primary, key);
+    injectIntoCard(primary, key, primaryLabel);
     secondary.forEach(id => injectSameAs(id, primaryLabel));
   });
 
@@ -6373,7 +6385,7 @@ if (_savedTab) {
       + escapeHtml(c || '?') + '</span>';
   }
   function buildAccordion(summaryHtml, bodyHtml, copyText) {
-    const tail = '<span style="flex:1;min-width:0"></span>' + (copyText ? makeCopyBtn(copyText) : '');
+    const tail = '<span style="flex:1;min-width:0"></span>' + (copyText ? makeCopyBtn(copyText) + makeAskAIBtn(copyText) : '');
     return '<details class="insight-item"><summary>' + summaryHtml + tail + '</summary>'
       + '<div class="insight-item-body">' + bodyHtml + '</div></details>';
   }
@@ -6389,7 +6401,7 @@ if (_savedTab) {
   const execCopyText = [exec.headline, exec.narrative, exec.primary_diagnosis ? 'Diagnosis: '+exec.primary_diagnosis : '', exec.confidence ? 'Confidence: '+exec.confidence : '', exec.main_caveat ? 'Caveat: '+exec.main_caveat : ''].filter(Boolean).join('\n\n');
   const execHtml =
     '<div class="insight-panel" style="margin-bottom:20px;">'
-    + '<div class="insight-panel-title">\uD83D\uDCCB Executive Summary<span style="flex:1"></span>' + makeCopyBtn(execCopyText) + '</div>'
+    + '<div class="insight-panel-title">\uD83D\uDCCB Executive Summary<span style="flex:1"></span>' + makeCopyBtn(execCopyText) + makeAskAIBtn(execCopyText) + '</div>'
     + '<div class="exec-headline">' + escapeHtml(exec.headline || '') + '</div>'
     + '<div class="exec-narrative">' + escapeHtml(exec.narrative || '') + '</div>'
     + '<div class="exec-meta">'

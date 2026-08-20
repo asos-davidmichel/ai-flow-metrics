@@ -571,6 +571,17 @@ function getOrCreateTerminal(cwd: string, adoPat?: string): vscode.Terminal {
     return vscode.window.createTerminal({ name: 'AI Flow Metrics', cwd });
 }
 
+function pollForFile(absPath: string, timeoutMs: number): Promise<boolean> {
+    if (fs.existsSync(absPath)) { return Promise.resolve(true); }
+    return new Promise<boolean>(resolve => {
+        const start = Date.now();
+        const interval = setInterval(() => {
+            if (fs.existsSync(absPath)) { clearInterval(interval); resolve(true); }
+            else if (Date.now() - start >= timeoutMs) { clearInterval(interval); resolve(false); }
+        }, 2000);
+    });
+}
+
 function copyDirSync(src: string, dest: string): void {
     fs.mkdirSync(dest, { recursive: true });
     for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
@@ -1194,23 +1205,16 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             if (!assertPrereq('step.calcColumns', outputDir)) { return; }
             const outputPath = path.join(outputDir, 'output', 'metrics', 'time_in_columns.json');
+            pipelineProvider.setStepRunning('step.calcColumns');
 
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: 'Calculate Time in Columns', cancellable: false },
-                (progress) => new Promise<void>((resolve) => {
-                    progress.report({ message: 'Running…' });
-                    cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
-                        resolve();
-                        const output = (stdout + stderr).trim();
-                        if (error && !fs.existsSync(outputPath)) {
-                            handleScriptError(output, `Step 5 failed: ${output || 'No output. Ensure Steps 1–4 have run successfully.'}`);
-                        } else {
-                            boardsProvider.refresh();
-                            pipelineProvider.refresh();
-                        }
-                    });
-                })
-            );
+            const terminal = getOrCreateTerminal(outputDir);
+            terminal.show();
+            terminal.sendText(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`);
+
+            if (!await pollForFile(outputPath, 60_000)) {
+                vscode.window.showErrorMessage('Step 5 failed or timed out. See the terminal for details.');
+            } else { boardsProvider.refresh(); }
+            pipelineProvider.setStepRunning(null);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.calculateCycleTime', async () => {
@@ -1222,23 +1226,16 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             if (!assertPrereq('step.calcCycleTime', outputDir)) { return; }
             const outputPath = path.join(outputDir, 'output', 'metrics', 'cycle_time.json');
+            pipelineProvider.setStepRunning('step.calcCycleTime');
 
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: 'Calculate Cycle Time', cancellable: false },
-                (progress) => new Promise<void>((resolve) => {
-                    progress.report({ message: 'Running…' });
-                    cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
-                        resolve();
-                        const output = (stdout + stderr).trim();
-                        if (error && !fs.existsSync(outputPath)) {
-                            handleScriptError(output, `Step 6 failed: ${output || 'No output. Ensure Steps 1–5 have run successfully.'}`);
-                        } else {
-                            boardsProvider.refresh();
-                            pipelineProvider.refresh();
-                        }
-                    });
-                })
-            );
+            const terminal = getOrCreateTerminal(outputDir);
+            terminal.show();
+            terminal.sendText(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`);
+
+            if (!await pollForFile(outputPath, 60_000)) {
+                vscode.window.showErrorMessage('Step 6 failed or timed out. See the terminal for details.');
+            } else { boardsProvider.refresh(); }
+            pipelineProvider.setStepRunning(null);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.calculateLeadTime', async () => {
@@ -1250,23 +1247,16 @@ export function activate(context: vscode.ExtensionContext) {
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             if (!assertPrereq('step.calcLeadTime', outputDir)) { return; }
             const outputPath = path.join(outputDir, 'output', 'metrics', 'lead_time.json');
+            pipelineProvider.setStepRunning('step.calcLeadTime');
 
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: 'Calculate Lead Time', cancellable: false },
-                (progress) => new Promise<void>((resolve) => {
-                    progress.report({ message: 'Running…' });
-                    cp.exec(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
-                        resolve();
-                        const output = (stdout + stderr).trim();
-                        if (error && !fs.existsSync(outputPath)) {
-                            handleScriptError(output, `Step 7 failed: ${output || 'No output. Ensure Steps 1–6 have run successfully.'}`);
-                        } else {
-                            boardsProvider.refresh();
-                            pipelineProvider.refresh();
-                        }
-                    });
-                })
-            );
+            const terminal = getOrCreateTerminal(outputDir);
+            terminal.show();
+            terminal.sendText(`${pythonCmd} "${script}" ${getWindowConfig(context.globalState, board.id).args}`);
+
+            if (!await pollForFile(outputPath, 60_000)) {
+                vscode.window.showErrorMessage('Step 7 failed or timed out. See the terminal for details.');
+            } else { boardsProvider.refresh(); }
+            pipelineProvider.setStepRunning(null);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.generateDashboard', async () => {
@@ -1280,22 +1270,14 @@ export function activate(context: vscode.ExtensionContext) {
             if (!assertPrereq('step.generateDashboard', outputDir)) { return; }
             pipelineProvider.setStepRunning('step.generateDashboard');
 
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: 'Generate Dashboard', cancellable: false },
-                (progress) => new Promise<void>((resolve) => {
-                    progress.report({ message: 'Rendering…' });
-                    cp.exec(`${pythonCmd} "${script}" --force`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (error, stdout, stderr) => {
-                        resolve();
-                        const output = (stdout + stderr).trim();
-                        if (error && !fs.existsSync(outputPath)) {
-                            handleScriptError(output, `Step 8 failed: ${output || 'No output. Ensure Steps 1–7 have run successfully.'}`);
-                        } else {
-                            boardsProvider.refresh();
-                            pipelineProvider.refresh();
-                        }
-                    });
-                })
-            );
+            const terminal = getOrCreateTerminal(outputDir);
+            terminal.show();
+            terminal.sendText(`${pythonCmd} "${script}" --force`);
+
+            if (!await pollForFile(outputPath, 60_000)) {
+                vscode.window.showErrorMessage('Step 8 failed or timed out. See the terminal for details.');
+            } else { boardsProvider.refresh(); }
+            pipelineProvider.setStepRunning(null);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.interpretMetrics', async () => {
@@ -1493,35 +1475,20 @@ export function activate(context: vscode.ExtensionContext) {
 
             const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
             if (!assertPrereq('group.calculateMetrics', outputDir)) { return; }
-            const env = { ...process.env, PYTHONUTF8: '1' };
             const windowArgs = getWindowConfig(context.globalState, activeId ?? '').args;
+            const scripts = ['calc_columns.py', 'calc_cycle_time.py', 'calc_lead_time.py']
+                .map(s => `${pythonCmd} "${path.join(context.extensionPath, 'resources', 'scripts', s)}" ${windowArgs}`);
 
             pipelineProvider.setGroupRunning('group.calculateMetrics', true);
-            const runStep = (scriptName: string, outputFile: string, stepNum: number) =>
-                new Promise<boolean>(resolve => {
-                    const script = path.join(context.extensionPath, 'resources', 'scripts', scriptName);
-                    cp.exec(`${pythonCmd} "${script}" ${windowArgs}`, { cwd: outputDir, env }, (error, stdout, stderr) => {
-                        const output = (stdout + stderr).trim();
-                        if (error && !fs.existsSync(path.join(outputDir, outputFile))) {
-                            handleScriptError(output, `Step ${stepNum} failed: ${output || 'No output.'}`);
-                            resolve(false);
-                        } else { resolve(true); }
-                    });
-                });
+            const terminal = getOrCreateTerminal(outputDir);
+            terminal.show();
+            terminal.sendText(scripts.join(' ; '));
 
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: 'Calculate Metrics (3 steps)', cancellable: false },
-                async (progress) => {
-                    progress.report({ message: 'Time in Columns (5/7)…' });
-                    if (!await runStep('calc_columns.py', 'output/metrics/time_in_columns.json', 5)) return;
-                    progress.report({ message: 'Cycle Time (6/7)…', increment: 33 });
-                    if (!await runStep('calc_cycle_time.py', 'output/metrics/cycle_time.json', 6)) return;
-                    progress.report({ message: 'Lead Time (7/7)…', increment: 33 });
-                    if (!await runStep('calc_lead_time.py', 'output/metrics/lead_time.json', 7)) return;
-                    pipelineProvider.setGroupRunning('group.calculateMetrics', false);
-                    boardsProvider.refresh(); pipelineProvider.refresh();
-                }
-            );
+            const finalOutput = path.join(outputDir, 'output', 'metrics', 'lead_time.json');
+            if (!await pollForFile(finalOutput, 5 * 60_000)) {
+                vscode.window.showErrorMessage('Calculate Metrics failed or timed out. See the terminal for details.');
+            } else { boardsProvider.refresh(); }
+            pipelineProvider.setGroupRunning('group.calculateMetrics', false);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.stopPipeline', () => {
@@ -1670,6 +1637,9 @@ export function activate(context: vscode.ExtensionContext) {
                     await yield50();
                     await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
                     pipelineProvider.setStepRunning(null);
+                    if (!token.isCancellationRequested) {
+                        vscode.window.showInformationMessage('Pipeline complete — dashboard is ready.');
+                    }
 
                 }
             );
@@ -1773,6 +1743,9 @@ export function activate(context: vscode.ExtensionContext) {
                     pipelineProvider.setStepRunning(null);
                     if (token.isCancellationRequested) { return; }
 
+                    vscode.window.showInformationMessage('Board config ready — review and click Continue when happy.', 'Continue').then(val => {
+                        if (val === 'Continue') { vscode.commands.executeCommand('ai-flow-metrics.continueAutoplay'); }
+                    });
                     // Pause for human review before continuing
                     vscode.commands.executeCommand('setContext', 'aiFlowMetrics.paused', true);
                     await new Promise<void>(resolve => { _continuePipeline = resolve; });
@@ -1807,6 +1780,9 @@ export function activate(context: vscode.ExtensionContext) {
                     await yield50();
                     await vscode.commands.executeCommand('ai-flow-metrics.interpretMetrics');
                     pipelineProvider.setStepRunning(null);
+                    if (!token.isCancellationRequested) {
+                        vscode.window.showInformationMessage('Pipeline complete — dashboard is ready.');
+                    }
 
                 }
             );

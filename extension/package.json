@@ -2,7 +2,7 @@
   "name": "ai-flow-metrics",
   "displayName": "AI Flow Metrics",
   "description": "Run the AI Flow Metrics pipeline from VS Code",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "ai-flow-metrics",
   "repository": {
     "type": "git",
