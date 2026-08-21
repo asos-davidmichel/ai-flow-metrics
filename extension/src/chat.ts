@@ -469,16 +469,21 @@ export function registerLearnParticipant(
                 if (extracted.trim()) { learningText = extracted.trim(); }
             } catch { /* fall back to raw text if LM call fails */ }
 
+            stream.markdown(
+                `**Extracted principle:**\n\n> ${learningText}\n\n` +
+                (learningText !== request.prompt.trim() ? `*(Distilled from: "${request.prompt.trim()}")*\n\n` : '') +
+                `Would you like me to save this? Choose the scope below — or press Escape to cancel.`
+            );
+
             const learnScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_learnings.py');
             const env = { ...process.env, PYTHONUTF8: '1' };
 
-            // Ask scope before saving
             const scopePick = await vscode.window.showQuickPick(
                 [
-                    { label: '$(globe) All boards (global)', description: 'Applies to every board\'s next Step 6 run', value: 'global' },
-                    { label: `$(organization) ${board.name} only`, description: 'Applies only to this board', value: 'board' },
+                    { label: '$(check) Save for all boards (global)', description: 'Applies to every board\'s next Step 6 run', value: 'global' },
+                    { label: `$(check) Save for ${board.name} only`, description: 'Applies only to this board', value: 'board' },
                 ],
-                { title: 'Where should this learning apply?', ignoreFocusOut: true }
+                { title: 'Save this learning?', placeHolder: 'Press Escape to cancel', ignoreFocusOut: true }
             );
             if (!scopePick) { return {}; }
             const isGlobal = (scopePick as { value: string }).value === 'global';
