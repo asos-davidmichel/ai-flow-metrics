@@ -114,7 +114,7 @@ const READABLE_FILES: Array<{ rel: string; description: string }> = [
     { rel: 'output/metrics/time_in_columns.json',  description: 'Time spent in each column — per-column stats and per-item dwell times' },
 ];
 
-function buildSystemPrompt(board: Board, boardDir: string): string {
+function buildSystemPrompt(board: Board, boardDir: string, globalStoragePath: string): string {
     const ctx = loadJson<any>(path.join(boardDir, 'output/data/context.json'));
     const cfg = loadJson<any>(path.join(boardDir, 'output/data/config.json'));
 
@@ -161,6 +161,10 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `Data honesty rule: never state any figures, item counts, tag values, or distributions without first loading the relevant data file or fetching live data in the current response. Do not speculate or recall values from earlier in the conversation — always re-check the source. If you are about to state a number or list, it must come from a tool call made in this response.`,
         `Honesty rule: never invent or guess data. If none of the tiers can provide what is asked, say so clearly. You may then offer to write a standalone Python script (using util_ado.py or the ADO REST API directly) that the user can run themselves to retrieve the missing information.`,
         `Answer questions about flow metrics, blocked items, cycle time, WIP, and delivery patterns. Be specific — include work item IDs and titles.`,
+        ``,
+        `Learnings files (use read_output_file or open directly when the user asks to view/edit learnings):`,
+        `  Board learnings: ${path.join(boardDir, 'output', 'data', 'interpretation_learnings.json')}`,
+        `  Global learnings (all boards): ${path.join(globalStoragePath, 'global_learnings.json')}`,
         ``,
         `Correction learning workflow — two triggers:`,
         ``,
@@ -252,7 +256,7 @@ export function registerChatParticipant(
             const env = { ...process.env, ADO_PAT: adoPat, PYTHONUTF8: '1' };
 
             const messages: vscode.LanguageModelChatMessage[] = [
-                vscode.LanguageModelChatMessage.User(buildSystemPrompt(board, boardDir)),
+                vscode.LanguageModelChatMessage.User(buildSystemPrompt(board, boardDir, context.globalStorageUri.fsPath)),
             ];
 
             // Replay prior turns so the model has full conversation context
@@ -507,7 +511,7 @@ export function registerLearnParticipant(
                     `> ${learningText}\n\n` +
                     (learningText !== request.prompt.trim() ? `*Extracted from: "${request.prompt.trim()}"*\n\n` : '') +
                     `This will be included in the AI's context the next time you run **Step 6 — Interpret Metrics**.\n\n` +
-                    `To review or edit all saved learnings: \`${logPath}\``
+                    `Ask **@flowmetrics** to show or edit your learnings at any time.`
                 );
             } catch (e) {
                 stream.markdown(`Failed to save learning: ${e instanceof Error ? e.message : String(e)}`);
