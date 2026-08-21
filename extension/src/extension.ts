@@ -962,9 +962,23 @@ export function activate(context: vscode.ExtensionContext) {
     });
     watcher.onDidChange((uri) => {
         if (uri.fsPath.endsWith('.html')) { openPreview(uri.fsPath, context); }
+        else if (uri.fsPath.endsWith('insights.json')) { rebuildDashboard(uri.fsPath); }
     });
     watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
     context.subscriptions.push(watcher);
+
+    // Debounced re-render: insights.json changed → create_dashboard.py --force
+    const _rebuildTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    function rebuildDashboard(insightsPath: string): void {
+        const boardDir = path.resolve(insightsPath, '..', '..', '..');
+        const existing = _rebuildTimers.get(boardDir);
+        if (existing) { clearTimeout(existing); }
+        _rebuildTimers.set(boardDir, setTimeout(() => {
+            _rebuildTimers.delete(boardDir);
+            const dashScript = path.join(context.extensionPath, 'resources', 'scripts', 'create_dashboard.py');
+            cp.execFile('python', [dashScript, '--force'], { cwd: boardDir }, () => { /* html watcher picks up the refresh */ });
+        }, 500));
+    }
 
     let _autoplayCts: vscode.CancellationTokenSource | undefined;
     let _continuePipeline: (() => void) | undefined;
