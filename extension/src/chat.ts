@@ -454,9 +454,31 @@ export function registerLearnParticipant(
             const globalLogPath = path.join(context.globalStorageUri.fsPath, 'global_learnings.json');
             const boardLogPath = path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
 
-            const intent = request.prompt.trim().toLowerCase();
-            const isView = /\b(view|list|show|display)\b/.test(intent) && !/\b(save|add|remember)\b/.test(intent);
-            const isRemove = /\b(remove|delete)\b/.test(intent);
+            stream.progress('Understanding request…');
+            let intent = 'save';
+            try {
+                const classification = await request.model.sendRequest(
+                    [vscode.LanguageModelChatMessage.User(
+                        `Classify this message as exactly one of: "save", "view", "remove".\n` +
+                        `- "save": user wants to add or record a new learning\n` +
+                        `- "view": user wants to see, list, or read existing learnings\n` +
+                        `- "remove": user wants to delete or remove an existing learning\n` +
+                        `Return ONLY the single word. No punctuation or explanation.\n\n` +
+                        `Message: ${request.prompt.trim()}`
+                    )],
+                    {},
+                    token,
+                );
+                let raw = '';
+                for await (const part of classification.stream) {
+                    if (part instanceof vscode.LanguageModelTextPart) { raw += part.value; }
+                }
+                const word = raw.trim().toLowerCase();
+                if (word === 'view' || word === 'remove') { intent = word; }
+            } catch { /* fall back to save */ }
+
+            const isView = intent === 'view';
+            const isRemove = intent === 'remove';
 
             if (isView) {
                 const loadList = async (logPath: string, label: string) => {
