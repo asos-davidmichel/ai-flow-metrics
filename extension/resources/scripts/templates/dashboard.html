@@ -1211,7 +1211,14 @@
 
     <!-- Row 1: Work Start Efficiency histogram + sidebar -->
     <div class="card">
-      <div class="card-header"><h2>Wait Before Work Starts</h2></div>
+      <div class="card-header">
+        <h2>Wait Before Work Starts</h2>
+        <div class="fe-toggle-row" style="margin:0;">
+          <span class="fe-lbl active" id="waitToggleDaysLbl">Days</span>
+          <button class="fe-switch" id="waitToggleBtn" role="switch" aria-checked="false" aria-label="Switch to efficiency %"><span class="fe-knob"></span></button>
+          <span class="fe-lbl" id="waitToggleEffLbl">Efficiency %</span>
+        </div>
+      </div>
       <p id="startEffDesc" style="font-size:13px;color:#718096;margin-bottom:12px;"></p>
       <div style="display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start;">
         <div class="chart-wrap" style="height:300px;"><canvas id="startEfficiencyChart"></canvas></div>
@@ -5231,6 +5238,19 @@ function updateChart() {
   const p50_1   = vals1.length ? vals1[Math.floor(vals1.length*0.5)] : 0;
   const p85_1   = vals1.length ? vals1[Math.floor(vals1.length*0.85)] : 0;
 
+  // Efficiency % buckets and stats
+  const effBucketDefs = [{lo:0,hi:20},{lo:20,hi:40},{lo:40,hi:60},{lo:60,hi:80},{lo:80,hi:101}];
+  const effBuckets = effBucketDefs.map(({lo, hi}) => {
+    const label = hi === 101 ? '80\u2013100%' : `${lo}\u2013${hi}%`;
+    const items = startEffItems.filter(i => i.eff >= lo && i.eff < hi);
+    return { label, lo, hi, items };
+  });
+  const sortedEff = [...startEffItems].sort((a, b) => a.eff - b.eff);
+  const effVals   = sortedEff.map(i => i.eff);
+  const meanEff   = effVals.length ? Math.round(effVals.reduce((s,v)=>s+v,0)/effVals.length*10)/10 : 0;
+  const p50Eff    = effVals.length ? effVals[Math.floor(effVals.length*0.5)] : 0;
+  const p85Eff    = effVals.length ? effVals[Math.floor(effVals.length*0.85)] : 0;
+
   // Sidebar — worst = longest wait
   const sidebarEl1 = document.getElementById('startEfficiencySidebar');
   const worst3 = sorted1.slice(-3).reverse();
@@ -5248,7 +5268,8 @@ function updateChart() {
     `<div style="color:#38a169;font-weight:700;margin:12px 0 6px;">Shortest wait</div>` +
     best3.map(i => sidebarItem(i, '#38a169')).join('');
 
-  new Chart(document.getElementById('startEfficiencyChart'), {
+  let waitChartMode = 'days';
+  const waitChart = new Chart(document.getElementById('startEfficiencyChart'), {
     type: 'bar',
     data: {
       labels: buckets.map(b => b.label),
@@ -5261,11 +5282,14 @@ function updateChart() {
         tooltip: { enabled: false, external: c => {
           if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
           const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
-          const bkt = buckets[idx]; if (!bkt) return;
+          const activeBuckets = waitChartMode === 'days' ? buckets : effBuckets;
+          const bkt = activeBuckets[idx]; if (!bkt) return;
+          const unit = waitChartMode === 'days' ? 'd wait' : '% efficient';
           let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(bkt.label)} \u2014 ${bkt.items.length} items</div>`;
           bkt.items.forEach(item => {
             const url = adoBase ? `${adoBase}/${item.id}` : '';
-            html += ttItemRow(typeStyles[item.type]||{}, url, item.id, item.title||'', item.wait + 'd wait');
+            const val = waitChartMode === 'days' ? item.wait + 'd wait' : item.eff + '% efficient';
+            html += ttItemRow(typeStyles[item.type]||{}, url, item.id, item.title||'', val);
           });
           sharedTooltip.show(html + TT_HINT, c);
         }},
@@ -5280,10 +5304,14 @@ function updateChart() {
       id: 'startEffStatLines',
       afterDraw(chart) {
         const { ctx: c2, scales, chartArea } = chart;
+        const isDays = waitChartMode === 'days';
+        const activeBuckets = isDays ? buckets : effBuckets;
+        const [p50, mean, p85] = isDays ? [p50_1, mean1, p85_1] : [p50Eff, meanEff, p85Eff];
+        const unit = isDays ? 'd' : '%';
         const h = chartArea.bottom - chartArea.top;
         const yPositions = [chartArea.top + 12, chartArea.top + h * 0.45, chartArea.bottom - 8];
-        [[p50_1, '#38b2ac', 'P50 ' + p50_1 + 'd'], [mean1, '#718096', 'Mean ' + mean1 + 'd'], [p85_1, '#9f7aea', 'P85 ' + p85_1 + 'd']].forEach(([val, colour, lbl], i) => {
-          const bIdx = buckets.findIndex(b => val >= b.lo && (b.hi === Infinity ? true : val < b.hi));
+        [[p50, '#38b2ac', 'P50 ' + p50 + unit], [mean, '#718096', 'Mean ' + mean + unit], [p85, '#9f7aea', 'P85 ' + p85 + unit]].forEach(([val, colour, lbl], i) => {
+          const bIdx = activeBuckets.findIndex(b => val >= b.lo && (b.hi >= 101 || b.hi === Infinity ? true : val < b.hi));
           if (bIdx < 0) return;
           const x = scales.x.getPixelForValue(bIdx);
           c2.save();
@@ -5304,10 +5332,30 @@ function updateChart() {
     }],
   });
 
-  document.getElementById('startEffStats').innerHTML =
-    `<span style="margin-right:16px;"><span style="color:#38b2ac;font-weight:700;">&#9632; P50</span> ${p50_1}d</span>` +
-    `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${mean1}d</span>` +
-    `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85_1}d</span>`;
+  function renderWaitStats() {
+    const isDays = waitChartMode === 'days';
+    const [p50, mean, p85] = isDays ? [p50_1, mean1, p85_1] : [p50Eff, meanEff, p85Eff];
+    const unit = isDays ? 'd' : '%';
+    document.getElementById('startEffStats').innerHTML =
+      `<span style="margin-right:16px;"><span style="color:#38b2ac;font-weight:700;">&#9632; P50</span> ${p50}${unit}</span>` +
+      `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${mean}${unit}</span>` +
+      `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85}${unit}</span>`;
+  }
+
+  document.getElementById('waitToggleBtn')?.addEventListener('click', function() {
+    waitChartMode = waitChartMode === 'days' ? 'eff' : 'days';
+    const isDays = waitChartMode === 'days';
+    this.setAttribute('aria-checked', String(!isDays));
+    document.getElementById('waitToggleDaysLbl').classList.toggle('active', isDays);
+    document.getElementById('waitToggleEffLbl').classList.toggle('active', !isDays);
+    const activeBuckets = isDays ? buckets : effBuckets;
+    waitChart.data.labels = activeBuckets.map(b => b.label);
+    waitChart.data.datasets[0].data = activeBuckets.map(b => b.items.length);
+    waitChart.data.datasets[0].backgroundColor = isDays ? '#4299e1' : '#48bb78';
+    waitChart.options.scales.x.title.text = isDays ? 'Wait before work starts' : 'Work start efficiency';
+    waitChart.update();
+    renderWaitStats();
+  });
 
   // ── Flow Efficiency — 3-component interactive view ────────────────
 
