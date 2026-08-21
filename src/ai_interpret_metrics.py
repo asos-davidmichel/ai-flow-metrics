@@ -1556,32 +1556,35 @@ Do NOT repeat the metrics back. Focus entirely on what to do and why.
 """
 
 
-def build_prompt_text(summary):
+def build_prompt_text(summary, global_learnings_path=None):
     import re
     template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
     text = template.replace("{{SUMMARY_JSON}}", json.dumps(summary, indent=2))
 
-    # Inject team learnings / preferences if the file exists
-    learnings_path = Path("output/data/interpretation_learnings.json")
-    if learnings_path.exists():
+    # Inject learnings: per-board first, then global (passed via --global-learnings)
+    def _load_learnings(path_obj, label):
+        if not path_obj or not path_obj.exists():
+            return []
         try:
-            learnings = json.loads(learnings_path.read_text(encoding="utf-8"))
-            if isinstance(learnings, list) and learnings:
-                bullets = "\n".join(
-                    f"- {entry['text']}"
-                    for entry in learnings
-                    if isinstance(entry, dict) and entry.get("text")
-                )
-                if bullets:
-                    section = (
-                        "\n\n## Team context and preferences\n\n"
-                        "The team has recorded the following preferences for how insights should be framed. "
-                        "Apply these consistently throughout your analysis.\n\n"
-                        + bullets
-                    )
-                    text = text + section
+            entries = json.loads(path_obj.read_text(encoding="utf-8"))
+            if isinstance(entries, list):
+                return [f"[{label}] {e['text']}" for e in entries if isinstance(e, dict) and e.get("text")]
         except Exception:
             pass
+        return []
+
+    board_bullets = _load_learnings(Path("output/data/interpretation_learnings.json"), "Board")
+    global_bullets = _load_learnings(Path(global_learnings_path) if global_learnings_path else None, "Global")
+    all_bullets = global_bullets + board_bullets
+
+    if all_bullets:
+        section = (
+            "\n\n## Team context and preferences\n\n"
+            "The team has recorded the following preferences for how insights should be framed. "
+            "Apply these consistently throughout your analysis.\n\n"
+            + "\n".join(f"- {b}" for b in all_bullets)
+        )
+        text = text + section
 
     # Remove control characters that are illegal in JSON strings (keep \t \n \r)
     return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
@@ -1591,7 +1594,7 @@ def build_prompt_text(summary):
 # Modes
 # ---------------------------------------------------------------------------
 
-def write_prompt(summary):
+def write_prompt(summary, global_learnings_path=None):
     import subprocess
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     header = """\
@@ -1606,7 +1609,7 @@ in chat — just confirm the file has been written and summarise the key finding
 in 3-5 bullet points.
 
 """
-    content = header + build_prompt_text(summary)
+    content = header + build_prompt_text(summary, global_learnings_path)
     PROMPT_MD_PATH.write_text(content, encoding="utf-8")
     print(f"Written: {PROMPT_MD_PATH}")
     try:
@@ -1759,6 +1762,10 @@ def main():
         help="Call the AI API directly and write insights.json (CI mode). "
              "Uses GITHUB_TOKEN (GitHub Models) or AI_API_KEY + AI_API_ENDPOINT.",
     )
+    parser.add_argument(
+        "--global-learnings", dest="global_learnings", default=None,
+        help="Path to the global learnings JSON file (applies to all boards).",
+    )
     args = parser.parse_args()
 
     summary = build_summary()
@@ -1771,7 +1778,7 @@ def main():
         auto_interpret(summary)
         return
 
-    write_prompt(summary)
+    write_prompt(summary, args.global_learnings)
 
 
 if __name__ == "__main__":

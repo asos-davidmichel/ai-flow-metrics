@@ -470,8 +470,23 @@ export function registerLearnParticipant(
             } catch { /* fall back to raw text if LM call fails */ }
 
             const learnScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_learnings.py');
-            const logPath = path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
             const env = { ...process.env, PYTHONUTF8: '1' };
+
+            // Ask scope before saving
+            const scopePick = await vscode.window.showQuickPick(
+                [
+                    { label: '$(globe) All boards (global)', description: 'Applies to every board\'s next Step 6 run', value: 'global' },
+                    { label: `$(organization) ${board.name} only`, description: 'Applies only to this board', value: 'board' },
+                ],
+                { title: 'Where should this learning apply?', ignoreFocusOut: true }
+            );
+            if (!scopePick) { return {}; }
+            const isGlobal = (scopePick as { value: string }).value === 'global';
+
+            const logPath = isGlobal
+                ? path.join(context.globalStorageUri.fsPath, 'global_learnings.json')
+                : path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
+            const scopeLabel = isGlobal ? 'all boards' : board.name;
 
             stream.progress('Saving learning…');
             try {
@@ -483,11 +498,11 @@ export function registerLearnParticipant(
                 );
                 const result = JSON.parse(raw.trim());
                 stream.markdown(
-                    `**Saved** for **${board.name}** (${result.total} learning${result.total === 1 ? '' : 's'} total):\n\n` +
+                    `**Saved** for **${scopeLabel}** (${result.total} learning${result.total === 1 ? '' : 's'} total):\n\n` +
                     `> ${learningText}\n\n` +
                     (learningText !== request.prompt.trim() ? `*Extracted from: "${request.prompt.trim()}"*\n\n` : '') +
                     `This will be included in the AI's context the next time you run **Step 6 — Interpret Metrics**. ` +
-                    `To review or edit all saved learnings, open \`output/data/interpretation_learnings.json\` in the board folder.`
+                    `To review or edit all saved learnings, open \`${isGlobal ? 'global_learnings.json' : 'output/data/interpretation_learnings.json'}\` in the ${isGlobal ? 'extension storage' : 'board'} folder.`
                 );
             } catch (e) {
                 stream.markdown(`Failed to save learning: ${e instanceof Error ? e.message : String(e)}`);

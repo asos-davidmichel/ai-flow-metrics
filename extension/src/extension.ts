@@ -1326,8 +1326,9 @@ export function activate(context: vscode.ExtensionContext) {
                 async (progress) => {
                     pipelineProvider.setStepRunning('step.interpretMetrics');
                     progress.report({ message: 'Generating prompt…' });
+                    const globalLearnPath = path.join(context.globalStorageUri.fsPath, 'global_learnings.json');
                     const genError = await new Promise<string | null>(resolve =>
-                        cp.exec(`${pythonCmd} "${script}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
+                        cp.exec(`${pythonCmd} "${script}" --global-learnings "${globalLearnPath}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
                             resolve(err ? (stderr || err.message) : null)
                         )
                     );
