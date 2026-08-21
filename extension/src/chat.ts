@@ -455,8 +455,8 @@ export function registerLearnParticipant(
             const boardLogPath = path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
 
             const intent = request.prompt.trim().toLowerCase();
-            const isView = /^(view|list|show|display)/.test(intent);
-            const isRemove = /^(remove|delete)/.test(intent);
+            const isView = /\b(view|list|show|display)\b/.test(intent) && !/\b(save|add|remember)\b/.test(intent);
+            const isRemove = /\b(remove|delete)\b/.test(intent);
 
             if (isView) {
                 const loadList = async (logPath: string, label: string) => {
