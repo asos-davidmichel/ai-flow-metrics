@@ -427,7 +427,7 @@ export function registerLearnParticipant(
 ): void {
     const participant = vscode.chat.createChatParticipant(
         'ai-flow-metrics.learn',
-        async (request, _ctx, stream, _token) => {
+        async (request, _ctx, stream, token) => {
             if (!request.prompt.trim()) {
                 stream.markdown(
                     'Tell me what to remember about your team or board — for example:\n\n' +
@@ -445,6 +445,30 @@ export function registerLearnParticipant(
             if (!resolved) { return {}; }
             const { board, boardDir } = resolved;
 
+            // Use the LM to extract a reusable principle from the user's specific example
+            stream.progress('Extracting learning…');
+            let learningText = request.prompt.trim();
+            try {
+                const extractPrompt = [
+                    `The user has given feedback about a flow metrics chart or insight.`,
+                    `Extract a concise, generic, reusable learning principle that can guide future AI-generated insights for this board.`,
+                    `The principle should be actionable and specific about what the AI should do differently — not a restatement of the observation.`,
+                    `Return ONLY the extracted principle as 1-2 sentences. No preamble, no explanation.`,
+                    ``,
+                    `User input: ${request.prompt.trim()}`,
+                ].join('\n');
+                const lmResponse = await request.model.sendRequest(
+                    [vscode.LanguageModelChatMessage.User(extractPrompt)],
+                    {},
+                    token,
+                );
+                let extracted = '';
+                for await (const part of lmResponse.stream) {
+                    if (part instanceof vscode.LanguageModelTextPart) { extracted += part.value; }
+                }
+                if (extracted.trim()) { learningText = extracted.trim(); }
+            } catch { /* fall back to raw text if LM call fails */ }
+
             const learnScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_learnings.py');
             const logPath = path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
             const env = { ...process.env, PYTHONUTF8: '1' };
@@ -453,14 +477,15 @@ export function registerLearnParticipant(
             try {
                 const raw = await runPython(
                     learnScript,
-                    ['--text', request.prompt.trim(), '--board', board.name, '--log', logPath],
+                    ['--text', learningText, '--board', board.name, '--log', logPath],
                     boardDir,
                     env,
                 );
                 const result = JSON.parse(raw.trim());
                 stream.markdown(
                     `**Saved** for **${board.name}** (${result.total} learning${result.total === 1 ? '' : 's'} total):\n\n` +
-                    `> ${request.prompt.trim()}\n\n` +
+                    `> ${learningText}\n\n` +
+                    (learningText !== request.prompt.trim() ? `*Extracted from: "${request.prompt.trim()}"*\n\n` : '') +
                     `This will be included in the AI's context the next time you run **Step 6 — Interpret Metrics**. ` +
                     `To review or edit all saved learnings, open \`output/data/interpretation_learnings.json\` in the board folder.`
                 );
