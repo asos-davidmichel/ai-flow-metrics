@@ -144,12 +144,12 @@
       {
         "command": "ai-flow-metrics.autoplay",
         "title": "Run all steps without pausing",
-        "icon": "$(debug-start)"
+        "icon": "$(run-all)"
       },
       {
         "command": "ai-flow-metrics.autoplayWithReview",
         "title": "Run pipeline (pauses after board config for review)",
-        "icon": "$(run-all)"
+        "icon": "$(debug-start)"
       },
       {
         "command": "ai-flow-metrics.continueAutoplay",
