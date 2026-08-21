@@ -1470,14 +1470,15 @@ Do NOT describe the numbers. Interpret what they mean.
 """,
     },
     "work_start_efficiency": {
-        "title": "Work Start Efficiency",
+        "title": "Wait Before Work Starts",
         "instruction": """\
-Given the work start efficiency statistics below, write a 2-3 sentence insight.
-Work start efficiency = cycle time / lead time — it measures how quickly \
-work moves from intake to active development.
-Focus on: what a long average wait before development starts implies about \
-prioritisation, queue management, or batch-intake practices, and what the team \
-could do to start work sooner after committing to it.
+Given the wait-before-work statistics below, write a 2-3 sentence insight.
+Wait before work starts = lead time minus cycle time — the days an item sat \
+committed but untouched before active development began.
+Focus on: what the median and mean wait imply about how the team pulls work \
+(batch intake vs. just-in-time), whether a long tail of high-wait items points to \
+prioritisation or capacity problems, and what reducing this wait would do to \
+lead time without changing dev pace.
 Do NOT describe the numbers. Interpret what they mean.
 """,
     },

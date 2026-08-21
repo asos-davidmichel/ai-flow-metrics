@@ -1211,7 +1211,7 @@
 
     <!-- Row 1: Work Start Efficiency histogram + sidebar -->
     <div class="card">
-      <div class="card-header"><h2>Work Start Efficiency (Cycle / Lead Time)</h2></div>
+      <div class="card-header"><h2>Wait Before Work Starts</h2></div>
       <p id="startEffDesc" style="font-size:13px;color:#718096;margin-bottom:12px;"></p>
       <div style="display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start;">
         <div class="chart-wrap" style="height:300px;"><canvas id="startEfficiencyChart"></canvas></div>
@@ -5190,7 +5190,7 @@ function updateChart() {
   const ltItems = lt.items || [];
   const ticItems = tic.items || [];
 
-  // ── Chart 1: Work Start Efficiency (CT / LT) ───────────────────────
+  // ── Chart 1: Wait Before Work Starts (LT − CT) ─────────────────────
   (function () {
     const cs = cfg.lead_time?.clock_start;
     const startPhrase = !cs || cs.type === 'created'
@@ -5199,7 +5199,7 @@ function updateChart() {
         ? `it entered <strong>${escapeHtml(cs.value)}</strong>`
         : `<strong>${escapeHtml(cs.value || cs.type)}</strong>`;
     const el = document.getElementById('startEffDesc');
-    if (el) el.innerHTML = `How much of an item\u2019s lead time was actual cycle time? Higher % = work started sooner after ${startPhrase}.`;
+    if (el) el.innerHTML = `How long did items sit before work started? Lower = pulled later, closer to readiness. Measured from ${startPhrase} to cycle-time clock start.`;
   })();
 
   const ltMap  = new Map(ltItems.map(i => [i.id, i]));
@@ -5210,43 +5210,42 @@ function updateChart() {
   ctItems.forEach(ci => {
     const li = ltMap.get(ci.id);
     if (!li || li.lead_time_days <= 0) return;
+    const wait = Math.round((li.lead_time_days - ci.cycle_time_days) * 10) / 10;
+    if (wait < 0) return;
     const eff = Math.round(ci.cycle_time_days / li.lead_time_days * 1000) / 10;
-    if (eff < 0 || eff > 100) return;
-    startEffItems.push({ id: ci.id, title: ci.title, type: ci.type, eff, ct: ci.cycle_time_days, lt: li.lead_time_days, completedAt: ci.completed_at });
+    startEffItems.push({ id: ci.id, title: ci.title, type: ci.type, wait, eff, ct: ci.cycle_time_days, lt: li.lead_time_days, completedAt: ci.completed_at });
   });
 
-  // Histogram buckets: 0-15, 15-30, …, 90-100
-  const bucketSize = 15;
-  const buckets = [];
-  for (let lo = 0; lo < 100; lo += bucketSize) {
-    const hi = Math.min(lo + bucketSize, 100);
-    const label = `${lo}\u2013${hi}%`;
-    const items = startEffItems.filter(i => i.eff >= lo && (hi === 100 ? i.eff <= hi : i.eff < hi));
-    buckets.push({ label, lo, hi, items });
-  }
+  // Histogram buckets by wait days (weekly)
+  const waitBucketDefs = [{lo:0,hi:7},{lo:7,hi:14},{lo:14,hi:21},{lo:21,hi:28},{lo:28,hi:Infinity}];
+  const buckets = waitBucketDefs.map(({lo, hi}) => {
+    const label = hi === Infinity ? `${lo}d+` : `${lo}\u2013${hi}d`;
+    const items = startEffItems.filter(i => i.wait >= lo && i.wait < hi);
+    return { label, lo, hi, items };
+  });
 
   // Stats
-  const sorted1 = [...startEffItems].sort((a, b) => a.eff - b.eff);
-  const vals1   = sorted1.map(i => i.eff);
+  const sorted1 = [...startEffItems].sort((a, b) => a.wait - b.wait);
+  const vals1   = sorted1.map(i => i.wait);
   const mean1   = vals1.length ? Math.round(vals1.reduce((s,v)=>s+v,0)/vals1.length*10)/10 : 0;
   const p50_1   = vals1.length ? vals1[Math.floor(vals1.length*0.5)] : 0;
   const p85_1   = vals1.length ? vals1[Math.floor(vals1.length*0.85)] : 0;
 
-  // Sidebar
+  // Sidebar — worst = longest wait
   const sidebarEl1 = document.getElementById('startEfficiencySidebar');
-  const worst3 = sorted1.slice(0, 3);
-  const best3  = sorted1.slice(-3).reverse();
+  const worst3 = sorted1.slice(-3).reverse();
+  const best3  = sorted1.slice(0, 3);
   function sidebarItem(item, colourClass) {
     const url = adoBase ? `${adoBase}/${item.id}` : '';
     const link = url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:#667eea;font-weight:600;">#${item.id}</a>` : `#${item.id}`;
     const short = (item.title||'').length > 55 ? item.title.slice(0,55)+'\u2026' : (item.title||'');
-    return `<div style="margin-bottom:10px;">${link} <span style="color:${colourClass};font-weight:600;">${item.eff}%</span><br><span style="color:#4a5568;font-size:12px;">${escapeHtml(short)}</span></div>`;
+    return `<div style="margin-bottom:10px;">${link} <span style="color:${colourClass};font-weight:600;">${item.wait}d wait</span><br><span style="color:#4a5568;font-size:12px;">${escapeHtml(short)}</span></div>`;
   }
   sidebarEl1.innerHTML =
     `<div style="color:#718096;font-size:12px;margin-bottom:10px;">Using ${startEffItems.length} completed items</div>` +
-    `<div style="color:#e53e3e;font-weight:700;margin-bottom:6px;">Worst (lowest %)</div>` +
+    `<div style="color:#e53e3e;font-weight:700;margin-bottom:6px;">Longest wait</div>` +
     worst3.map(i => sidebarItem(i, '#e53e3e')).join('') +
-    `<div style="color:#38a169;font-weight:700;margin:12px 0 6px;">Best (highest %)</div>` +
+    `<div style="color:#38a169;font-weight:700;margin:12px 0 6px;">Shortest wait</div>` +
     best3.map(i => sidebarItem(i, '#38a169')).join('');
 
   new Chart(document.getElementById('startEfficiencyChart'), {
@@ -5263,17 +5262,17 @@ function updateChart() {
           if (c.tooltip.opacity === 0) { sharedTooltip.hide(); return; }
           const idx = c.tooltip.dataPoints?.[0]?.dataIndex;
           const bkt = buckets[idx]; if (!bkt) return;
-          let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(bkt.label)} &mdash; ${bkt.items.length} items</div>`;
+          let html = `<div class="tt-total" style="font-weight:600;">${escapeHtml(bkt.label)} \u2014 ${bkt.items.length} items</div>`;
           bkt.items.forEach(item => {
             const url = adoBase ? `${adoBase}/${item.id}` : '';
-            html += ttItemRow(typeStyles[item.type]||{}, url, item.id, item.title||'', Math.round(item.eff));
+            html += ttItemRow(typeStyles[item.type]||{}, url, item.id, item.title||'', item.wait + 'd wait');
           });
           sharedTooltip.show(html + TT_HINT, c);
         }},
         annotation: {},
       },
       scales: {
-        x: { grid: { display: false }, title: { display: true, text: 'Efficiency % bucket', color: '#718096', font: { size: 11 } } },
+        x: { grid: { display: false }, title: { display: true, text: 'Wait before work starts', color: '#718096', font: { size: 11 } } },
         y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#e2e8f0' }, title: { display: true, text: 'Completed items', color: '#718096', font: { size: 11 } } },
       },
     },
@@ -5283,8 +5282,8 @@ function updateChart() {
         const { ctx: c2, scales, chartArea } = chart;
         const h = chartArea.bottom - chartArea.top;
         const yPositions = [chartArea.top + 12, chartArea.top + h * 0.45, chartArea.bottom - 8];
-        [[p50_1, '#38b2ac', 'P50 ' + p50_1 + '%'], [mean1, '#718096', 'Mean ' + mean1 + '%'], [p85_1, '#9f7aea', 'P85 ' + p85_1 + '%']].forEach(([val, colour, lbl], i) => {
-          const bIdx = buckets.findIndex(b => val >= b.lo && val <= b.hi);
+        [[p50_1, '#38b2ac', 'P50 ' + p50_1 + 'd'], [mean1, '#718096', 'Mean ' + mean1 + 'd'], [p85_1, '#9f7aea', 'P85 ' + p85_1 + 'd']].forEach(([val, colour, lbl], i) => {
+          const bIdx = buckets.findIndex(b => val >= b.lo && (b.hi === Infinity ? true : val < b.hi));
           if (bIdx < 0) return;
           const x = scales.x.getPixelForValue(bIdx);
           c2.save();
@@ -5306,9 +5305,9 @@ function updateChart() {
   });
 
   document.getElementById('startEffStats').innerHTML =
-    `<span style="margin-right:16px;"><span style="color:#38b2ac;font-weight:700;">&#9632; P50</span> ${p50_1}%</span>` +
-    `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${mean1}%</span>` +
-    `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85_1}%</span>`;
+    `<span style="margin-right:16px;"><span style="color:#38b2ac;font-weight:700;">&#9632; P50</span> ${p50_1}d</span>` +
+    `<span style="margin-right:16px;"><span style="color:#718096;font-weight:700;">&#9632; Mean</span> ${mean1}d</span>` +
+    `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85_1}d</span>`;
 
   // ── Flow Efficiency — 3-component interactive view ────────────────
 
