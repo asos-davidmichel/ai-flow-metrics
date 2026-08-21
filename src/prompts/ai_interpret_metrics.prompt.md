@@ -61,7 +61,7 @@ throughput — Is delivery stable enough for forecasting? What do zero-completio
 
 time_in_columns — Where does work accumulate most? Is it a capacity problem, a handoff delay, or demand exceeding capacity? What would addressing this bottleneck mean for cycle time?
 
-flow_efficiency — What does this efficiency level imply about productive vs. waiting time? What are the likely drivers? What would meaningful improvement require?
+flow_efficiency — What does the median efficiency reveal about productive vs. waiting time? For low-efficiency items (< 25%), which waiting columns are the dominant culprits — use flow_efficiency.low_efficiency_group.top_waiting_columns to name them and quantify their share of waiting time. What distinguishes high-efficiency items (≥ 50%) — do they avoid those same columns or spend significantly less time in them? Is the low-efficiency pattern concentrated in a specific work item type (use type_distribution)? What would eliminating the top waiting column bottleneck mean for overall cycle time?
 
 work_start_efficiency — What does the wait before development starts imply about prioritisation or queue management? What could the team do to start work sooner after committing to it?
 

@@ -308,32 +308,67 @@ def summarise_flow_efficiency(tic, cfg):
         for col in item.get("column_hours", {}):
             if col.endswith(" (Done)") and col not in active_cols and col not in waiting_cols:
                 waiting_cols.add(col)
-    effs = []
+
+    enriched = []
     for ti in tic_items:
-        ch = ti.get("column_hours", {})
+        ch        = ti.get("column_hours", {})
         active_h  = sum(ch.get(c, 0) for c in active_cols)
         waiting_h = sum(ch.get(c, 0) for c in waiting_cols)
         total_h   = active_h + waiting_h
         if total_h > 0:
-            effs.append(active_h / total_h * 100)
+            enriched.append({
+                "eff":          active_h / total_h * 100,
+                "type":         ti.get("type", "Unknown"),
+                "waiting_by_col": {c: ch[c] for c in waiting_cols if ch.get(c, 0) > 0},
+            })
 
-    if not effs:
+    if not enriched:
         return None
-    effs_sorted = sorted(effs)
-    mean_eff  = _round(sum(effs) / len(effs))
-    median_eff = _round(effs_sorted[len(effs_sorted) // 2])
-    p85_eff   = _round(effs_sorted[int(len(effs_sorted) * 0.85)])
+
+    effs_sorted = sorted(e["eff"] for e in enriched)
+    mean_eff    = _round(sum(effs_sorted) / len(effs_sorted))
+    median_eff  = _round(effs_sorted[len(effs_sorted) // 2])
+    p85_eff     = _round(effs_sorted[int(len(effs_sorted) * 0.85)])
+
+    LOW_THRESH  = 25
+    HIGH_THRESH = 50
+
+    def _group_summary(items, thresh):
+        if not items:
+            return {"threshold_pct": thresh, "count": 0}
+        col_totals = defaultdict(float)
+        type_dist  = defaultdict(int)
+        for item in items:
+            for col, hrs in item["waiting_by_col"].items():
+                col_totals[col] += hrs
+            type_dist[item["type"]] += 1
+        total_waiting = sum(col_totals.values())
+        top_cols = sorted(
+            [{"column": col,
+              "mean_hours": _round(total / len(items)),
+              "pct_of_waiting": _round(total / total_waiting * 100) if total_waiting else 0}
+             for col, total in col_totals.items()],
+            key=lambda x: -x["mean_hours"],
+        )[:3]
+        return {
+            "threshold_pct":      thresh,
+            "count":              len(items),
+            "top_waiting_columns": top_cols,
+            "type_distribution":  dict(sorted(type_dist.items(), key=lambda x: -x[1])),
+        }
 
     return {
-        "chart": "flow_efficiency",
-        "item_count": len(effs),
-        "active_columns": sorted(active_cols),
-        "waiting_columns": sorted(waiting_cols),
-        "mean_pct": mean_eff,
-        "median_pct": median_eff,
-        "p85_pct": p85_eff,
-        "items_below_20pct": sum(1 for e in effs if e < 20),
-        "items_above_40pct": sum(1 for e in effs if e >= 40),
+        "chart":             "flow_efficiency",
+        "item_count":        len(enriched),
+        "active_columns":    sorted(active_cols),
+        "waiting_columns":   sorted(waiting_cols),
+        "mean_pct":          mean_eff,
+        "median_pct":        median_eff,
+        "p85_pct":           p85_eff,
+        "items_below_20pct": sum(1 for e in effs_sorted if e < 20),
+        "items_above_40pct": sum(1 for e in effs_sorted if e >= 40),
+        "low_efficiency_group":  _group_summary([e for e in enriched if e["eff"] < LOW_THRESH],  LOW_THRESH),
+        "high_efficiency_group": _group_summary([e for e in enriched if e["eff"] >= HIGH_THRESH], HIGH_THRESH),
     }
 
 
