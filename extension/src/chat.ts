@@ -70,6 +70,23 @@ const TOOLS: vscode.LanguageModelChatTool[] = [
             required: ['file'],
         },
     },
+    {
+        name: 'update_insight',
+        description:
+            'Overwrite one chart insight in insights.json with a refined version and immediately re-render the dashboard. ' +
+            'Call this when the user is happy with a refined insight and wants to see it live in the dashboard. ' +
+            'Omit evidence or watch_out to leave those fields unchanged.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                chart: { type: 'string', description: 'Chart key matching the key in insights.json, e.g. "cycle_time", "work_start_efficiency"' },
+                insight: { type: 'string', description: 'The refined insight text' },
+                evidence: { type: 'array', items: { type: 'string' }, description: 'Evidence bullets — omit to keep existing' },
+                watch_out: { type: 'string', description: 'Watch out text — omit to keep existing' },
+            },
+            required: ['chart', 'insight'],
+        },
+    },
 ];
 
 function runPython(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
@@ -133,6 +150,7 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `- fetch_live_work_items: fetch fresh work items directly from ADO (use when cache may be stale)`,
         `- fetch_item_history: fetch detailed column/state history for a single item by ID from ADO`,
         `- update_board_config: save a modified board config to disk`,
+        `- update_insight: overwrite one chart's insight in insights.json and re-render the dashboard`,
         ``,
         `Strategy: first read the cached files that are most relevant to the question. If the cached data is insufficient, stale, or missing the detail needed, use fetch_live_work_items or fetch_item_history to query ADO directly. For questions about a specific item's journey, prefer fetch_item_history over loading the full history file.`,
         `Data honesty rule: never state any figures, item counts, tag values, or distributions without first loading the relevant data file or fetching live data in the current response. Do not speculate or recall values from earlier in the conversation — always re-check the source. If you are about to state a number or list, it must come from a tool call made in this response.`,
@@ -155,6 +173,14 @@ function buildSystemPrompt(board: Board, boardDir: string): string {
         `RULE: when the user answers yes to saving corrections, the correct response is a single save_config_corrections tool call. Any file exploration before that call is wrong.`,
         ``,
         `Metrics re-run hint: after any update_board_config call, check the available data files listed above. If any output/metrics/ files are present (meaning the pipeline has already run metrics for this board), tell the user the dashboard is now stale and suggest: "To recalculate, run: python aiflowmetrics.py metrics". If no output/metrics/ files are listed, the pipeline hasn't run yet — say nothing.`,
+        ``,
+        `Insight refinement workflow:`,
+        `When the user wants to discuss or refine a chart insight (e.g. "can we reword the cycle time insight"):`,
+        `1. Load output/data/insights.json to read the current text.`,
+        `2. Propose a revised version and discuss until the user is happy.`,
+        `3. Once the user approves, call update_insight — it saves to insights.json and re-renders the dashboard immediately.`,
+        `4. After confirming the update, say: "To save this preference for future runs, use @flowlearn — for example: @flowlearn When writing cycle time insights, focus on predictability over average speed."`,
+        `RULE: only call update_insight when the user has explicitly approved the final wording. Do not call it speculatively.`,
     ].join('\n');
 }
 
@@ -301,6 +327,32 @@ export function registerChatParticipant(
                             refresh?.();
                             vscode.commands.executeCommand('ai-flow-metrics.previewFile', configPath);
                             result = JSON.stringify({ success: true, offerCorrections: true });
+                        } catch (e) {
+                            result = JSON.stringify({ error: String(e) });
+                        }                        } else if (call.name === 'update_insight') {
+                        try {
+                            const { chart, insight, evidence, watch_out } = call.input as
+                                { chart: string; insight: string; evidence?: string[]; watch_out?: string };
+                            const insightsPath = path.join(boardDir, 'output', 'data', 'insights.json');
+                            if (!fs.existsSync(insightsPath)) {
+                                result = JSON.stringify({ error: 'insights.json not found — run the pipeline first.' });
+                            } else {
+                                const data = JSON.parse(fs.readFileSync(insightsPath, 'utf-8'));
+                                const entry = data.chart_insights?.[chart];
+                                if (!entry) {
+                                    result = JSON.stringify({ error: `Chart key "${chart}" not found in insights.json.` });
+                                } else {
+                                    entry.insight = insight;
+                                    if (evidence !== undefined) { entry.evidence = evidence; }
+                                    if (watch_out !== undefined) { entry.watch_out = watch_out; }
+                                    fs.writeFileSync(insightsPath, JSON.stringify(data, null, 2), 'utf-8');
+                                    const dashScript = path.join(context.extensionPath, 'resources', 'scripts', 'create_dashboard.py');
+                                    await runPython(dashScript, ['--force'], boardDir, env);
+                                    const dashPath = path.join(boardDir, 'output', 'dashboard.html');
+                                    vscode.commands.executeCommand('ai-flow-metrics.previewFile', dashPath);
+                                    result = JSON.stringify({ success: true, chart });
+                                }
+                            }
                         } catch (e) {
                             result = JSON.stringify({ error: String(e) });
                         }                        } else if (call.name === 'read_output_file') {
