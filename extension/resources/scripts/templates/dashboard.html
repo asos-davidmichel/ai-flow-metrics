@@ -6287,7 +6287,15 @@ const _vscApi = typeof acquireVsCodeApi !== 'undefined' ? acquireVsCodeApi() : n
     // Short preview: first sentence of the insight
     const preview = (insight.insight || '').split(/(?<=\.\s)/)[0].trim();
     const copyText = [insight.insight, (insight.evidence||[]).length ? 'Evidence:\n'+(insight.evidence||[]).map(e=>'\u2022 '+e).join('\n') : '', insight.watch_out ? 'Watch out: '+insight.watch_out : ''].filter(Boolean).join('\n\n');
-    const askText = (chartLabel ? chartLabel + ' chart:\n\n' : '') + copyText;
+    const askParts = ['@flowmetrics Here is the ' + (chartLabel || 'chart') + ' insight:\n\n<insight>\n' + insight.insight + '\n</insight>'];
+    if (insight.evidence && insight.evidence.length) {
+      askParts.push('<evidence>\n' + insight.evidence.map(e => '\u2022 ' + e).join('\n') + '\n</evidence>');
+    }
+    if (insight.watch_out) {
+      askParts.push('<watch_out>\n' + insight.watch_out + '\n</watch_out>');
+    }
+    askParts.push('Question: I\u2019d like to ');
+    const askText = askParts.join('\n\n');
     box.innerHTML = '<summary class="ib-summary">\uD83D\uDCA1 <strong>Insight</strong>'
       + '<span class="ib-preview">' + escapeHtml(preview) + '</span>'
       + '<span style="flex:1;min-width:0"></span>' + makeCopyBtn(copyText) + makeAskAIBtn(askText)
@@ -6398,9 +6406,14 @@ const _vscApi = typeof acquireVsCodeApi !== 'undefined' ? acquireVsCodeApi() : n
   }
 
   const execCopyText = [exec.headline, exec.narrative, exec.primary_diagnosis ? 'Diagnosis: '+exec.primary_diagnosis : '', exec.confidence ? 'Confidence: '+exec.confidence : '', exec.main_caveat ? 'Caveat: '+exec.main_caveat : ''].filter(Boolean).join('\n\n');
+  const execAskParts = ['@flowmetrics Here is the Executive Summary insight:\n\n<insight>\n' + (exec.headline || '') + '\n\n' + (exec.narrative || '') + '\n</insight>'];
+  if (exec.primary_diagnosis) { execAskParts.push('<diagnosis>\n' + exec.primary_diagnosis + '\n</diagnosis>'); }
+  if (exec.main_caveat)       { execAskParts.push('<caveat>\n' + exec.main_caveat + '\n</caveat>'); }
+  execAskParts.push('Question: I\u2019d like to ');
+  const execAskText = execAskParts.join('\n\n');
   const execHtml =
     '<div class="insight-panel" style="margin-bottom:20px;">'
-    + '<div class="insight-panel-title">\uD83D\uDCCB Executive Summary<span style="flex:1"></span>' + makeCopyBtn(execCopyText) + makeAskAIBtn(execCopyText) + '</div>'
+    + '<div class="insight-panel-title">\uD83D\uDCCB Executive Summary<span style="flex:1"></span>' + makeCopyBtn(execCopyText) + makeAskAIBtn(execAskText) + '</div>'
     + '<div class="exec-headline">' + escapeHtml(exec.headline || '') + '</div>'
     + '<div class="exec-narrative">' + escapeHtml(exec.narrative || '') + '</div>'
     + '<div class="exec-meta">'
