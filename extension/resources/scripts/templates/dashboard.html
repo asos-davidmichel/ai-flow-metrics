@@ -5342,12 +5342,9 @@ function updateChart() {
       `<span><span style="color:#9f7aea;font-weight:700;">&#9632; P85</span> ${p85}${unit}</span>`;
   }
 
-  document.getElementById('waitToggleBtn')?.addEventListener('click', function() {
-    waitChartMode = waitChartMode === 'days' ? 'eff' : 'days';
-    const isDays = waitChartMode === 'days';
-    this.setAttribute('aria-checked', String(!isDays));
-    document.getElementById('waitToggleDaysLbl').classList.toggle('active', isDays);
-    document.getElementById('waitToggleEffLbl').classList.toggle('active', !isDays);
+  feWireSwitch('waitToggleBtn', 'waitToggleDaysLbl', 'waitToggleEffLbl', on => {
+    waitChartMode = on ? 'eff' : 'days';
+    const isDays = !on;
     const activeBuckets = isDays ? buckets : effBuckets;
     waitChart.data.labels = activeBuckets.map(b => b.label);
     waitChart.data.datasets[0].data = activeBuckets.map(b => b.items.length);
