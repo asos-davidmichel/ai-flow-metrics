@@ -753,7 +753,7 @@ function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): vo
 
     const panel = vscode.window.createWebviewPanel(
         'aiFlowMetrics.dashboard', 'Dashboard', vscode.ViewColumn.One,
-        { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [context.extensionUri] },
+        { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true, localResourceRoots: [context.extensionUri] },
     );
     const html = buildHtml(panel.webview);
     if (html) { panel.webview.html = html; }
@@ -783,7 +783,7 @@ export function openPreview(filePath: string, context: vscode.ExtensionContext):
     catch {
         // If we have an existing panel, leave it as-is rather than showing an error on a partial write
         if (!_panels.has(filePath)) {
-            const p = vscode.window.createWebviewPanel('aiFlowMetrics.preview', filename, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+            const p = vscode.window.createWebviewPanel('aiFlowMetrics.preview', filename, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true });
             p.webview.html = baseHtml(nonce, filename, `<p>Could not read file.</p>`);
             _panels.set(filePath, p);
             p.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
@@ -802,7 +802,7 @@ export function openPreview(filePath: string, context: vscode.ExtensionContext):
         'aiFlowMetrics.preview',
         filename,
         vscode.ViewColumn.One,
-        { enableScripts: true, retainContextWhenHidden: true },
+        { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true },
     );
     panel.webview.html = buildHtml(filePath, filename, data, nonce);
     _panels.set(filePath, panel);
