@@ -132,6 +132,21 @@ The participant reads your cached output files and can fetch live work item data
 
 ---
 
+## @flowlearn chat
+
+Type `@flowlearn` to teach the AI how to interpret your team's metrics. Learnings are saved per board and injected automatically the next time **Step 6 — Interpret Metrics** runs.
+
+Examples of things to record:
+
+- *"Don't flag March throughput dips — those are always hackathon weeks"*
+- *"Our team calls cycle time 'delivery time' — use that term in insights"*
+- *"High WIP in the Review column is normal for us, not a blocker"*
+- *"Spike items always have long cycle times but are not rework — don't flag them as outliers"*
+
+Learnings are stored in `output/data/interpretation_learnings.json` within the board folder. You can edit or delete entries there at any time — the file is plain JSON. Re-run Step 6 after editing to regenerate insights with the updated context.
+
+---
+
 ## Publishing to GitHub
 
 Connect a board to a GitHub repository to publish the dashboard as a GitHub Pages site, with automated updates powered by **GitHub Actions**.

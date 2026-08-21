@@ -212,6 +212,13 @@
         "fullName": "Flow Metrics",
         "description": "Ask questions about your ADO board — work items, cycle time, blockers, and more",
         "isSticky": false
+      },
+      {
+        "id": "ai-flow-metrics.learn",
+        "name": "flowlearn",
+        "fullName": "Flow Learn",
+        "description": "Teach your board — record preferences for how the AI should interpret your metrics",
+        "isSticky": false
       }
     ],
     "submenus": [],
@@ -380,7 +387,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "npm run copy-scripts && npm run compile",
-    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts/prompts',{recursive:true});require('fs').mkdirSync('resources/scripts/templates',{recursive:true});['fetch_data.py','util_ado.py','check_data.py','ai_configure_board.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py','ai_interpret_metrics.py','query_ado.py','record_corrections.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));require('fs').copyFileSync(require('path').join('..','src','prompts','ai_configure_board.prompt.md'),'resources/scripts/prompts/ai_configure_board.prompt.md');require('fs').copyFileSync(require('path').join('..','src','prompts','ai_interpret_metrics.prompt.md'),'resources/scripts/prompts/ai_interpret_metrics.prompt.md');require('fs').copyFileSync(require('path').join('..','src','templates','dashboard.html'),'resources/scripts/templates/dashboard.html');\"",
+    "copy-scripts": "node -e \"require('fs').mkdirSync('resources/scripts/prompts',{recursive:true});require('fs').mkdirSync('resources/scripts/templates',{recursive:true});['fetch_data.py','util_ado.py','check_data.py','ai_configure_board.py','calc_columns.py','calc_cycle_time.py','calc_lead_time.py','create_dashboard.py','ai_interpret_metrics.py','query_ado.py','record_corrections.py','record_learnings.py'].forEach(f=>require('fs').copyFileSync(require('path').join('..','src',f),'resources/scripts/'+f));require('fs').copyFileSync(require('path').join('..','src','prompts','ai_configure_board.prompt.md'),'resources/scripts/prompts/ai_configure_board.prompt.md');require('fs').copyFileSync(require('path').join('..','src','prompts','ai_interpret_metrics.prompt.md'),'resources/scripts/prompts/ai_interpret_metrics.prompt.md');require('fs').copyFileSync(require('path').join('..','src','templates','dashboard.html'),'resources/scripts/templates/dashboard.html');\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",

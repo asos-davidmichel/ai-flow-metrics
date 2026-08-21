@@ -1524,6 +1524,29 @@ def build_prompt_text(summary):
     import re
     template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
     text = template.replace("{{SUMMARY_JSON}}", json.dumps(summary, indent=2))
+
+    # Inject team learnings / preferences if the file exists
+    learnings_path = Path("output/data/interpretation_learnings.json")
+    if learnings_path.exists():
+        try:
+            learnings = json.loads(learnings_path.read_text(encoding="utf-8"))
+            if isinstance(learnings, list) and learnings:
+                bullets = "\n".join(
+                    f"- {entry['text']}"
+                    for entry in learnings
+                    if isinstance(entry, dict) and entry.get("text")
+                )
+                if bullets:
+                    section = (
+                        "\n\n## Team context and preferences\n\n"
+                        "The team has recorded the following preferences for how insights should be framed. "
+                        "Apply these consistently throughout your analysis.\n\n"
+                        + bullets
+                    )
+                    text = text + section
+        except Exception:
+            pass
+
     # Remove control characters that are illegal in JSON strings (keep \t \n \r)
     return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
 

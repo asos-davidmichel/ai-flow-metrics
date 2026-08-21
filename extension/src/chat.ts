@@ -363,3 +363,57 @@ export function registerChatParticipant(
     participant.iconPath = new vscode.ThemeIcon('graph');
     context.subscriptions.push(participant);
 }
+
+export function registerLearnParticipant(
+    context: vscode.ExtensionContext,
+    getBoards: () => Board[],
+): void {
+    const participant = vscode.chat.createChatParticipant(
+        'ai-flow-metrics.learn',
+        async (request, _ctx, stream, _token) => {
+            if (!request.prompt.trim()) {
+                stream.markdown(
+                    'Tell me what to remember about your team or board — for example:\n\n' +
+                    '- *"Don\'t flag March throughput dips — those are always hackathon weeks"*\n' +
+                    '- *"Our team calls cycle time \'delivery time\' — use that term in insights"*\n' +
+                    '- *"High WIP in the Review column is normal for us and not a blocker"*\n\n' +
+                    'Learnings are saved per board and injected into the AI context the next time Step 6 (Interpret Metrics) runs.'
+                );
+                return {};
+            }
+
+            const resolved = await resolveBoard(
+                context.globalState, context.globalStorageUri.fsPath, getBoards, stream
+            );
+            if (!resolved) { return {}; }
+            const { board, boardDir } = resolved;
+
+            const learnScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_learnings.py');
+            const logPath = path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
+            const env = { ...process.env, PYTHONUTF8: '1' };
+
+            stream.progress('Saving learning…');
+            try {
+                const raw = await runPython(
+                    learnScript,
+                    ['--text', request.prompt.trim(), '--board', board.name, '--log', logPath],
+                    boardDir,
+                    env,
+                );
+                const result = JSON.parse(raw.trim());
+                stream.markdown(
+                    `**Saved** for **${board.name}** (${result.total} learning${result.total === 1 ? '' : 's'} total):\n\n` +
+                    `> ${request.prompt.trim()}\n\n` +
+                    `This will be included in the AI's context the next time you run **Step 6 — Interpret Metrics**. ` +
+                    `To review or edit all saved learnings, open \`output/data/interpretation_learnings.json\` in the board folder.`
+                );
+            } catch (e) {
+                stream.markdown(`Failed to save learning: ${e instanceof Error ? e.message : String(e)}`);
+            }
+
+            return {};
+        }
+    );
+    participant.iconPath = new vscode.ThemeIcon('lightbulb');
+    context.subscriptions.push(participant);
+}
