@@ -449,6 +449,65 @@ export function registerLearnParticipant(
             if (!resolved) { return {}; }
             const { board, boardDir } = resolved;
 
+            const learnScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_learnings.py');
+            const env = { ...process.env, PYTHONUTF8: '1' };
+            const globalLogPath = path.join(context.globalStorageUri.fsPath, 'global_learnings.json');
+            const boardLogPath = path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
+
+            const intent = request.prompt.trim().toLowerCase();
+            const isView = /^(view|list|show|display)/.test(intent);
+            const isRemove = /^(remove|delete)/.test(intent);
+
+            if (isView) {
+                const loadList = async (logPath: string, label: string) => {
+                    try {
+                        const raw = await runPython(learnScript, ['--list', '--log', logPath], boardDir, env);
+                        const items: Array<{ text: string; date?: string }> = JSON.parse(raw.trim());
+                        if (!items.length) { return `**${label}:** *(none)*\n\n`; }
+                        const lines = items.map((e, i) => `${i + 1}. ${e.text}${e.date ? ` *(${e.date})*` : ''}`).join('\n');
+                        return `**${label}** (${items.length}):\n\n${lines}\n\n`;
+                    } catch { return `**${label}:** *(error reading file)*\n\n`; }
+                };
+                stream.progress('Loading learnings…');
+                const globalSection = await loadList(globalLogPath, 'Global learnings (all boards)');
+                const boardSection = await loadList(boardLogPath, `${board.name} learnings`);
+                stream.markdown(globalSection + boardSection);
+                return {};
+            }
+
+            if (isRemove) {
+                // Ask which scope to remove from
+                const scopePick = await vscode.window.showQuickPick(
+                    [
+                        { label: '$(globe) Global learnings (all boards)', value: 'global', logPath: globalLogPath },
+                        { label: `$(organization) ${board.name} learnings`, value: 'board', logPath: boardLogPath },
+                    ],
+                    { title: 'Remove from which list?', ignoreFocusOut: true }
+                ) as { label: string; value: string; logPath: string } | undefined;
+                if (!scopePick) { return {}; }
+
+                const raw = await runPython(learnScript, ['--list', '--log', scopePick.logPath], boardDir, env);
+                const items: Array<{ text: string; date?: string }> = JSON.parse(raw.trim());
+                if (!items.length) {
+                    stream.markdown('No learnings saved in that list.');
+                    return {};
+                }
+                const entry = await vscode.window.showQuickPick(
+                    items.map((e, i) => ({ label: `${i + 1}. ${e.text}`, description: e.date, index: i })),
+                    { title: 'Which learning to remove?', ignoreFocusOut: true }
+                ) as { label: string; index: number } | undefined;
+                if (!entry) { return {}; }
+
+                const result = JSON.parse((await runPython(
+                    learnScript, ['--remove', String(entry.index), '--log', scopePick.logPath], boardDir, env
+                )).trim());
+                stream.markdown(
+                    `**Removed** (${result.total} remaining):\n\n` +
+                    `~~${result.removed.text}~~`
+                );
+                return {};
+            }
+
             // Use the LM to extract a reusable principle from the user's specific example
             stream.progress('Extracting learning…');
             let learningText = request.prompt.trim();
@@ -479,9 +538,6 @@ export function registerLearnParticipant(
                 `Would you like me to save this? Choose the scope below — or press Escape to cancel.`
             );
 
-            const learnScript = path.join(context.extensionPath, 'resources', 'scripts', 'record_learnings.py');
-            const env = { ...process.env, PYTHONUTF8: '1' };
-
             const scopePick = await vscode.window.showQuickPick(
                 [
                     { label: '$(check) Save for all boards (global)', description: 'Applies to every board\'s next Step 6 run', value: 'global' },
@@ -492,9 +548,7 @@ export function registerLearnParticipant(
             if (!scopePick) { return {}; }
             const isGlobal = (scopePick as { value: string }).value === 'global';
 
-            const logPath = isGlobal
-                ? path.join(context.globalStorageUri.fsPath, 'global_learnings.json')
-                : path.join(boardDir, 'output', 'data', 'interpretation_learnings.json');
+            const logPath = isGlobal ? globalLogPath : boardLogPath;
             const scopeLabel = isGlobal ? 'all boards' : board.name;
 
             stream.progress('Saving learning…');
