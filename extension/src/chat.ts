@@ -506,8 +506,8 @@ export function registerLearnParticipant(
                     `**Saved** for **${scopeLabel}** (${result.total} learning${result.total === 1 ? '' : 's'} total):\n\n` +
                     `> ${learningText}\n\n` +
                     (learningText !== request.prompt.trim() ? `*Extracted from: "${request.prompt.trim()}"*\n\n` : '') +
-                    `This will be included in the AI's context the next time you run **Step 6 — Interpret Metrics**. ` +
-                    `To review or edit all saved learnings, open \`${isGlobal ? 'global_learnings.json' : 'output/data/interpretation_learnings.json'}\` in the ${isGlobal ? 'extension storage' : 'board'} folder.`
+                    `This will be included in the AI's context the next time you run **Step 6 — Interpret Metrics**.\n\n` +
+                    `To review or edit all saved learnings: \`${logPath}\``
                 );
             } catch (e) {
                 stream.markdown(`Failed to save learning: ${e instanceof Error ? e.message : String(e)}`);
