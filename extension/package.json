@@ -149,7 +149,8 @@
       {
         "command": "ai-flow-metrics.autoplayWithReview",
         "title": "Run pipeline (pauses after board config for review)",
-        "icon": "$(debug-start)"
+        "icon": "$(debug-start)",
+        "color": { "id": "debugIcon.startForeground" }
       },
       {
         "command": "ai-flow-metrics.continueAutoplay",
