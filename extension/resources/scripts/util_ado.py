@@ -13,6 +13,11 @@ BOARD_URL_PATTERN = re.compile(
     r"https://dev\.azure\.com/(?P<org>[^/]+)/(?P<project>[^/]+)"
     r"/_boards/board/t/(?P<team>[^/]+?)(?:/(?P<board_hint>[^/]+))?/?$"
 )
+# Older visualstudio.com format: https://<org>.visualstudio.com/<project>/_boards/...
+_VISUALSTUDIO_URL_PATTERN = re.compile(
+    r"https://(?P<org>[^.]+)\.visualstudio\.com/(?P<project>[^/]+)"
+    r"/_boards/board/t/(?P<team>[^/]+?)(?:/(?P<board_hint>[^/]+))?/?$"
+)
 
 API_VERSION = "7.1"
 
@@ -21,13 +26,28 @@ class ADOError(Exception):
     """Raised when the ADO API returns an error."""
 
 
+def _normalize_url(url):
+    m = _VISUALSTUDIO_URL_PATTERN.match(url)
+    if not m:
+        return url
+    normalized = (
+        f"https://dev.azure.com/{m.group('org')}/{m.group('project')}"
+        f"/_boards/board/t/{m.group('team')}"
+    )
+    if m.group("board_hint"):
+        normalized += f"/{m.group('board_hint')}"
+    return normalized
+
+
 def parse_board_url(url):
     """Parse an ADO board URL into (org, project, team, board_hint)."""
+    url = _normalize_url(url)
     match = BOARD_URL_PATTERN.match(url)
     if not match:
         raise ValueError(
             "URL does not match expected format.\n"
-            "Expected: https://dev.azure.com/<org>/<project>/_boards/board/t/<team>/[<board>]"
+            "Expected: https://dev.azure.com/<org>/<project>/_boards/board/t/<team>/[<board>]\n"
+            "         https://<org>.visualstudio.com/<project>/_boards/board/t/<team>/[<board>]"
         )
     return (
         match.group("org"),

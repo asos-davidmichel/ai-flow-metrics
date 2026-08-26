@@ -143,7 +143,7 @@ function handleScriptError(output: string, fallbackMsg: string): void {
     }
 }
 
-// Resolved on activate — 'python3' on systems where 'python' is not on PATH
+// Resolved on activate — whichever of 'python' / 'python3' returns a Python 3 version string
 let pythonCmd = 'python';
 
 function saveBoardState(state: vscode.Memento, storageRoot: string, boardId: string): void {
@@ -867,9 +867,23 @@ class PublishProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
 export function activate(context: vscode.ExtensionContext) {
     // Detect python command and install deps silently
-    cp.exec('python --version', err => {
-        if (err) { pythonCmd = 'python3'; }
-        cp.exec(`${pythonCmd} -m pip install requests jinja2 -q`, () => {});
+    const isPy3 = (out: string) => /python 3/i.test(out);
+    cp.exec('python --version', (_err, stdout, stderr) => {
+        if (isPy3(stdout + stderr)) {
+            cp.exec('python -m pip install requests jinja2 -q', () => {});
+        } else {
+            cp.exec('python3 --version', (err3, out3, err3s) => {
+                if (!err3 && isPy3(out3 + err3s)) {
+                    pythonCmd = 'python3';
+                    cp.exec('python3 -m pip install requests jinja2 -q', () => {});
+                } else {
+                    vscode.window.showWarningMessage(
+                        'Python 3 was not found. Please install Python 3 and ensure it is on your PATH.',
+                        'Download Python'
+                    ).then(c => { if (c) { vscode.env.openExternal(vscode.Uri.parse('https://www.python.org/downloads/')); } });
+                }
+            });
+        }
     });
 
     const boardsProvider   = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
@@ -976,7 +990,7 @@ export function activate(context: vscode.ExtensionContext) {
         _rebuildTimers.set(boardDir, setTimeout(() => {
             _rebuildTimers.delete(boardDir);
             const dashScript = path.join(context.extensionPath, 'resources', 'scripts', 'create_dashboard.py');
-            cp.execFile('python', [dashScript, '--force'], { cwd: boardDir }, () => { /* html watcher picks up the refresh */ });
+            cp.execFile(pythonCmd, [dashScript, '--force'], { cwd: boardDir }, () => { /* html watcher picks up the refresh */ });
         }, 500));
     }
 

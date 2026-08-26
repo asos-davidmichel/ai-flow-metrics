@@ -753,7 +753,7 @@ function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): vo
 
     const panel = vscode.window.createWebviewPanel(
         'aiFlowMetrics.dashboard', 'Dashboard', vscode.ViewColumn.One,
-        { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true, localResourceRoots: [context.extensionUri] },
+        { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true, localResourceRoots: [context.extensionUri, context.globalStorageUri] },
     );
     const html = buildHtml(panel.webview);
     if (html) { panel.webview.html = html; }
