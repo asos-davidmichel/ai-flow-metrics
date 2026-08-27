@@ -132,8 +132,11 @@ tr:hover td { background: var(--vscode-list-hoverBackground); }
 
 // ── Base wrapper ────────────────────────────────────────────────────────────
 
-function baseHtml(nonce: string, title: string, body: string, extraJs = '', imgSrc = ''): string {
-    const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'${imgSrc ? `; img-src ${imgSrc}` : ''};`;
+function baseHtml(nonce: string, title: string, body: string, extraJs = '', imgSrc = '', cspSource = ''): string {
+    const src = cspSource ? ` ${cspSource}` : '';
+    const csp = `default-src 'none'; style-src 'nonce-${nonce}'${src}; script-src 'nonce-${nonce}'${src}${imgSrc ? `; img-src ${imgSrc}${src}` : ''};`;
+    // Signal readiness so openPreview can detect service worker failures (vscode#125993)
+    const readySignal = `<script nonce="${nonce}">try{acquireVsCodeApi().postMessage({type:'__ready'});}catch(e){}</script>`;
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -146,13 +149,14 @@ function baseHtml(nonce: string, title: string, body: string, extraJs = '', imgS
 <body>
 ${body}
 ${extraJs ? `<script nonce="${nonce}">${extraJs}</script>` : ''}
+${readySignal}
 </body>
 </html>`;
 }
 
 // ── Renderers ───────────────────────────────────────────────────────────────
 
-function renderContext(data: any, nonce: string): string {
+function renderContext(data: any, nonce: string, cspSource = ''): string {
     const cols = (data.columns ?? []).map((c: any) => {
         const cls = COLUMN_TYPE_CLASS[c.column_type] ?? 'badge-incoming';
         const wip = c.wip_limit > 0 ? String(c.wip_limit) : '—';
@@ -184,10 +188,10 @@ function renderContext(data: any, nonce: string): string {
     </table>
 </section>`;
 
-    return baseHtml(nonce, 'Board Context', body);
+    return baseHtml(nonce, 'Board Context', body, '', '', cspSource);
 }
 
-function renderConfig(data: any, nonce: string): string {
+function renderConfig(data: any, nonce: string, cspSource = ''): string {
     const clockRow = (label: string, cfg: any) => {
         if (!cfg) { return ''; }
         return `<tr>
@@ -264,10 +268,10 @@ ${swimlaneMappingRows ? `<section>
     <tbody>${swimlaneMappingRows}</tbody></table>
 </section>` : ''}`;
 
-    return baseHtml(nonce, 'Board Configuration', body);
+    return baseHtml(nonce, 'Board Configuration', body, '', '', cspSource);
 }
 
-function renderDataQuality(data: any, nonce: string): string {
+function renderDataQuality(data: any, nonce: string, cspSource = ''): string {
     const checks = data.checks ?? {};
     const checkHtml = Object.entries(checks).map(([key, val]: [string, any]) => {
         const count: number = val.count ?? 0;
@@ -302,10 +306,10 @@ function renderDataQuality(data: any, nonce: string): string {
     <div class="checks">${checkHtml}</div>
 </section>`;
 
-    return baseHtml(nonce, 'Data Quality Report', body);
+    return baseHtml(nonce, 'Data Quality Report', body, '', '', cspSource);
 }
 
-function renderMetricSummary(data: any, nonce: string): string {
+function renderMetricSummary(data: any, nonce: string, cspSource = ''): string {
     const title = (data.metric ?? 'metric').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
     const w = data.window ?? {};
     const o = data.overall ?? {};
@@ -361,10 +365,10 @@ ${items.length ? `<section>
     </table>
 </section>` : ''}`;
 
-    return baseHtml(nonce, title, body);
+    return baseHtml(nonce, title, body, '', '', cspSource);
 }
 
-function renderTimeInColumns(data: any, nonce: string): string {
+function renderTimeInColumns(data: any, nonce: string, cspSource = ''): string {
     const cols: any[] = data.columns ?? [];
     const warnings: string[] = data.warnings ?? [];
     const w = data.window ?? {};
@@ -406,10 +410,10 @@ ${warnings.length ? `<section>
     </details>
 </section>` : ''}`;
 
-    return baseHtml(nonce, 'Time in Columns', body);
+    return baseHtml(nonce, 'Time in Columns', body, '', '', cspSource);
 }
 
-function renderInsights(data: any, nonce: string): string {
+function renderInsights(data: any, nonce: string, cspSource = ''): string {
     const charts = data.chart_insights ?? {};
     const CHART_LABELS: Record<string, string> = {
         cycle_time: 'Cycle Time',
@@ -436,10 +440,10 @@ function renderInsights(data: any, nonce: string): string {
 <div class="meta"><span>Generated from dashboard metrics</span></div>
 ${cards}`;
 
-    return baseHtml(nonce, 'AI Insights', body);
+    return baseHtml(nonce, 'AI Insights', body, '', '', cspSource);
 }
 
-function renderWorkItems(data: any[], filePath: string, nonce: string): string {
+function renderWorkItems(data: any[], filePath: string, nonce: string, cspSource = ''): string {
     // Load type styles from context.json (same dir), which is written in Step 1
     type TypeStyle = { color: string; icon_url: string };
     let typeStyles: Record<string, TypeStyle> = {};
@@ -485,7 +489,7 @@ document.getElementById('search').addEventListener('input', filter);`;
     <tbody id="items-tbody">${rows}</tbody>
 </table>`;
 
-    return baseHtml(nonce, 'Work Items', body, filterJs, 'https://tfsprodweu3.visualstudio.com');
+    return baseHtml(nonce, 'Work Items', body, filterJs, 'https://tfsprodweu3.visualstudio.com', cspSource);
 }
 
 function loadSiblingTitlesAndBase(filePath: string): [Record<number, string>, string] {
@@ -503,12 +507,12 @@ function loadSiblingTitlesAndBase(filePath: string): [Record<number, string>, st
     return [titles, adoBase];
 }
 
-function renderExcludedItems(data: any[], filePath: string, nonce: string): string {
+function renderExcludedItems(data: any[], filePath: string, nonce: string, cspSource = ''): string {
     const [titles, adoBase] = loadSiblingTitlesAndBase(filePath);
 
     if (data.length === 0) {
         const body = `<h1>Excluded Items</h1><p style="color:#69db7c;margin-top:12px">✓ No items excluded from metrics.</p>`;
-        return baseHtml(nonce, 'Excluded Items', body);
+        return baseHtml(nonce, 'Excluded Items', body, '', '', cspSource);
     }
 
     const rows = data.map((item: any) => {
@@ -531,10 +535,10 @@ function renderExcludedItems(data: any[], filePath: string, nonce: string): stri
     <tbody>${rows}</tbody>
 </table>`;
 
-    return baseHtml(nonce, 'Excluded Items', body);
+    return baseHtml(nonce, 'Excluded Items', body, '', '', cspSource);
 }
 
-function renderRework(data: any[], filePath: string, nonce: string): string {
+function renderRework(data: any[], filePath: string, nonce: string, cspSource = ''): string {
     const [titles, adoBase] = loadSiblingTitlesAndBase(filePath);
 
     const withRework = data.filter((i: any) => {
@@ -594,10 +598,10 @@ applyFilters();`;
     <tbody>${rows}</tbody>
 </table>`;
 
-    return baseHtml(nonce, 'Work Item Rework', body, js);
+    return baseHtml(nonce, 'Work Item Rework', body, js, '', cspSource);
 }
 
-function renderHistory(data: any[], filePath: string, nonce: string): string {
+function renderHistory(data: any[], filePath: string, nonce: string, cspSource = ''): string {
     const [titles, adoBase] = loadSiblingTitlesAndBase(filePath);
 
     const now = Date.now();
@@ -685,10 +689,10 @@ document.querySelector('tbody').addEventListener('click', e => {
     <tbody>${rows}</tbody>
 </table>`;
 
-    return baseHtml(nonce, 'Work Item History', body, js);
+    return baseHtml(nonce, 'Work Item History', body, js, '', cspSource);
 }
 
-function renderGeneric(data: any, filename: string, nonce: string): string {
+function renderGeneric(data: any, filename: string, nonce: string, cspSource = ''): string {
     const json = JSON.stringify(data, null, 2);
     const highlighted = json
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -709,43 +713,44 @@ pre { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em
 .json-null { color: #569cd6; }`;
 
     const body = `<h1>${esc(filename)}</h1><style nonce="${nonce}">${css}</style><pre>${highlighted}</pre>`;
-    return baseHtml(nonce, filename, body);
+    return baseHtml(nonce, filename, body, '', '', cspSource);
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
 const _panels = new Map<string, vscode.WebviewPanel>();
 
-// Force dark mode by switching the dark-mode-style element's media attribute to "all"
-function forceDarkCss(html: string): string {
-    return html.replace(
-        'id="dark-mode-style" media="(prefers-color-scheme: dark)"',
-        'id="dark-mode-style" media="all"'
-    );
+// Retries webview HTML assignment if the VS Code service worker failed to register (vscode#125993)
+function withSwRetry(panel: vscode.WebviewPanel, html: string, onReady: (cancel: () => void) => void): void {
+    panel.webview.html = html;
+    let done = false;
+    const cancel = () => { done = true; };
+    onReady(cancel);
+    const retry = (attempt: number) => {
+        if (done || attempt > 3) { return; }
+        setTimeout(() => { if (!done) { panel.webview.html = html; retry(attempt + 1); } }, 3000);
+    };
+    retry(1);
 }
 
 function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): void {
-    const chartJsPath = vscode.Uri.joinPath(context.extensionUri, 'resources', 'chart.umd.min.js');
+    const chartJsFsPath = vscode.Uri.joinPath(context.extensionUri, 'resources', 'chart.umd.min.js').fsPath;
+    const chartJsInline = `<script>${fs.readFileSync(chartJsFsPath, 'utf-8')}</script>`;
 
-    const buildHtml = (webview: vscode.Webview): string | null => {
+    const buildDashHtml = (webview: vscode.Webview): string | null => {
         try {
             const raw = fs.readFileSync(filePath, 'utf-8');
-            const chartJsUri = webview.asWebviewUri(chartJsPath);
-            let html = raw.replace('https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js', chartJsUri.toString());
-
-            const isDark = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ||
-                           vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrast;
-            if (isDark) {
-                html = forceDarkCss(html);
-            }
-
+            // Explicit CSP is required so VS Code can inject its own initialisation scripts
+            const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; img-src * data: blob:; font-src *;">`;
+            let html = raw.replace('<head>', `<head>\n  ${cspMeta}`);
+            html = html.replace(/\s*<script\s+src="https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js[^"]*"><\/script>/, chartJsInline);
             return html;
         } catch { return null; }
     };
 
     const existing = _panels.get(filePath);
     if (existing) {
-        const html = buildHtml(existing.webview);
+        const html = buildDashHtml(existing.webview);
         if (html) { existing.webview.html = html; }
         existing.reveal(undefined, true);
         return;
@@ -755,11 +760,22 @@ function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): vo
         'aiFlowMetrics.dashboard', 'Dashboard', vscode.ViewColumn.One,
         { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true, localResourceRoots: [context.extensionUri, context.globalStorageUri] },
     );
-    const html = buildHtml(panel.webview);
-    if (html) { panel.webview.html = html; }
+    // Inject ready signal so withSwRetry can detect service worker failures
+    const buildDashHtmlWithReady = (webview: vscode.Webview): string | null => {
+        const h = buildDashHtml(webview);
+        return h ? h.replace('</body>', '<script>try{acquireVsCodeApi().postMessage({type:\'__ready\'});}catch(e){}</script></body>') : null;
+    };
+    const html = buildDashHtmlWithReady(panel.webview);
+    let cancelRetry: (() => void) | undefined;
+    if (html) {
+        withSwRetry(panel, html, cancel => { cancelRetry = cancel; });
+        panel.onDidDispose(() => { cancelRetry?.(); _panels.delete(filePath); }, null, context.subscriptions);
+    } else {
+        panel.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
+    }
     _panels.set(filePath, panel);
-    panel.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
     panel.webview.onDidReceiveMessage(msg => {
+        if (msg.type === '__ready') { cancelRetry?.(); return; }
         if (msg.type === 'askAI') {
             vscode.commands.executeCommand('workbench.action.chat.open', {
                 query: msg.context,
@@ -784,7 +800,7 @@ export function openPreview(filePath: string, context: vscode.ExtensionContext):
         // If we have an existing panel, leave it as-is rather than showing an error on a partial write
         if (!_panels.has(filePath)) {
             const p = vscode.window.createWebviewPanel('aiFlowMetrics.preview', filename, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true });
-            p.webview.html = baseHtml(nonce, filename, `<p>Could not read file.</p>`);
+            p.webview.html = baseHtml(nonce, filename, `<p>Could not read file.</p>`, '', '', p.webview.cspSource);
             _panels.set(filePath, p);
             p.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
         }
@@ -793,7 +809,7 @@ export function openPreview(filePath: string, context: vscode.ExtensionContext):
 
     const existing = _panels.get(filePath);
     if (existing) {
-        existing.webview.html = buildHtml(filePath, filename, data, nonce);
+        existing.webview.html = buildHtml(filePath, filename, data, nonce, existing.webview.cspSource);
         existing.reveal(undefined, true); // reveal without stealing focus
         return;
     }
@@ -804,24 +820,27 @@ export function openPreview(filePath: string, context: vscode.ExtensionContext):
         vscode.ViewColumn.One,
         { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true },
     );
-    panel.webview.html = buildHtml(filePath, filename, data, nonce);
+    let cancelRetry: (() => void) | undefined;
+    const html = buildHtml(filePath, filename, data, nonce, panel.webview.cspSource);
+    withSwRetry(panel, html, cancel => { cancelRetry = cancel; });
     _panels.set(filePath, panel);
-    panel.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
+    panel.onDidDispose(() => { cancelRetry?.(); _panels.delete(filePath); }, null, context.subscriptions);
+    panel.webview.onDidReceiveMessage(msg => { if (msg.type === '__ready') { cancelRetry?.(); } }, null, context.subscriptions);
 }
 
-function buildHtml(filePath: string, filename: string, data: any, nonce: string): string {
+function buildHtml(filePath: string, filename: string, data: any, nonce: string, cspSource = ''): string {
     switch (filename) {
-        case 'context.json':      return renderContext(data, nonce);
-        case 'config.json':       return renderConfig(data, nonce);
-        case 'data_quality_report.json': return renderDataQuality(data, nonce);
+        case 'context.json':      return renderContext(data, nonce, cspSource);
+        case 'config.json':       return renderConfig(data, nonce, cspSource);
+        case 'data_quality_report.json': return renderDataQuality(data, nonce, cspSource);
         case 'cycle_time.json':
-        case 'lead_time.json':    return renderMetricSummary(data, nonce);
-        case 'time_in_columns.json': return renderTimeInColumns(data, nonce);
-        case 'insights.json':     return renderInsights(data, nonce);
-        case 'work_items.json':        return renderWorkItems(Array.isArray(data) ? data : [], filePath, nonce);
-        case 'excluded_items.json':     return renderExcludedItems(Array.isArray(data) ? data : [], filePath, nonce);
-        case 'work_item_rework.json':   return renderRework(Array.isArray(data) ? data : [], filePath, nonce);
-        case 'work_item_history.json':  return renderHistory(Array.isArray(data) ? data : [], filePath, nonce);
-        default:                        return renderGeneric(data, filename, nonce);
+        case 'lead_time.json':    return renderMetricSummary(data, nonce, cspSource);
+        case 'time_in_columns.json': return renderTimeInColumns(data, nonce, cspSource);
+        case 'insights.json':     return renderInsights(data, nonce, cspSource);
+        case 'work_items.json':        return renderWorkItems(Array.isArray(data) ? data : [], filePath, nonce, cspSource);
+        case 'excluded_items.json':     return renderExcludedItems(Array.isArray(data) ? data : [], filePath, nonce, cspSource);
+        case 'work_item_rework.json':   return renderRework(Array.isArray(data) ? data : [], filePath, nonce, cspSource);
+        case 'work_item_history.json':  return renderHistory(Array.isArray(data) ? data : [], filePath, nonce, cspSource);
+        default:                        return renderGeneric(data, filename, nonce, cspSource);
     }
 }
