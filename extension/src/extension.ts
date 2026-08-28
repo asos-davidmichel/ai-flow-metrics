@@ -708,7 +708,7 @@ async function buildScheduleWizard(): Promise<string | undefined> {
     return `${m} ${h} ${domExpr} * ${dowExpr}`;
 }
 
-function generateWorkflowYaml(cronExpr: string, windowArgs: string): string {
+function generateWorkflowYaml(cronExpr: string, windowArgs: string, aiModel?: string): string {
     const calcSuffix = windowArgs ? ` ${windowArgs}` : '';
     return [
         'name: Update Dashboard',
@@ -757,7 +757,7 @@ function generateWorkflowYaml(cronExpr: string, windowArgs: string): string {
         '          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}',
         '          AI_API_KEY: ${{ secrets.AI_API_KEY }}',
         '          AI_API_ENDPOINT: ${{ vars.AI_API_ENDPOINT }}',
-        '          AI_MODEL: ${{ vars.AI_MODEL }}',
+        `          AI_MODEL: ${(aiModel && aiModel !== 'copilot') ? aiModel : '${{ vars.AI_MODEL }}'}`,
         '        run: python scripts/ai_interpret_metrics.py --auto',
         '        continue-on-error: true',
         '      - name: Generate dashboard',
@@ -863,6 +863,131 @@ class PublishProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     }
 }
 
+// ── Settings Panel ────────────────────────────────────────────────────────
+
+const MODEL_OPTIONS: Array<{ label: string; model: string; description: string }> = [
+    { label: 'GitHub Copilot (auto)', model: 'copilot',                    description: 'Free with Copilot subscription' },
+    { label: 'GPT-4o-mini',          model: 'gpt-4o-mini',                description: '~$0.01/CI run' },
+    { label: 'GPT-4o',               model: 'gpt-4o',                     description: '~$0.10/CI run' },
+    { label: 'Claude Sonnet',        model: 'claude-3-5-sonnet-20241022', description: '~$0.25/CI run' },
+];
+
+function countLearnings(filePath: string): number {
+    try {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        return Array.isArray(data) ? data.length : 0;
+    } catch { return 0; }
+}
+
+function escHtml(s: unknown): string {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function buildLearningsHtml(title: string, entries: Array<{ date: string; text: string }>): string {
+    const rows = entries.length === 0
+        ? '<p class="empty">No learnings recorded yet.</p>'
+        : `<ol>${entries.map(e =>
+            `<li><span class="date">${escHtml(e.date)}</span>${escHtml(e.text)}</li>`
+          ).join('')}</ol>`;
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none';">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
+       color: var(--vscode-editor-foreground); background: var(--vscode-editor-background);
+       padding: 24px 28px 48px; max-width: 760px; }
+h1 { font-size: 1.3em; font-weight: 600; margin-bottom: 6px; }
+.hint { color: var(--vscode-descriptionForeground); font-size: 0.88em; margin-bottom: 24px; }
+ol { padding-left: 20px; }
+li { margin-bottom: 12px; line-height: 1.5; }
+.date { color: var(--vscode-descriptionForeground); font-size: 0.85em; margin-right: 8px; }
+.empty { color: var(--vscode-descriptionForeground); margin-top: 16px; }
+</style></head><body>
+<h1>${escHtml(title)}</h1>
+<p class="hint">Use <code>@flowlearn</code> in chat to add or remove entries.</p>
+${rows}
+</body></html>`;
+}
+
+function showLearningsPanel(context: vscode.ExtensionContext, title: string, filePath: string, settingsProvider: SettingsProvider): void {
+    const panel = vscode.window.createWebviewPanel(
+        'aiFlowMetrics.learnings', title, vscode.ViewColumn.One, { enableScripts: false }
+    );
+    const refresh = () => {
+        let entries: Array<{ date: string; text: string }> = [];
+        try {
+            const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            if (Array.isArray(raw)) { entries = raw; }
+        } catch { /* file missing or not yet created */ }
+        panel.webview.html = buildLearningsHtml(title, entries);
+        settingsProvider.refresh();
+    };
+    refresh();
+    const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(path.dirname(filePath)), path.basename(filePath))
+    );
+    watcher.onDidChange(refresh);
+    watcher.onDidCreate(refresh);
+    panel.onDidDispose(() => watcher.dispose());
+    context.subscriptions.push(watcher);
+}
+
+class SettingsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+    private _onDidChangeTreeData = new vscode.EventEmitter<void>();
+    readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+    constructor(
+        private readonly globalState: vscode.Memento,
+        private readonly globalStoragePath: string,
+    ) {}
+
+    refresh() { this._onDidChangeTreeData.fire(); }
+    getTreeItem(item: vscode.TreeItem) { return item; }
+
+    getChildren(): vscode.TreeItem[] {
+        const activeId = this.globalState.get<string>('activeBoardId');
+        if (!activeId) {
+            return [new vscode.TreeItem('No board selected')];
+        }
+
+        const win         = getWindowConfig(this.globalState, activeId);
+        const storedModel = this.globalState.get<string>('aiModel') ?? 'copilot';
+        const modelOption = MODEL_OPTIONS.find(o => o.model === storedModel) ?? MODEL_OPTIONS[0];
+
+        const boardLearningsPath  = path.join(this.globalStoragePath, activeId, 'output', 'data', 'interpretation_learnings.json');
+        const globalLearningsPath = path.join(this.globalStoragePath, 'global_learnings.json');
+        const boardCount          = countLearnings(boardLearningsPath);
+        const globalCount         = countLearnings(globalLearningsPath);
+
+        const windowItem = new vscode.TreeItem('Time Window', vscode.TreeItemCollapsibleState.None);
+        windowItem.description  = win.label;
+        windowItem.iconPath     = new vscode.ThemeIcon('calendar');
+        windowItem.command      = { command: 'ai-flow-metrics.configureWindow', title: 'Change Time Window' };
+        windowItem.tooltip      = 'Click to change the analysis time window';
+
+        const modelItem = new vscode.TreeItem('AI Model', vscode.TreeItemCollapsibleState.None);
+        modelItem.description  = modelOption.label;
+        modelItem.iconPath     = new vscode.ThemeIcon('hubot');
+        modelItem.command      = { command: 'ai-flow-metrics.selectModel', title: 'Change AI Model' };
+        modelItem.tooltip      = `${modelOption.description} — applies to GitHub Actions / --auto runs`;
+
+        const boardItem = new vscode.TreeItem('Board learnings', vscode.TreeItemCollapsibleState.None);
+        boardItem.description  = boardCount === 0 ? 'none' : `${boardCount} ${boardCount === 1 ? 'entry' : 'entries'}`;
+        boardItem.iconPath     = new vscode.ThemeIcon('book');
+        boardItem.command      = { command: 'ai-flow-metrics.openBoardLearnings', title: 'View Board Learnings' };
+        boardItem.tooltip      = 'Click to view — use @flowlearn to edit';
+
+        const globalItem = new vscode.TreeItem('Global learnings', vscode.TreeItemCollapsibleState.None);
+        globalItem.description  = globalCount === 0 ? 'none' : `${globalCount} ${globalCount === 1 ? 'entry' : 'entries'}`;
+        globalItem.iconPath     = new vscode.ThemeIcon('globe');
+        globalItem.command      = { command: 'ai-flow-metrics.openGlobalLearnings', title: 'View Global Learnings' };
+        globalItem.tooltip      = 'Applies to all boards — use @flowlearn to edit';
+
+        return [windowItem, modelItem, boardItem, globalItem];
+    }
+}
+
 // ── Activate ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
@@ -886,12 +1011,14 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    const boardsProvider   = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
+    const boardsProvider    = new BoardsProvider(context.globalState, context.globalStorageUri.fsPath);
     const pipelineProvider  = new PipelineProvider(context.globalState, context.globalStorageUri.fsPath);
     const publishProvider   = new PublishProvider(context.globalState);
+    const settingsProvider  = new SettingsProvider(context.globalState, context.globalStorageUri.fsPath);
 
     vscode.window.registerTreeDataProvider('aiFlowMetrics.pipeline', pipelineProvider);
     vscode.window.registerTreeDataProvider('aiFlowMetrics.publish',  publishProvider);
+    vscode.window.registerTreeDataProvider('aiFlowMetrics.settings', settingsProvider);
 
     const boardsTreeView = vscode.window.createTreeView('aiFlowMetrics.boards', { treeDataProvider: boardsProvider });
 
@@ -963,6 +1090,7 @@ export function activate(context: vscode.ExtensionContext) {
         boardsProvider.refresh();
         pipelineProvider.refresh();
         publishProvider.refresh();
+        settingsProvider.refresh();
     }));
 
     // Refresh trees whenever output files are created or deleted
@@ -972,13 +1100,15 @@ export function activate(context: vscode.ExtensionContext) {
     watcher.onDidCreate((uri) => {
         boardsProvider.refresh();
         pipelineProvider.refresh();
+        settingsProvider.refresh();
         if (uri.fsPath.endsWith('.html')) { openPreview(uri.fsPath, context); }
     });
     watcher.onDidChange((uri) => {
         if (uri.fsPath.endsWith('.html')) { openPreview(uri.fsPath, context); }
         else if (uri.fsPath.endsWith('insights.json')) { rebuildDashboard(uri.fsPath); }
+        else if (uri.fsPath.endsWith('interpretation_learnings.json')) { settingsProvider.refresh(); }
     });
-    watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); });
+    watcher.onDidDelete(() => { boardsProvider.refresh(); pipelineProvider.refresh(); settingsProvider.refresh(); });
     context.subscriptions.push(watcher);
 
     // Debounced re-render: insights.json changed → create_dashboard.py --force
@@ -1041,6 +1171,7 @@ export function activate(context: vscode.ExtensionContext) {
             boardsProvider.refresh();
             pipelineProvider.refresh();
             publishProvider.refresh();
+            settingsProvider.refresh();
             const dashboardPath = path.join(context.globalStorageUri.fsPath, board.id, 'output', 'dashboard.html');
             if (fs.existsSync(dashboardPath)) { openPreview(dashboardPath, context); }
         }),
@@ -1481,6 +1612,30 @@ export function activate(context: vscode.ExtensionContext) {
             }
             boardsProvider.refresh();
             pipelineProvider.refresh();
+            settingsProvider.refresh();
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.selectModel', async () => {
+            const stored = context.globalState.get<string>('aiModel') ?? 'copilot';
+            const pick = await vscode.window.showQuickPick(
+                MODEL_OPTIONS.map(o => ({ ...o, picked: o.model === stored })),
+                { placeHolder: 'Select AI model for GitHub Actions / --auto runs', title: 'AI Model', ignoreFocusOut: true }
+            );
+            if (!pick) { return; }
+            await context.globalState.update('aiModel', pick.model);
+            settingsProvider.refresh();
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.openBoardLearnings', () => {
+            const activeId = context.globalState.get<string>('activeBoardId');
+            if (!activeId) { vscode.window.showErrorMessage('Select a board first.'); return; }
+            const filePath = path.join(context.globalStorageUri.fsPath, activeId, 'output', 'data', 'interpretation_learnings.json');
+            showLearningsPanel(context, 'Board Learnings', filePath, settingsProvider);
+        }),
+
+        vscode.commands.registerCommand('ai-flow-metrics.openGlobalLearnings', () => {
+            const filePath = path.join(context.globalStorageUri.fsPath, 'global_learnings.json');
+            showLearningsPanel(context, 'Global Learnings', filePath, settingsProvider);
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.clearStep', (item: vscode.TreeItem) => {
@@ -2086,7 +2241,7 @@ export function activate(context: vscode.ExtensionContext) {
                         // Write workflow
                         const workflowDir = path.join(tmpDir, '.github', 'workflows');
                         fs.mkdirSync(workflowDir, { recursive: true });
-                        fs.writeFileSync(path.join(workflowDir, 'update-dashboard.yml'), generateWorkflowYaml(cronExpr, getWindowConfig(context.globalState, activeId ?? '').args));
+                        fs.writeFileSync(path.join(workflowDir, 'update-dashboard.yml'), generateWorkflowYaml(cronExpr, getWindowConfig(context.globalState, activeId ?? '').args, context.globalState.get<string>('aiModel')));
 
                         // Copy Python scripts + dashboard template
                         const scriptsDir = path.join(tmpDir, 'scripts');

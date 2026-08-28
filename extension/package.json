@@ -2,7 +2,7 @@
   "name": "ai-flow-metrics",
   "displayName": "AI Flow Metrics",
   "description": "Run the AI Flow Metrics pipeline from VS Code",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "ai-flow-metrics",
   "repository": {
     "type": "git",
@@ -31,6 +31,10 @@
         {
           "id": "aiFlowMetrics.boards",
           "name": "Boards"
+        },
+        {
+          "id": "aiFlowMetrics.settings",
+          "name": "Settings"
         },
         {
           "id": "aiFlowMetrics.pipeline",
@@ -204,6 +208,18 @@
       {
         "command": "ai-flow-metrics.setAiApiKey",
         "title": "AI Flow Metrics: Set AI API Key (for automated insights)"
+      },
+      {
+        "command": "ai-flow-metrics.selectModel",
+        "title": "Change AI Model"
+      },
+      {
+        "command": "ai-flow-metrics.openBoardLearnings",
+        "title": "View Board Learnings"
+      },
+      {
+        "command": "ai-flow-metrics.openGlobalLearnings",
+        "title": "View Global Learnings"
       }
     ],
     "chatParticipants": [
