@@ -884,29 +884,49 @@ function escHtml(s: unknown): string {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildLearningsHtml(title: string, entries: Array<{ date: string; text: string }>): string {
-    const rows = entries.length === 0
-        ? '<p class="empty">No learnings recorded yet.</p>'
-        : `<ol>${entries.map(e =>
-            `<li><span class="date">${escHtml(e.date)}</span>${escHtml(e.text)}</li>`
-          ).join('')}</ol>`;
+function buildLearningsHtml(title: string, entries: Array<{ date: string; text: string; board?: string }>): string {
+    const cards = entries.length === 0
+        ? '<div class="empty">📚 No learnings recorded yet. Use <code>@flowlearn</code> in chat to add entries.</div>'
+        : entries.map(e => {
+            const boardBadge = e.board ? `<span class="learning-board">📊 ${escHtml(e.board)}</span>` : '';
+            return `<div class="learning-card">
+                <div class="learning-meta">
+                    <span class="learning-date">📅 ${escHtml(e.date)}</span>
+                    ${boardBadge}
+                </div>
+                <p>${escHtml(e.text)}</p>
+            </div>`;
+        }).join('');
     return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none';">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
        color: var(--vscode-editor-foreground); background: var(--vscode-editor-background);
-       padding: 24px 28px 48px; max-width: 760px; }
-h1 { font-size: 1.3em; font-weight: 600; margin-bottom: 6px; }
-.hint { color: var(--vscode-descriptionForeground); font-size: 0.88em; margin-bottom: 24px; }
-ol { padding-left: 20px; }
-li { margin-bottom: 12px; line-height: 1.5; }
-.date { color: var(--vscode-descriptionForeground); font-size: 0.85em; margin-right: 8px; }
-.empty { color: var(--vscode-descriptionForeground); margin-top: 16px; }
+       padding: 20px 24px 40px; max-width: 900px; }
+h1 { font-size: 1.4em; font-weight: 600; margin-bottom: 6px; }
+.hint { color: var(--vscode-descriptionForeground); font-size: 0.88em; margin-bottom: 16px; }
+.learning-card {
+    background: var(--vscode-textCodeBlock-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-left: 4px solid var(--vscode-textLink-foreground);
+    border-radius: 6px; padding: 14px 16px; margin-bottom: 12px;
+    transition: box-shadow 0.2s;
+}
+.learning-card:hover { box-shadow: 0 2px 8px var(--vscode-textLink-foreground)22; }
+.learning-card p { margin: 8px 0 0; line-height: 1.6; }
+.learning-meta { display: flex; align-items: center; gap: 8px; font-size: 0.85em;
+                 color: var(--vscode-descriptionForeground); margin-bottom: 6px; }
+.learning-date { background: var(--vscode-button-background)40; padding: 2px 8px; border-radius: 4px;
+                 font-size: 0.75em; font-weight: 500; }
+.learning-board { background: #0078d425; color: #4dabf7; padding: 2px 8px; border-radius: 4px;
+                  font-size: 0.75em; font-weight: 500; }
+.empty { color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px 0; line-height: 1.6; }
+code { background: var(--vscode-textCodeBlock-background); padding: 2px 6px; border-radius: 3px; font-family: monospace; }
 </style></head><body>
 <h1>${escHtml(title)}</h1>
 <p class="hint">Use <code>@flowlearn</code> in chat to add or remove entries.</p>
-${rows}
+${cards}
 </body></html>`;
 }
 

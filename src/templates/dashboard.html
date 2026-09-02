@@ -6323,7 +6323,8 @@ const _vscApi = typeof acquireVsCodeApi !== 'undefined' ? acquireVsCodeApi() : n
   };
   function makeAskAIBtn(text) {
     if (!_vscApi) return '';
-    return '<button class="ask-ai-btn" data-enc="' + encodeURIComponent(text) + '" onclick="event.stopPropagation();_askAI(this)" title="Ask AI about this">✨ Ask AI</button>';
+    const askText = text.startsWith('@flowmetrics') ? text : '@flowmetrics Question: I\u2019d like to \n\n---\n\n' + text;
+    return '<button class="ask-ai-btn" data-enc="' + encodeURIComponent(askText) + '" onclick="event.stopPropagation();_askAI(this)" title="Ask AI about this">✨ Ask AI</button>';
   }
 
   function makeChartInsightBox(insight, chartLabel) {
@@ -6332,14 +6333,14 @@ const _vscApi = typeof acquireVsCodeApi !== 'undefined' ? acquireVsCodeApi() : n
     // Short preview: first sentence of the insight
     const preview = (insight.insight || '').split(/(?<=\.\s)/)[0].trim();
     const copyText = [insight.insight, (insight.evidence||[]).length ? 'Evidence:\n'+(insight.evidence||[]).map(e=>'\u2022 '+e).join('\n') : '', insight.watch_out ? 'Watch out: '+insight.watch_out : ''].filter(Boolean).join('\n\n');
-    const askParts = ['@flowmetrics Here is the ' + (chartLabel || 'chart') + ' insight:\n\n<insight>\n' + insight.insight + '\n</insight>'];
+    const askParts = ['@flowmetrics Question: I\u2019d like to '];
+    askParts.push('---\n\nContext for the ' + (chartLabel || 'chart') + ' insight:\n\n<insight>\n' + insight.insight + '\n</insight>');
     if (insight.evidence && insight.evidence.length) {
       askParts.push('<evidence>\n' + insight.evidence.map(e => '\u2022 ' + e).join('\n') + '\n</evidence>');
     }
     if (insight.watch_out) {
       askParts.push('<watch_out>\n' + insight.watch_out + '\n</watch_out>');
     }
-    askParts.push('Question: I\u2019d like to ');
     const askText = askParts.join('\n\n');
     box.innerHTML = '<summary class="ib-summary">\uD83D\uDCA1 <strong>Insight</strong>'
       + '<span class="ib-preview">' + escapeHtml(preview) + '</span>'
@@ -6451,10 +6452,10 @@ const _vscApi = typeof acquireVsCodeApi !== 'undefined' ? acquireVsCodeApi() : n
   }
 
   const execCopyText = [exec.headline, exec.narrative, exec.primary_diagnosis ? 'Diagnosis: '+exec.primary_diagnosis : '', exec.confidence ? 'Confidence: '+exec.confidence : '', exec.main_caveat ? 'Caveat: '+exec.main_caveat : ''].filter(Boolean).join('\n\n');
-  const execAskParts = ['@flowmetrics Here is the Executive Summary insight:\n\n<insight>\n' + (exec.headline || '') + '\n\n' + (exec.narrative || '') + '\n</insight>'];
+  const execAskParts = ['@flowmetrics Question: I\u2019d like to '];
+  execAskParts.push('---\n\nContext for the Executive Summary:\n\n<insight>\n' + (exec.headline || '') + '\n\n' + (exec.narrative || '') + '\n</insight>');
   if (exec.primary_diagnosis) { execAskParts.push('<diagnosis>\n' + exec.primary_diagnosis + '\n</diagnosis>'); }
   if (exec.main_caveat)       { execAskParts.push('<caveat>\n' + exec.main_caveat + '\n</caveat>'); }
-  execAskParts.push('Question: I\u2019d like to ');
   const execAskText = execAskParts.join('\n\n');
   const execHtml =
     '<div class="insight-panel" style="margin-bottom:20px;">'

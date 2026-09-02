@@ -110,6 +110,31 @@ tr:hover td { background: var(--vscode-list-hoverBackground); }
     padding: 8px 12px; font-size: 0.88em; line-height: 1.5;
 }
 
+.learning-card {
+    background: var(--vscode-textCodeBlock-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-left: 4px solid var(--vscode-textLink-foreground);
+    border-radius: 6px; padding: 14px 16px; margin-bottom: 12px;
+    transition: box-shadow 0.2s;
+}
+.learning-card:hover {
+    box-shadow: 0 2px 8px var(--vscode-textLink-foreground)22;
+}
+.learning-card p { margin: 8px 0 0; line-height: 1.6; }
+.learning-meta {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 6px;
+}
+.learning-date {
+    background: var(--vscode-button-background)40; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.75em; font-weight: 500;
+}
+.learning-board {
+    background: #0078d425; color: #4dabf7; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.75em; font-weight: 500;
+}
+.learnings-empty { color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px 0; }
+
 .search-row { margin-bottom: 12px; }
 .search-row input {
     width: 100%; max-width: 400px; padding: 5px 10px;
@@ -443,6 +468,36 @@ ${cards}`;
     return baseHtml(nonce, 'AI Insights', body, '', '', cspSource);
 }
 
+function renderLearnings(data: any, nonce: string, filename: string, cspSource = ''): string {
+    const learnings = Array.isArray(data) ? data : [];
+    const isGlobal = filename === 'global_learnings.json';
+    const title = isGlobal ? 'Global Learnings' : 'Board Learnings';
+    
+    if (learnings.length === 0) {
+        const body = `<h1>${title}</h1>
+<div class="learnings-empty">No learnings saved yet. Ask @flowmetrics to save a learning using the board insights.</div>`;
+        return baseHtml(nonce, title, body, '', '', cspSource);
+    }
+
+    const cards = learnings.map((entry: any) => {
+        const dateStr = fmtDate(entry.date || '');
+        const boardBadge = entry.board ? `<span class="learning-board">📊 ${esc(entry.board)}</span>` : '';
+        return `<div class="learning-card">
+            <div class="learning-meta">
+                <span class="learning-date">📅 ${dateStr}</span>
+                ${boardBadge}
+            </div>
+            <p>${esc(entry.text)}</p>
+        </div>`;
+    }).join('\n');
+
+    const body = `<h1>${title}</h1>
+<div class="meta"><span>${learnings.length} learning${learnings.length === 1 ? '' : 's'} saved</span></div>
+${cards}`;
+
+    return baseHtml(nonce, title, body, '', '', cspSource);
+}
+
 function renderWorkItems(data: any[], filePath: string, nonce: string, cspSource = ''): string {
     // Load type styles from context.json (same dir), which is written in Step 1
     type TypeStyle = { color: string; icon_url: string };
@@ -774,10 +829,14 @@ function openHtmlPreview(filePath: string, context: vscode.ExtensionContext): vo
         panel.onDidDispose(() => _panels.delete(filePath), null, context.subscriptions);
     }
     _panels.set(filePath, panel);
-    panel.webview.onDidReceiveMessage(msg => {
+    panel.webview.onDidReceiveMessage(async (msg) => {
         if (msg.type === '__ready') { cancelRetry?.(); return; }
         if (msg.type === 'askAI') {
-            vscode.commands.executeCommand('workbench.action.chat.open', {
+            await vscode.env.clipboard.writeText(msg.context);
+            // Step 1: switch to Ask mode with no query — await so session state settles
+            await vscode.commands.executeCommand('workbench.action.chat.open', { mode: 'ask' });
+            // Step 2: prefill input with no mode switch to avoid the timing race
+            await vscode.commands.executeCommand('workbench.action.chat.open', {
                 query: msg.context,
                 isPartialQuery: true,
             });
@@ -837,6 +896,8 @@ function buildHtml(filePath: string, filename: string, data: any, nonce: string,
         case 'lead_time.json':    return renderMetricSummary(data, nonce, cspSource);
         case 'time_in_columns.json': return renderTimeInColumns(data, nonce, cspSource);
         case 'insights.json':     return renderInsights(data, nonce, cspSource);
+        case 'interpretation_learnings.json':
+        case 'global_learnings.json': return renderLearnings(data, nonce, filename, cspSource);
         case 'work_items.json':        return renderWorkItems(Array.isArray(data) ? data : [], filePath, nonce, cspSource);
         case 'excluded_items.json':     return renderExcludedItems(Array.isArray(data) ? data : [], filePath, nonce, cspSource);
         case 'work_item_rework.json':   return renderRework(Array.isArray(data) ? data : [], filePath, nonce, cspSource);
