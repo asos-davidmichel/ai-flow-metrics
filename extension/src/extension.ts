@@ -7,6 +7,38 @@ import * as vscode from 'vscode';
 import { registerChatParticipant, registerLearnParticipant } from './chat';
 import { openPreview } from './preview';
 
+const diagnosticOutput = vscode.window.createOutputChannel('AI Flow Metrics');
+
+function diagnosticLog(message: string): void {
+    diagnosticOutput.appendLine(`${new Date().toISOString()} ${message}`);
+}
+
+function extractJsonObject(responseText: string): string | null {
+    const fenced = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced) { return fenced[1].trim(); }
+
+    const start = responseText.indexOf('{');
+    if (start < 0) { return null; }
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < responseText.length; index++) {
+        const character = responseText[index];
+        if (inString) {
+            if (escaped) { escaped = false; }
+            else if (character === '\\') { escaped = true; }
+            else if (character === '"') { inString = false; }
+            continue;
+        }
+        if (character === '"') { inString = true; }
+        else if (character === '{') { depth++; }
+        else if (character === '}' && --depth === 0) {
+            return responseText.slice(start, index + 1);
+        }
+    }
+    return null;
+}
+
 interface Board {
     id: string;
     name: string;
@@ -120,10 +152,14 @@ const STEP_PREREQS: Record<string, string> = {
 
 function assertPrereq(key: string, boardDir: string): boolean {
     const rel = STEP_PREREQS[key];
+    diagnosticLog(`[${key}] board directory: ${boardDir}`);
+    diagnosticLog(`[${key}] prerequisite: ${rel ? path.join(boardDir, rel) : 'none'}`);
     if (rel && !fs.existsSync(path.join(boardDir, rel))) {
+        diagnosticLog(`[${key}] prerequisite missing`);
         vscode.window.showErrorMessage(`Complete the previous step first — ${path.basename(rel)} not found.`);
         return false;
     }
+    diagnosticLog(`[${key}] prerequisite found`);
     return true;
 }
 
@@ -884,19 +920,19 @@ function escHtml(s: unknown): string {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildLearningsHtml(title: string, entries: Array<{ date: string; text: string; board?: string }>): string {
+function buildLearningsHtml(title: string, entries: Array<{ date: string; text: string; board?: string }>, scope: 'board' | 'global' = 'global'): string {
+    const boardName = scope === 'board' && entries.length > 0 ? entries[0].board : null;
     const cards = entries.length === 0
         ? '<div class="empty">📚 No learnings recorded yet. Use <code>@flowlearn</code> in chat to add entries.</div>'
         : entries.map(e => {
-            const boardBadge = e.board ? `<span class="learning-board">📊 ${escHtml(e.board)}</span>` : '';
             return `<div class="learning-card">
                 <div class="learning-meta">
                     <span class="learning-date">📅 ${escHtml(e.date)}</span>
-                    ${boardBadge}
                 </div>
                 <p>${escHtml(e.text)}</p>
             </div>`;
         }).join('');
+    const boardHeader = boardName ? `<div class="board-header">📊 ${escHtml(boardName)}</div>` : '';
     return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none';">
 <style>
@@ -905,6 +941,8 @@ body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size
        color: var(--vscode-editor-foreground); background: var(--vscode-editor-background);
        padding: 20px 24px 40px; max-width: 900px; }
 h1 { font-size: 1.4em; font-weight: 600; margin-bottom: 6px; }
+.board-header { font-size: 0.95em; font-weight: 500; color: #4dabf7; background: #0078d415; padding: 8px 12px;
+                border-radius: 6px; margin-bottom: 16px; display: inline-block; }
 .hint { color: var(--vscode-descriptionForeground); font-size: 0.88em; margin-bottom: 16px; }
 .learning-card {
     background: var(--vscode-textCodeBlock-background);
@@ -915,16 +953,14 @@ h1 { font-size: 1.4em; font-weight: 600; margin-bottom: 6px; }
 }
 .learning-card:hover { box-shadow: 0 2px 8px var(--vscode-textLink-foreground)22; }
 .learning-card p { margin: 8px 0 0; line-height: 1.6; }
-.learning-meta { display: flex; align-items: center; gap: 8px; font-size: 0.85em;
-                 color: var(--vscode-descriptionForeground); margin-bottom: 6px; }
+.learning-meta { font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 6px; }
 .learning-date { background: var(--vscode-button-background)40; padding: 2px 8px; border-radius: 4px;
-                 font-size: 0.75em; font-weight: 500; }
-.learning-board { background: #0078d425; color: #4dabf7; padding: 2px 8px; border-radius: 4px;
-                  font-size: 0.75em; font-weight: 500; }
+                 font-size: 0.75em; font-weight: 500; display: inline-block; }
 .empty { color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px 0; line-height: 1.6; }
 code { background: var(--vscode-textCodeBlock-background); padding: 2px 6px; border-radius: 3px; font-family: monospace; }
 </style></head><body>
 <h1>${escHtml(title)}</h1>
+${boardHeader}
 <p class="hint">Use <code>@flowlearn</code> in chat to add or remove entries.</p>
 ${cards}
 </body></html>`;
@@ -934,13 +970,14 @@ function showLearningsPanel(context: vscode.ExtensionContext, title: string, fil
     const panel = vscode.window.createWebviewPanel(
         'aiFlowMetrics.learnings', title, vscode.ViewColumn.One, { enableScripts: false }
     );
+    const scope = title.includes('Board') ? 'board' : 'global';
     const refresh = () => {
-        let entries: Array<{ date: string; text: string }> = [];
+        let entries: Array<{ date: string; text: string; board?: string }> = [];
         try {
             const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
             if (Array.isArray(raw)) { entries = raw; }
         } catch { /* file missing or not yet created */ }
-        panel.webview.html = buildLearningsHtml(title, entries);
+        panel.webview.html = buildLearningsHtml(title, entries, scope);
         settingsProvider.refresh();
     };
     refresh();
@@ -1006,6 +1043,17 @@ class SettingsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
         return [windowItem, modelItem, boardItem, globalItem];
     }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+// Resolve correct board directory path, checking both possible storage locations
+function resolveBoardDir(globalStoragePath: string, boardId: string): string {
+    const primary = path.join(globalStoragePath, boardId);
+    if (fs.existsSync(primary)) { return primary; }
+    // Fallback for publisher ID mismatch (ai-flow-metrics.ai-flow-metrics)
+    const fallback = path.join(globalStoragePath + '.ai-flow-metrics', boardId);
+    return fs.existsSync(fallback) ? fallback : primary;
 }
 
 // ── Activate ───────────────────────────────────────────────────────────────
@@ -1460,12 +1508,18 @@ export function activate(context: vscode.ExtensionContext) {
         }),
 
         vscode.commands.registerCommand('ai-flow-metrics.interpretMetrics', async () => {
+            diagnosticOutput.show(true);
+            diagnosticLog('[interpretMetrics] command started');
             const activeId = context.globalState.get<string>('activeBoardId');
             const board = boardsProvider.getBoards().find(b => b.id === activeId);
-            if (!board) { vscode.window.showErrorMessage('Select a board first.'); return; }
+            if (!board) {
+                diagnosticLog(`[interpretMetrics] no active board; active id: ${activeId ?? 'none'}`);
+                vscode.window.showErrorMessage('Select a board first.');
+                return;
+            }
 
             const script = path.join(context.extensionPath, 'resources', 'scripts', 'ai_interpret_metrics.py');
-            const outputDir = path.join(context.globalStorageUri.fsPath, board.id);
+            const outputDir = resolveBoardDir(context.globalStorageUri.fsPath, board.id);
             if (!assertPrereq('step.interpretMetrics', outputDir)) { return; }
             const dataDir = path.join(outputDir, 'output', 'data');
             const promptPath = path.join(dataDir, 'ai_interpret_metrics.prompt.md');
@@ -1491,18 +1545,37 @@ export function activate(context: vscode.ExtensionContext) {
                 async (progress) => {
                     pipelineProvider.setStepRunning('step.interpretMetrics');
                     progress.report({ message: 'Generating prompt…' });
-                    const globalLearnPath = path.join(context.globalStorageUri.fsPath, 'global_learnings.json');
+                    
+                    console.log(`[Interpret Metrics] Board: ${board.name} (${board.id})`);
+                    console.log(`[Interpret Metrics] Output dir: ${outputDir}`);
+                    console.log(`[Interpret Metrics] Data dir: ${dataDir}`);
+                    console.log(`[Interpret Metrics] Prompt path: ${promptPath}`);
+                    console.log(`[Interpret Metrics] Metrics exist: ${fs.existsSync(path.join(outputDir, 'output', 'metrics', 'cycle_time.json'))}`);
+                    console.log(`[Interpret Metrics] Metrics exist: ${fs.existsSync(path.join(outputDir, 'output', 'metrics', 'lead_time.json'))}`);
+                    console.log(`[Interpret Metrics] Metrics exist: ${fs.existsSync(path.join(outputDir, 'output', 'metrics', 'time_in_columns.json'))}`);
+                    
+                    const globalStorageRoot = fs.existsSync(context.globalStorageUri.fsPath) ? context.globalStorageUri.fsPath : (context.globalStorageUri.fsPath + '.ai-flow-metrics');
+                    const globalLearnPath = path.join(globalStorageRoot, 'global_learnings.json');
+                    console.log(`[Interpret Metrics] Global storage: ${globalStorageRoot}`);
+                    console.log(`[Interpret Metrics] Global learnings: ${globalLearnPath}`);
+                    diagnosticLog(`[interpretMetrics] running Python: ${pythonCmd} ${script}`);
                     const genError = await new Promise<string | null>(resolve =>
-                        cp.exec(`${pythonCmd} "${script}" --global-learnings "${globalLearnPath}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) =>
-                            resolve(err ? (stderr || err.message) : null)
-                        )
+                        cp.exec(`${pythonCmd} "${script}" --global-learnings "${globalLearnPath}"`, { cwd: outputDir, env: { ...process.env, PYTHONUTF8: '1' } }, (err, _out, stderr) => {
+                            const errMsg = err ? (stderr || err.message) : null;
+                            if (errMsg) { console.error(`[Interpret Metrics] Python error: ${errMsg}`); }
+                            console.log(`[Interpret Metrics] Python stdout: ${_out}`);
+                            resolve(errMsg);
+                        })
                     );
                     if (genError || !fs.existsSync(promptPath)) {
+                        console.error(`[Interpret Metrics] Failed: ${genError ?? 'prompt file not written'}`);
+                        console.error(`[Interpret Metrics] Prompt file exists: ${fs.existsSync(promptPath)}`);
                         vscode.window.showErrorMessage(`Interpret Metrics failed: ${genError ?? 'prompt file not written'}`);
                         return;
                     }
 
                     progress.report({ message: 'Calling AI…' });
+                    diagnosticLog('[interpretMetrics] selecting Copilot model');
                     const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
                     const model = models[0];
                     if (!model) { vscode.window.showErrorMessage('No Copilot model available.'); return; }
@@ -1510,22 +1583,72 @@ export function activate(context: vscode.ExtensionContext) {
                     const promptText = fs.readFileSync(promptPath, 'utf-8');
                     const cts = new vscode.CancellationTokenSource();
                     let responseText = '';
+                    const responseStages: Array<[string, string]> = [
+                        ['"chart_insights"', 'Analysing individual charts…'],
+                        ['"diagnostic_findings"', 'Comparing metrics for cross-metric findings…'],
+                        ['"outlier_patterns"', 'Checking outliers and ageing work…'],
+                        ['"executive_summary"', 'Preparing the executive summary…'],
+                        ['"investigate_next"', 'Identifying follow-up investigations…'],
+                        ['"recommendations"', 'Forming evidence-based recommendations…'],
+                        ['"data_quality_caveats"', 'Checking data quality caveats…'],
+                    ];
+                    let nextStage = 0;
                     try {
+                        diagnosticLog(`[interpretMetrics] sending prompt (${promptText.length} characters)`);
+                        progress.report({ message: 'AI is analysing the flow metrics…' });
                         const lmResponse = await model.sendRequest(
                             [vscode.LanguageModelChatMessage.User(promptText)],
                             { justification: 'AI Flow Metrics uses Copilot to generate chart insights from your flow metrics.' },
                             cts.token
                         );
-                        for await (const part of lmResponse.text) { responseText += part; }
+                        for await (const part of lmResponse.text) {
+                            responseText += part;
+                            while (nextStage < responseStages.length && responseText.includes(responseStages[nextStage][0])) {
+                                progress.report({ message: responseStages[nextStage][1] });
+                                diagnosticLog(`[interpretMetrics] received ${responseStages[nextStage][0]}`);
+                                nextStage++;
+                            }
+                        }
+                        progress.report({ message: 'AI response received; validating results…' });
+                    } catch (error) {
+                        const message = error instanceof Error ? error.message : String(error);
+                        diagnosticLog(`[interpretMetrics] AI request failed: ${message}`);
+                        vscode.window.showErrorMessage(`Interpret Metrics AI request failed: ${message}`);
+                        return;
                     } finally { cts.dispose(); }
 
-                    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? responseText.match(/(\{[\s\S]*\})/);
-                    const jsonStr = (jsonMatch?.[1] ?? responseText).trim();
+                    diagnosticLog(`[interpretMetrics] response length: ${responseText.length}`);
+                    diagnosticLog(`[interpretMetrics] response start: ${responseText.slice(0, 300).replace(/\s+/g, ' ')}`);
+                    diagnosticLog(`[interpretMetrics] response end: ${responseText.slice(-300).replace(/\s+/g, ' ')}`);
+                    let jsonStr = extractJsonObject(responseText);
+                    if (!jsonStr) {
+                        diagnosticLog('[interpretMetrics] response JSON invalid: no JSON object found');
+                        vscode.window.showErrorMessage('AI response was not valid JSON: no JSON object found.');
+                        return;
+                    }
                     try {
                         JSON.parse(jsonStr);
-                    } catch {
-                        vscode.window.showErrorMessage('AI response was not valid JSON. Try again.');
-                        return;
+                    } catch (error) {
+                        const message = error instanceof Error ? error.message : String(error);
+                        diagnosticLog(`[interpretMetrics] response JSON invalid: ${message}`);
+                        const positionMatch = message.match(/position (\d+)/i);
+                        if (positionMatch) {
+                            const position = Number(positionMatch[1]);
+                            diagnosticLog(`[interpretMetrics] invalid fragment: ${jsonStr.slice(Math.max(0, position - 250), position + 250)}`);
+                        }
+                        try {
+                            const { jsonrepair } = await import('jsonrepair');
+                            const repaired = jsonrepair(jsonStr);
+                            JSON.parse(repaired);
+                            diagnosticLog('[interpretMetrics] JSON repaired successfully');
+                            // Use the repaired, validated object below.
+                            jsonStr = repaired;
+                        } catch (repairError) {
+                            const repairMessage = repairError instanceof Error ? repairError.message : String(repairError);
+                            diagnosticLog(`[interpretMetrics] JSON repair failed: ${repairMessage}`);
+                            vscode.window.showErrorMessage(`AI response was not valid JSON: ${message}`);
+                            return;
+                        }
                     }
 
                     fs.mkdirSync(dataDir, { recursive: true });

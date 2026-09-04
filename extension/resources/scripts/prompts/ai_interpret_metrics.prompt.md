@@ -38,7 +38,7 @@ Return a single valid JSON object with the following keys. No markdown fences. N
 
 ### 1. "chart_insights"
 
-An object with one key per chart. Supported keys:
+An object containing keys for the charts supported by the supplied summaries. Supported keys:
 cycle_time, lead_time, throughput, time_in_columns, flow_efficiency,
 work_start_efficiency, wip, wip_over_time, wip_age_distribution,
 wip_age_by_column, blockers, blocked_by_signal, blockers_by_column, blocker_timeline,
@@ -46,10 +46,14 @@ days_lost_to_blockers, stale_work, net_flow, arrival_departure,
 bugs, bug_intake, bug_pct, bug_net_flow, bug_distribution, cfd,
 wip_level_distribution
 
-For each chart, provide:
-- "insight": 2-3 sentences interpreting the pattern and its implications for the team
-- "evidence": array of 1-3 short data points that directly support the insight
+Only include a chart key when its corresponding summary is present and non-null.
+For each included chart, provide:
+- "insight": one concise sentence interpreting the pattern and its implication
+- "evidence": array of 1-2 short data points that directly support the insight
 - "watch_out": one thing to monitor or investigate further
+
+Keep the complete response concise enough to fit the model response limit. Prefer
+omitting low-signal optional detail over truncating the JSON or repeating evidence.
 
 Focus for each chart:
 
@@ -107,11 +111,11 @@ wip_level_distribution — Which columns spend the most time at or above their W
 
 ### 2. "diagnostic_findings"
 
-An array of 4-7 findings that emerge from looking across multiple metrics together. Do not repeat single-metric observations from chart_insights here — these findings must draw on relationships between at least two metrics.
+An array of 3-5 findings that emerge from looking across multiple metrics together. Do not repeat single-metric observations from chart_insights here — these findings must draw on relationships between at least two metrics.
 
 Each finding must include:
 - "finding": one clear statement of the cross-metric pattern
-- "evidence": array of 2-4 specific data points drawn from different metrics
+- "evidence": array of 2-3 specific data points drawn from different metrics
 - "interpretation": what the combined evidence probably means
 - "plausible_explanations": array of 2-4 possible root causes
 - "confidence": "high", "medium", or "low"
@@ -130,13 +134,13 @@ Cover these patterns where the data supports them:
 
 ### 3. "outlier_patterns"
 
-An array of patterns found in the outlier and ageing data.
+An array of no more than 3 patterns found in the outlier and ageing data.
 
 Analyse:
-- Completed items with the highest cycle or lead times
-- Current ageing WIP (use ageing_wip.current_items)
-- Currently blocked or on-hold items (use current_blocked_items)
-- Stale items with no recent update (use stale_work.items)
+- Completed items with the highest cycle or lead times, where aggregate data supports it
+- Current ageing WIP using ageing_wip and the small outlier_samples.ageing_wip sample
+- Currently blocked or on-hold items using blockers and outlier_samples.current_blocked_items
+- Stale items using stale_work and the small outlier_samples.stale_work sample
 - Weeks with unusually high or low throughput (use throughput_weekly)
 - Bug patterns if bug data is present
 
@@ -147,7 +151,9 @@ For each pattern include:
 - "possible_meaning": what this may indicate about the system
 - "recommended_follow_up": what to inspect or ask the team
 
-If item-level data is insufficient to identify commonality, state clearly what cannot be assessed and what data would be needed.
+The prompt contains chart-ready aggregates rather than the raw board export. If the small
+outlier sample is insufficient to identify commonality, state clearly what cannot be assessed
+and what data would be needed. Do not infer item-level patterns from aggregate metrics alone.
 
 ---
 
@@ -164,7 +170,7 @@ A leadership-ready summary:
 
 ### 5. "investigate_next"
 
-An array of 5-8 investigation questions to help the team or coach dig deeper.
+An array of 4-5 investigation questions to help the team or coach dig deeper.
 
 Each must include:
 - "question": the investigation question
@@ -176,7 +182,7 @@ Each must include:
 
 ### 6. "recommendations"
 
-An array of 5-8 recommendations grounded in the evidence. Prefer system-level changes over asking people to work harder.
+An array of 4-5 recommendations grounded in the evidence. Prefer system-level changes over asking people to work harder.
 
 Each must include:
 - "action": what to do

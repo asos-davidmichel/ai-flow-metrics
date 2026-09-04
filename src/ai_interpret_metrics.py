@@ -1559,7 +1559,29 @@ Do NOT repeat the metrics back. Focus entirely on what to do and why.
 def build_prompt_text(summary, global_learnings_path=None):
     import re
     template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
-    text = template.replace("{{SUMMARY_JSON}}", json.dumps(summary, indent=2))
+    # The dashboard owns the raw item data. The AI prompt should contain the
+    # chart-ready aggregates and only a small, labelled sample for outliers.
+    prompt_summary = json.loads(json.dumps(summary))
+    outlier_samples = {}
+    for section_name in ("ageing_wip", "stale_work"):
+        section = prompt_summary.get(section_name)
+        if isinstance(section, dict) and isinstance(section.get("items") or section.get("current_items"), list):
+            key = "items" if isinstance(section.get("items"), list) else "current_items"
+            records = section[key]
+            outlier_samples[section_name] = records[:5]
+            section["item_count"] = len(records)
+            del section[key]
+
+    blocked = prompt_summary.get("current_blocked_items")
+    if isinstance(blocked, list):
+        outlier_samples["current_blocked_items"] = blocked[:5]
+        prompt_summary["current_blocked_items_count"] = len(blocked)
+        del prompt_summary["current_blocked_items"]
+
+    if outlier_samples:
+        prompt_summary["outlier_samples"] = outlier_samples
+
+    text = template.replace("{{SUMMARY_JSON}}", json.dumps(prompt_summary, separators=(",", ":")))
 
     # Inject learnings: per-board first, then global (passed via --global-learnings)
     def _load_learnings(path_obj, label):
@@ -1568,7 +1590,8 @@ def build_prompt_text(summary, global_learnings_path=None):
         try:
             entries = json.loads(path_obj.read_text(encoding="utf-8"))
             if isinstance(entries, list):
-                return [f"[{label}] {e['text']}" for e in entries if isinstance(e, dict) and e.get("text")]
+                return [f"[{label}] {e['text'][:500]}" for e in entries[:20]
+                    if isinstance(e, dict) and e.get("text")]
         except Exception:
             pass
         return []

@@ -357,6 +357,24 @@ def _format_corrections_block(log_path) -> str:
     return "\n".join(lines)
 
 
+def _compact_quality_report(quality):
+    """Keep only data-quality summaries relevant to board configuration."""
+    checks = quality.get("checks", {})
+    compact = {"generated_at": quality.get("generated_at"), "total_items": quality.get("total_items")}
+    compact_checks = {}
+    for name, check in checks.items():
+        summary = {"count": check.get("count", 0)}
+        for key in ("threshold_minutes", "unknown_columns", "note"):
+            if key in check:
+                value = check[key]
+                if key == "unknown_columns":
+                    value = [entry.get("column") for entry in value]
+                summary[key] = value
+        compact_checks[name] = summary
+    compact["checks"] = compact_checks
+    return compact
+
+
 def build_prompt(findings, corrections_block: str = ""):
     """Build prompt content with inline context data (works in VS Code and when pasted elsewhere)."""
     template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -371,9 +389,10 @@ def build_prompt(findings, corrections_block: str = ""):
 
     quality_block = ""
     if QUALITY_PATH.exists():
+        quality = json.loads(QUALITY_PATH.read_text(encoding="utf-8"))
         quality_block = (
             "## Data quality findings (data_quality_report.json)\n\n"
-            + QUALITY_PATH.read_text(encoding="utf-8")
+            + json.dumps(_compact_quality_report(quality), indent=2)
             + "\n\n"
         )
 
